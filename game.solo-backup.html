@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Band Hero — перша сцена</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:#0e0f14;color:#e8e6df;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+#hud{position:fixed;left:0;right:0;top:0;padding:10px 12px;display:flex;flex-direction:column;gap:6px;pointer-events:none;font-size:13px}
+.hr{display:flex;align-items:center;gap:10px}
+.bar{flex:0 1 220px;height:12px;border-radius:99px;background:#0008;border:1px solid #fff2;overflow:hidden}
+.bar i{display:block;height:100%;width:100%}
+#hp{background:linear-gradient(90deg,#d6604d,#e0b252)}
+#xpw{flex:1 1 auto;max-width:none;height:7px}
+#xp{background:#8fd0ff;width:0}
+.hv{background:#0008;border:1px solid #fff1;border-radius:8px;padding:3px 8px;color:#f1dba0;font-variant-numeric:tabular-nums}
+#layers,#song{font-size:11px;color:#cfcab8;text-shadow:0 1px 2px #000}
+#song{color:#8fd0ff}
+#pause{pointer-events:auto;margin-left:auto;background:#0009;border:1px solid #fff2;color:#e8e6df;border-radius:10px;padding:6px 12px;font-size:14px}
+.ov{position:fixed;inset:0;background:#0e0f14ee;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;z-index:5;text-align:center;overflow:auto}
+.ov h1{margin:0;font-size:22px;color:#f1dba0;letter-spacing:.04em}
+.ov p{margin:0;color:#a9a592;font-size:14px;max-width:420px;line-height:1.45}
+.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:100%;max-width:520px}
+#opts{grid-template-columns:1fr;max-width:380px}
+.card{background:#151720;border:1px solid var(--c);border-radius:16px;padding:14px 12px;text-align:left;color:#e8e6df;font:inherit;display:flex;flex-direction:column;gap:6px;cursor:pointer}
+.card:hover,.card:focus-visible{background:#1c1e29;outline:none}
+.card b{font-size:17px;color:var(--c)}
+.card small{color:#a9a592;font-size:12px;line-height:1.35}
+.card .st{font-size:11px;color:#7f7c6e}
+.btn{font-size:17px;padding:12px 24px;border-radius:14px;border:1px solid #e0b252;background:#2a2412;color:#f1dba0;font-weight:700;cursor:pointer}
+.btn.s{border-color:#2c2f3b;background:#1c1e27;color:#bbb;font-weight:500}
+.hide{display:none!important}
+.chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:520px}
+.chips button{font:inherit;font-size:13px;padding:6px 11px;border-radius:99px;border:1px solid #2c2f3b;background:#171922;color:#a9a592;cursor:pointer}
+.chips button.on{border-color:#8fd0ff;color:#e8f6ff;background:#152330}
+.card .syn{font-size:12px;font-weight:600}
+.card .syn.good{color:#8fe0a0}.card .syn.bad{color:#f08a7a}.card .syn.crown{color:#ffd76a}
+#load{position:fixed;left:0;right:0;bottom:18px;text-align:center;font-size:13px;color:#e0b252;z-index:9;pointer-events:none;text-shadow:0 1px 3px #000}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="hud" class="hide">
+  <div class="hr">
+    <div class="bar"><i id="hp"></i></div>
+    <span class="hv" id="lv">Рів. 1</span>
+    <span class="hv" id="time">0:00</span>
+    <span class="hv" id="kills">☠ 0</span>
+    <button id="pause">⏸</button>
+  </div>
+  <div class="bar" id="xpw"><i id="xp"></i></div>
+  <div id="song"></div>
+  <div id="layers"></div>
+</div>
+<div id="load"></div>
+
+<div id="menu" class="ov">
+  <h1>BAND HERO · перша сцена</h1>
+  <p>Обери учасника гурту. Звучить тільки твій інструмент, і кожна його нота — це удар. Починаєш з однієї партії, а з рівнями додаєш нові. Кожен забіг — нова пісня: інша тональність, темп і акорди.</p>
+  <div id="genres" class="chips"></div>
+  <div id="cards" class="cards"></div>
+  <p style="font-size:12px">Рух: WASD / стрілки або тягни пальцем по екрану. Гітара сама цілиться в найближчого ворога. Пауза: P / Esc. Краще в навушниках.</p>
+  <p style="font-size:11px;color:#6f7183">Семпли інструментів: FluidR3 GM (Frank Wen), CC BY 3.0, через gleitz/midi-js-soundfonts. Ударні: Pearl Master Studio (enoe, CC BY 3.0, oramics/sampled) і teropa/drumkit (DWDS kit CC BY, тарілки й томи CC0). Кожен новий жанр підвантажує 2–3 МБ.</p>
+</div>
+
+<div id="lvl" class="ov hide">
+  <h1 id="lvlT">Новий рівень</h1>
+  <p>Обери, що додати у свою партію.</p>
+  <div id="opts" class="cards"></div>
+</div>
+
+<div id="paused" class="ov hide">
+  <h1>Пауза</h1>
+  <button class="btn" id="resume">▶ Далі</button>
+  <button class="btn s" id="quit">У меню</button>
+</div>
+
+<div id="over" class="ov hide">
+  <h1>Тебе заглушили</h1>
+  <p id="sum"></p>
+  <button class="btn" id="again">Ще раз (нова пісня)</button>
+  <button class="btn s" id="other">Інший персонаж</button>
+</div>
+
+<script>
+(()=>{
+'use strict';
+const $=s=>document.querySelector(s);
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const pickR=a=>a[Math.floor(Math.random()*a.length)];
+
+/* ================= ГЕНЕРАТОР ПІСНІ =================
+   Кожен забіг: випадкова тональність, темп 76–96, послідовність з пулу «вайбових»,
+   свінг, мотиви мелодій. Усе вирішується на старті — щоб можна було заздалегідь підготувати семпли. */
+const mtof=m=>440*Math.pow(2,(m-69)/12);
+const up=(pc,low)=>low+((((pc-low)%12)+12)%12);
+function tones(ch,low,n,pcs){pcs=pcs||ch.pcs;const out=[];if(!pcs.length)return out;let m=low-1;while(out.length<n&&m<low+96){m++;if(pcs.includes(((m%12)+12)%12))out.push(m);}return out;}
+const NN=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+const QU={maj7:[0,4,7,11],m7:[0,3,7,10],'7':[0,4,7,10],m7b5:[0,3,6,10],maj:[0,4,7],m:[0,3,7],'5':[0,7]};
+const QNAME={maj7:'maj7',m7:'m7','7':'7',m7b5:'m7b5',maj:'',m:'m','5':'5'};
+/* Палітри акордів (зсув від тоніки, якість) для ладу й стилю жанру. Картки акордів беруть звідси. */
+const PAL={
+  major:{tri:[[0,'maj'],[2,'m'],[4,'m'],[5,'maj'],[7,'maj'],[9,'m']],sev:[[0,'maj7'],[2,'m7'],[4,'m7'],[5,'maj7'],[7,'7'],[9,'m7']],power:[[0,'5'],[2,'5'],[4,'5'],[5,'5'],[7,'5'],[9,'5']]},
+  minor:{tri:[[0,'m'],[3,'maj'],[5,'m'],[7,'7'],[8,'maj'],[10,'maj']],sev:[[0,'m7'],[3,'maj7'],[5,'m7'],[7,'7'],[8,'maj7'],[10,'7']],power:[[0,'5'],[1,'5'],[3,'5'],[5,'5'],[7,'5'],[8,'5'],[10,'5']]}
+};
+const ROMAN={major:{0:'I',2:'ii',4:'iii',5:'IV',7:'V',9:'vi'},minor:{0:'i',1:'bII',3:'III',5:'iv',7:'V',8:'VI',10:'VII'}};
+const PENT={major:[0,2,4,7,9],minor:[0,3,5,7,10]};
+/* ЖАНРИ: темп, свінг, лад, стиль акордів, семпли FluidR3 і «відомі» послідовності (за них — корона ♛). */
+const GENRES={
+  lofi:{name:'Лоу-фай',bpm:[76,96],swing:[.15,.3],mode:'major',st:'sev',sf:{guitar:'acoustic_guitar_steel',bass:'electric_bass_finger',piano:'electric_piano_1'},keys:'електропіано',
+    famous:[[2,7,0,9],[0,9,2,7],[5,4,9,0],[9,2,7,0],[5,7,4,9]]},
+  pop:{name:'Поп',bpm:[100,124],swing:[0,0],mode:'major',st:'tri',sf:{guitar:'acoustic_guitar_steel',bass:'electric_bass_finger',piano:'acoustic_grand_piano'},keys:'рояль',
+    famous:[[0,7,9,5],[9,5,0,7],[0,9,5,7],[0,5,9,7]]},
+  rock:{name:'Рок',bpm:[112,140],swing:[0,0],mode:'major',st:'power',sf:{guitar:'overdriven_guitar',bass:'electric_bass_pick',piano:'rock_organ'},keys:'орган',
+    famous:[[0,5,7,5],[0,7,9,5],[9,5,0,7],[0,5,0,7]]},
+  metal:{name:'Метал',bpm:[140,172],swing:[0,0],mode:'minor',st:'power',sf:{guitar:'distortion_guitar',bass:'electric_bass_pick',piano:'string_ensemble_1'},keys:'струнні',
+    famous:[[0,8,10,0],[0,8,3,10],[0,10,8,7],[0,1,0,8]]},
+  jazz:{name:'Джаз',bpm:[112,150],swing:[.55,.66],mode:'major',st:'sev',sf:{guitar:'electric_guitar_jazz',bass:'acoustic_bass',piano:'acoustic_grand_piano'},keys:'рояль',
+    famous:[[2,7,0,9],[0,9,2,7],[4,9,2,7]]},
+  chanson:{name:'Шансон',bpm:[92,116],swing:[0,.05],mode:'minor',st:'tri',sf:{guitar:'acoustic_guitar_nylon',bass:'acoustic_bass',piano:'accordion'},keys:'акордеон',
+    famous:[[0,5,7,0],[0,5,10,3],[0,10,8,7],[0,8,5,7]]},
+  reggae:{name:'Реґі',bpm:[66,82],swing:[.15,.3],mode:'major',st:'tri',sf:{guitar:'electric_guitar_clean',bass:'electric_bass_finger',piano:'drawbar_organ'},keys:'орган',kit:'electro',
+    famous:[[0,5,7,5],[9,5,0,7],[0,9,5,7],[0,7,9,5]]},
+  // у дусі Neue Deutsche Härte: Drop D, рубані «чаги» з паузами, бочка рівно на кожну долю, синт-пед
+  industrial:{name:'Індастріал',bpm:[100,124],swing:[0,0],mode:'minor',st:'power',drop:true,sf:{guitar:'distortion_guitar',bass:'electric_bass_pick',piano:'synth_strings_1'},keys:'синт-пед',
+    famous:[[0,8,3,10],[0,10,8,10],[0,3,10,8]]}
+};
+GENRES.lofi.kit='electro';
+/* РИФИ для металу / індастріалу / року (генеруються на кожну пісню, не копіюють жодну існуючу).
+   Ритм із жанрових прийомів: метал — «чаги» з паузами на 2 і 4 долю → галоп (восьма + дві шістнадцяті) → тремоло;
+   індастріал — пари «чагів» і паузи → синкопи; рок — восьмі з ходами на кварту/терцію.
+   M — глушений «чаг» на низькій струні, D — відкритий пауер-акорд (зсув від кореня акорду). */
+const RIFF_RHY={
+  metal:['x.xx....x.xx....','x.xxx.xxx.xxx.xx','xxxxxxxxxxxxxxxx'],
+  industrial:['x.x.....x.x.....','x.x...x.x.x...x.','x.xx..x.x.xx..x.'],
+  rock:['x.x.x.x.x.x.x.x.','x.x.x.xxx.x.x.xx','x.xxx.x.x.xxx.x.']
+};
+const RIFF_INT={metal:[1,3,5,6,7],industrial:[3,5,7,10],rock:[3,5,7,10]};
+function makeRiff(gk){
+  if(!RIFF_RHY[gk])return null;const R={};
+  // ходи пауер-акордами: однакові для всіх рівнів, різні в двох тактах
+  const moves=[0,1].map(()=>{const o1=pickR(RIFF_INT[gk]),o2=pickR(RIFF_INT[gk]);return gk==='rock'?{8:o1,10:o1,12:o2,14:o2}:{6:o1,12:o2,14:o2};});
+  // варіанти ритму на пісню: метал — прямий галоп «x.xx» або зворотний «xx.x»; індастріал — синкопи або блок «грає/тиша»
+  const rhy=RIFF_RHY[gk].slice();
+  if(gk==='metal'&&Math.random()<.5)rhy[1]='xx.xxx.xxx.xxx.x';
+  if(gk==='industrial'&&Math.random()<.5)rhy[1]='x.x.x.x.....x.x.';
+  for(let p=1;p<=3;p++){const arr=[];
+    for(let bar=0;bar<2;bar++)for(let s=0;s<16;s++){
+      if(rhy[p-1][s]!=='x'){arr.push(null);continue;}
+      const mv=moves[bar][s];
+      if(gk==='rock')arr.push({k:'D',off:mv||0,dur:1.8});
+      else if(mv!==undefined)arr.push({k:'D',off:mv,dur:gk==='industrial'?3:1.5});
+      else arr.push({k:'M',off:0,dur:.5});
+    }
+    R[p]=arr;}
+  return R;
+}
+function riffAt(p,bar,s){return SONG.riff?SONG.riff[p][(bar%2)*16+s]:null;}
+function lowRoot(pc){return GENRES[SONG.genre].drop?up(pc,38):up(pc,40);} // Drop D: найнижча нота D2
+const GK=()=>SONG.genre;
+/* Гітарні аплікатури: справжні рухомі форми (одна нота на струну). -1 = струна заглушена.
+   E-форма — тоніка на 6-й струні, A-форма — на 5-й. Зсув на r ладів = баре/каподастр. */
+const SW=[40,45,50,55,59,64];
+const SHAPES={
+  E:{maj7:[0,2,1,1,0,0],m7:[0,2,0,0,0,0],'7':[0,2,0,1,0,0],m7b5:[0,1,2,0,3,0],maj:[0,2,2,1,0,0],m:[0,2,2,0,0,0],'5':[0,2,2,-1,-1,-1]},
+  A:{maj7:[-1,0,2,1,2,0],m7:[-1,0,2,0,1,0],'7':[-1,0,2,0,2,0],m7b5:[-1,0,1,0,1,-1],maj:[-1,0,2,2,2,0],m:[-1,0,2,2,1,0],'5':[-1,0,2,2,-1,-1]}
+};
+function voicing(root,q,pref){
+  const rE=(root-4+12)%12,rA=(root-9+12)%12;
+  const cost=(f,sh)=>(f>9?99:f)+(sh===pref?0:2.5);
+  const sh=cost(rE,'E')<=cost(rA,'A')?'E':'A',r=sh==='E'?rE:rA;
+  return SHAPES[sh][q].map((o,i)=>o<0?null:{str:i,midi:SW[i]+o+r}).filter(Boolean);
+}
+(function checkShapes(){ // самоперевірка таблиці: нижня нота — тоніка, усі ноти — з акорду
+  for(let root=0;root<12;root++)for(const q in QU)for(const pref of['E','A']){
+    const v=voicing(root,q,pref),pcs=QU[q].map(x=>(root+x)%12);
+    if(v.length<3||v[0].midi%12!==root||v.some(n=>!pcs.includes(n.midi%12)))console.error('Погана аплікатура',NN[root],q,v);
+  }
+})();
+function makeMotif(len,positions,lo,hi,key,scale){
+  const pent=[];for(let m=lo;m<=hi;m++)if(scale.includes((m-key+120)%12))pent.push(m);
+  let i=Math.floor(pent.length*rnd(.3,.6));const mot={};
+  for(const p of positions){i=Math.max(0,Math.min(pent.length-1,i+pickR([-2,-1,-1,0,1,1,2])));mot[p]=pent[i];}
+  return mot;
+}
+const MOT_RHY={ // позиції у двотактовому мотиві (32 кроки 1/16) для рівнів 1/2/3
+  lead:[[0,10,16,26],[0,6,10,16,22,26],[0,3,6,10,14,16,19,22,26,30]],
+  mel:[[0,8,16,24],[0,6,8,14,16,22,24],[0,4,6,8,12,14,16,20,22,24,28,30]]
+};
+let SONG=null;
+function chordQ(gk,off){const g=GENRES[gk],e=PAL[g.mode][g.st].find(x=>x[0]===off);return e?e[1]:(g.st==='power'?'5':'maj');}
+function mkChord(song,off){
+  const root=(song.key+off)%12,q=chordQ(song.genre,off);
+  return {off,root,q,pcs:QU[q].map(x=>(root+x)%12),name:NN[root]+QNAME[q],vo:voicing(root,q,song.pref)};
+}
+/* Синергія прогресії: квінтові ходи (корінь на кварту вгору) +6% кожен; відома послідовність жанру — корона ♛ +30%.
+   Одна функція і для картки, і для реального бонусу. */
+function synergy(offs,gk){
+  const g=GENRES[gk];let fifths=0;
+  for(let i=0;i<4;i++)if(((offs[(i+1)%4]-offs[i])%12+12)%12===5)fifths++;
+  let crown=null;
+  for(const F of g.famous)for(let r=0;r<4&&!crown;r++)if(F.every((o,i)=>offs[(i+r)%4]===o))crown=F;
+  return {fifths,crown,bonus:1+.06*fifths+(crown?.3:0),crownName:crown?offs.map(o=>ROMAN[g.mode][o]||'?').join('–'):''};
+}
+let lastGenre=null;
+function makeSong(prev,forced){
+  const keys=Object.keys(GENRES);
+  let genre=forced&&GENRES[forced]?forced:pickR(keys.filter(k=>k!==(prev&&prev.genre))||keys);
+  const g=GENRES[genre];
+  let key,tries=0;do{key=Math.floor(Math.random()*12);tries++;}while(prev&&prev.key===key&&tries<20);
+  const song={genre,key,mode:g.mode,pref:Math.random()<.5?'E':'A',bpm:Math.round(rnd(g.bpm[0],g.bpm[1])),swing:rnd(g.swing[0],g.swing[1])};
+  // старт: двоакордовий «вамп» з відомої послідовності жанру; такти 3–4 гравець добудовує картками акордів
+  let offs;tries=0;
+  do{const F=pickR(g.famous);offs=[F[0],F[1],F[0],F[1]];tries++;}while(synergy(offs,genre).crown&&tries<20);
+  song.prog=offs.map(o=>mkChord(song,o));
+  const all=[...new Set(MOT_RHY.lead[2])],allM=[...new Set(MOT_RHY.mel[2])],sc=PENT[g.mode];
+  song.lead=makeMotif(32,all,64,81,key,sc);song.mel=makeMotif(32,allM,67,84,key,sc);
+  song.groove=pickR([[0,3,7,10],[0,6,10,13],[0,3,8,11,14],[0,7,10,12]]);
+  song.riff=makeRiff(genre);
+  return song;
+}
+function songLabel(){
+  const g=GENRES[SONG.genre],sy=synergy(SONG.prog.map(c=>c.off),SONG.genre);
+  return g.name+' · '+SONG.prog.map(c=>c.name).join(' – ')+' · '+NN[SONG.key]+(SONG.mode==='minor'?' мінор':' мажор')+' · '+SONG.bpm+' BPM'
+    +(sy.crown?' · ♛ '+sy.crownName:'')+(sy.bonus>1?' · +'+Math.round((sy.bonus-1)*100)+'% шкоди':'');
+}
+const stepDur=()=>60/SONG.bpm/4;
+const chordAt=bar=>SONG.prog[bar%SONG.prog.length];
+const snap=(m,ch)=>{let best=m,bd=99;for(let d=-3;d<=3;d++){if(ch.pcs.includes(((m+d)%12+12)%12)&&Math.abs(d)<bd){bd=Math.abs(d);best=m+d;}}return best;};
+function motifNote(mot,bar,s,ch,positions){const p=(bar%2)*16+s;if(!positions.includes(p)||mot[p]===undefined)return null;return s%8===0?snap(mot[p],ch):mot[p];}
+
+/* ================= ЗВУКОВИЙ РУШІЙ ================= */
+let ctx=null,master,reverbIn,noiseBuf;
+function makeIR(dur,decay){
+  const sr=ctx.sampleRate,len=Math.floor(sr*dur),b=ctx.createBuffer(2,len,sr);
+  for(let c=0;c<2;c++){const d=b.getChannelData(c);let lp=0;
+    for(let i=0;i<len;i++){const t=i/len,a=.9-.82*t;lp+=a*((Math.random()*2-1)-lp);d[i]=lp*Math.pow(1-t,decay)*(i<sr*.012?i/(sr*.012):1);}}
+  return b;
+}
+function initAudio(){
+  const AC=window.AudioContext||window.webkitAudioContext;ctx=new AC({latencyHint:'playback'});
+  const comp=ctx.createDynamicsCompressor();comp.threshold.value=-20;comp.knee.value=12;comp.ratio.value=5;comp.attack.value=.006;comp.release.value=.25;
+  master=ctx.createGain();master.gain.value=.55;
+  const lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=11000; // трохи теплий, «лоу-фай» верх
+  const sat=ctx.createWaveShaper(),cv=new Float32Array(2048);for(let i=0;i<2048;i++){const x=i/1024-1;cv[i]=Math.tanh(x*1.1)/Math.tanh(1.1);}sat.curve=cv;
+  master.connect(comp);comp.connect(lp);lp.connect(sat);sat.connect(ctx.destination);
+  const conv=ctx.createConvolver();conv.buffer=makeIR(2.2,2.4);
+  reverbIn=ctx.createGain();const wet=ctx.createGain();wet.gain.value=.34;
+  reverbIn.connect(conv);conv.connect(wet);wet.connect(master);
+  noiseBuf=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate);
+  const nd=noiseBuf.getChannelData(0);for(let i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;
+}
+const EQ={
+  guitar:[['highpass',75,0,.7],['peaking',250,-2.5,1],['peaking',3500,3,.9],['highshelf',9000,2,.7]],
+  bass:[['highpass',35,0,.7],['peaking',110,3,1.2],['peaking',700,-3,1],['lowpass',2200,0,.7]],
+  piano:[['highpass',60,0,.7],['peaking',300,-2,1],['peaking',2500,1.5,.9],['lowpass',8000,0,.7]],
+  drums:[['highpass',30,0,.7],['lowpass',9000,0,.7]]
+};
+const MIX={guitar:.95,bass:.95,piano:.85,drums:.9};
+const SEND={guitar:.45,bass:.1,piano:.55,drums:.25};
+function makeBus(inst){
+  // педалі: дісторшн (waveshaper на вході), ділей (лінія з обмеженим фідбеком), ревер (більше посилу)
+  const input=ctx.createGain(),ws=ctx.createWaveShaper();input.connect(ws);let node=ws;
+  for(const [type,f,g,q] of EQ[inst]){const b=ctx.createBiquadFilter();b.type=type;b.frequency.value=f;b.gain.value=g;b.Q.value=q;node.connect(b);node=b;}
+  const out=ctx.createGain();out.gain.value=MIX[inst];node.connect(out);out.connect(master);
+  const send=ctx.createGain();send.gain.value=SEND[inst];out.connect(send);send.connect(reverbIn);
+  const dl=ctx.createDelay(2),fb=ctx.createGain(),dw=ctx.createGain();fb.gain.value=0;dw.gain.value=0;
+  out.connect(dl);dl.connect(fb);fb.connect(dl);dl.connect(dw);dw.connect(master);
+  return {input,out,ws,send,dl,fb,dw,inst};
+}
+const driveCurve=k=>{const c=new Float32Array(1024);for(let i=0;i<1024;i++){const x=i/512-1;c[i]=Math.tanh(x*k)/Math.tanh(k);}return c;};
+function applyPedalAudio(){
+  if(!audioOK||!slot.bus||!G)return;const b=slot.bus,P_=G.pedals,t=ctx.currentTime;
+  b.ws.curve=P_.drive?driveCurve(1.5+2*P_.drive):null;
+  b.dl.delayTime.setValueAtTime(Math.min(1.9,stepDur()*3),t);
+  // на барабанах — лише одне тихе відлуння без фідбеку, інакше густий біт розмивається в гул
+  const dr=b.inst==='drums';
+  b.fb.gain.setValueAtTime(P_.delay&&!dr?Math.min(.45,.2+.08*P_.delay):0,t);
+  b.dw.gain.setValueAtTime(P_.delay?(dr?.05+.02*P_.delay:.16+.06*P_.delay):0,t);
+  b.send.gain.setValueAtTime(SEND[b.inst]*(1+.7*(P_.reverb||0)),t);
+}
+/* --- синтез як запасний варіант без мережі --- */
+const bufCache=new Map();
+function ksRender(f,T,alpha,pp,len,sr){
+  const N=Math.max(2,Math.round(sr/f)),line=new Float32Array(N);
+  let prev=0;for(let i=0;i<N;i++){prev+=alpha*((Math.random()*2-1)-prev);line[i]=prev;}
+  const p=Math.max(1,Math.round(N*pp)),tmp=line.slice();
+  for(let i=0;i<N;i++)line[i]=tmp[i]-tmp[(i+p)%N];
+  let mean=0;for(let i=0;i<N;i++)mean+=line[i];mean/=N;
+  let mx=1e-9;for(let i=0;i<N;i++){line[i]-=mean;mx=Math.max(mx,Math.abs(line[i]));}
+  for(let i=0;i<N;i++)line[i]/=mx;
+  const g=Math.exp(-6.9/(f*T)),out=new Float32Array(len);let idx=0;
+  for(let n=0;n<len;n++){const cur=line[idx],nxt=line[(idx+1)%N];out[n]=cur;line[idx]=g*.5*(cur+nxt);idx=(idx+1)%N;}
+  return {data:out,rate:f*(N+.5)/sr};
+}
+function pianoRender(f,len,sr){
+  const out=new Float32Array(len);
+  const B=.00009*Math.pow(f/261,2)+.00002,K=Math.max(3,Math.min(11,Math.floor(sr*.42/f)));
+  const T0=Math.min(6,Math.max(1.6,5.2*Math.pow(110/f,.45)));
+  for(let k=1;k<=K;k++){
+    const fk=f*k*Math.sqrt(1+B*k*k);
+    const amp=Math.pow(k,-.95)*Math.abs(Math.sin(Math.PI*k/8+.0001))*Math.exp(-k*.05);
+    for(const [d,tm,aw] of [[1-.00035,1,0.6],[1+.00045,2.3,0.4]]){
+      const tau=T0*tm/(1+.35*(k-1)),dec=Math.exp(-1/(sr*tau)),w=2*Math.PI*fk*d/sr;
+      let e=amp*aw,ph=Math.random()*6.28,sn=Math.sin(ph),cs=Math.cos(ph);const ws=Math.sin(w),wc=Math.cos(w);
+      for(let n=0;n<len;n++){out[n]+=e*sn;const ns=sn*wc+cs*ws;cs=cs*wc-sn*ws;sn=ns;e*=dec;if(e<1e-5)break;}
+    }
+  }
+  for(let n=0;n<sr*.002&&n<len;n++)out[n]*=n/(sr*.002);
+  let mx=1e-9;for(let n=0;n<len;n++)mx=Math.max(mx,Math.abs(out[n]));
+  for(let n=0;n<len;n++)out[n]/=mx;
+  return {data:out,rate:1};
+}
+const pend=new Map(),msgs=new Map();let worker=null;
+try{
+  const code=`const ksRender=${ksRender.toString()};const pianoRender=${pianoRender.toString()};
+  onmessage=e=>{const m=e.data;if(m.ping){postMessage({pong:1});return;}const r=m.kind==='ks'?ksRender(m.f,m.T,m.alpha,m.pp,m.len,m.sr):pianoRender(m.f,m.len,m.sr);
+  postMessage({key:m.key,data:r.data,rate:r.rate},[r.data.buffer]);};`;
+  worker=new Worker(URL.createObjectURL(new Blob([code],{type:'text/javascript'})));
+  const w=worker;
+  w.onmessage=e=>{if(e.data.pong){if(w.__ok)w.__ok();return;}finishBuf(e.data.key,e.data.data,e.data.rate);};
+  w.onerror=()=>{if(worker===w)worker=null;for(const [k,m] of msgs)if(pend.has(k))mainRender(m);};
+}catch(err){worker=null;}
+function workerReady(){return new Promise(res=>{
+  if(!worker)return res(false);const w=worker;
+  const to=setTimeout(()=>{if(worker===w)worker=null;res(false);},1500);
+  w.__ok=()=>{clearTimeout(to);res(true);};
+  try{w.postMessage({ping:1});}catch(e){clearTimeout(to);worker=null;res(false);}
+});}
+function resolveBuf(key,val){bufCache.set(key,val);const p=pend.get(key);pend.delete(key);if(p)p.forEach(r=>r());}
+function finishBuf(key,data,rate){
+  const sr=ctx.sampleRate,len=data.length,fadeN=Math.floor(sr*.05);
+  for(let i=0;i<fadeN;i++)data[len-1-i]*=i/fadeN;
+  const ab=ctx.createBuffer(1,len,sr);ab.getChannelData(0).set(data);resolveBuf(key,{buf:ab,rate});
+}
+function mainRender(m){setTimeout(()=>{if(!pend.has(m.key))return;const r=m.kind==='ks'?ksRender(m.f,m.T,m.alpha,m.pp,m.len,m.sr):pianoRender(m.f,m.len,m.sr);finishBuf(m.key,r.data,r.rate);},0);}
+/* --- справжні семпли: FluidR3 GM (CC BY 3.0) через jsDelivr --- */
+const SF_BASES=['https://cdn.jsdelivr.net/gh/gleitz/midi-js-soundfonts@master/FluidR3_GM/','https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/']; // jsDelivr віддає 403 на деякі файли — тоді GitHub Pages
+// семпли ключуються НАЗВОЮ семпла (жанр міняє гітару: акустика / дисторшн / нейлон…)
+const SF={},sfFetch={};
+const noteName=m=>NN[m%12]+(Math.floor(m/12)-1);
+function fetchSF(name){
+  if(!name)return Promise.resolve(null);
+  const get=(i=0)=>i>=SF_BASES.length?Promise.resolve(null):fetch(SF_BASES[i]+name+'-mp3.js').then(r=>r.ok?r.text():get(i+1)).catch(()=>get(i+1));
+  return sfFetch[name]=sfFetch[name]||get().then(t=>{
+    if(!t)return null;const map={},re=/"([A-G]b?-?\d)":\s*"data:audio\/mp3;base64,([^"]+)"/g;let m;
+    while((m=re.exec(t)))map[m[1]]=m[2];return Object.keys(map).length>20?map:null;
+  }).then(map=>{if(!map)delete sfFetch[name];return map;}); // невдача не кешується — наступний забіг спробує знову
+}
+function dropOtherSamples(keep){ // звільнити пам'ять від семплів попередніх жанрів (важливо на телефоні)
+  for(const k of [...bufCache.keys()])if(!k.startsWith(keep+':'))bufCache.delete(k);
+  for(const n in SF)if(n!==keep)delete SF[n];
+  for(const n in sfFetch)if(n!==keep)delete sfFetch[n];
+}
+function b64buf(s){const bin=atob(s),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u.buffer;}
+const srcName=inst=>slot.sf&&SF[slot.sf]?slot.sf:'syn-'+inst;
+const bkey=(inst,midi)=>srcName(inst)+':'+midi;
+function reqBuf(inst,midi){
+  const key=bkey(inst,midi);if(bufCache.has(key))return Promise.resolve();
+  return new Promise(res=>{
+    if(pend.has(key)){pend.get(key).push(res);return;}pend.set(key,[res]);
+    const sf=slot.sf&&SF[slot.sf]&&SF[slot.sf][noteName(midi)];
+    if(sf){ctx.decodeAudioData(b64buf(sf)).then(ab=>resolveBuf(key,{buf:ab,rate:1})).catch(()=>resolveBuf(key,{buf:ctx.createBuffer(1,1,ctx.sampleRate),rate:1}));return;}
+    const sr=ctx.sampleRate,f=mtof(midi);let m;
+    if(inst==='guitar')m={kind:'ks',T:2.2,alpha:.55,pp:.13,len:Math.floor(sr*2.8)};
+    else if(inst==='bass')m={kind:'ks',T:3.2,alpha:.22,pp:.25,len:Math.floor(sr*3)};
+    else m={kind:'pn',len:Math.floor(sr*2.8)};
+    m.key=key;m.f=f;m.sr=sr;msgs.set(key,m);
+    if(worker)worker.postMessage(m);else mainRender(m);
+  });
+}
+function getBuf(inst,midi){const b=bufCache.get(bkey(inst,midi));if(!b)reqBuf(inst,midi);return b||null;}
+const CFG={guitar:{gain:.95,rel:.1},bass:{gain:.9,rel:.07},piano:{gain:.7,rel:.3}};
+const slot={inst:null,sf:null,bus:null,voices:[],strings:[]};
+let NOTE_LOG=null; // для тестів: window.__game.logNotes()
+function playBuffered(t,ev){
+  const cfg=CFG[slot.inst],b=getBuf(slot.inst,ev.midi);
+  const tt=t+(ev.off||0)+(ev.jit?rnd(-.004,.004):0);
+  if(ev.clear)for(let i=0;i<6;i++)if(!ev.clear.has(i)&&slot.strings[i]){slot.strings[i].gain.setTargetAtTime(0,tt,.015);slot.strings[i]=null;}
+  if(NOTE_LOG&&NOTE_LOG.length<2000)NOTE_LOG.push({t:tt,midi:ev.midi,str:ev.str,vel:ev.vel,dir:ev.dir,buf:!!b});
+  if(!b)return;
+  const src=ctx.createBufferSource();src.buffer=b.buf;src.playbackRate.value=b.rate;
+  const env=ctx.createGain(),fade=ctx.createGain();
+  let hold=(ev.dur||4)*stepDur(),stopT=tt+hold+cfg.rel*7+.1;
+  // одна нота на струну: нова нота на тій самій струні глушить попередню (як пальці на грифі)
+  if(ev.str!==undefined){const old=slot.strings[ev.str];if(old)old.gain.setTargetAtTime(0,tt,.012);slot.strings[ev.str]=fade;}
+  const vel=Math.min(1,ev.vel*cfg.gain*(ev.jit?rnd(.9,1.06):1));
+  let out=env;
+  if(ev.art==='dead'){
+    /* «Чак» — приглушені лівою рукою струни: висоти майже нема, лише глухий удар по корпусу (темний фільтр, ~20 мс)
+       + шкряб медіатора/пальців по обмотці (смуга шуму 2–4 кГц). Це звук, а не тиша після обриву. */
+    const lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=rnd(520,700);lp.Q.value=1.4;
+    src.connect(lp);lp.connect(env);out=null;
+    env.gain.setValueAtTime(vel*1.6,tt);env.gain.setTargetAtTime(.0001,tt+.004,.022);stopT=tt+.2;
+    const ns=ctx.createBufferSource(),nf=ctx.createBiquadFilter(),ng=ctx.createGain();ns.buffer=noiseBuf;
+    nf.type='bandpass';nf.frequency.value=rnd(2400,3600);nf.Q.value=.9;
+    ng.gain.setValueAtTime(vel*.28,tt);ng.gain.exponentialRampToValueAtTime(.0001,tt+.035);
+    ns.connect(nf);nf.connect(ng);ng.connect(fade);ns.start(tt,Math.random()*1.5);ns.stop(tt+.05);
+  }else if(ev.art==='pm'){
+    /* Палм-мют — ребро долоні на струнах біля підставки: нота чутна, але тупа й швидко гасне (не обрив). */
+    const lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=900+900*Math.min(1,ev.vel);lp.Q.value=.9;
+    src.connect(lp);lp.connect(env);out=null;
+    env.gain.setValueAtTime(vel*1.15,tt);env.gain.setTargetAtTime(.0001,tt+.01,.075);stopT=tt+.6;
+  }else env.gain.setValueAtTime(vel,tt);
+  if(!ev.art)env.gain.setTargetAtTime(.0001,tt+hold,cfg.rel);
+  if(ev.vib){const l=ctx.createOscillator(),lg=ctx.createGain();l.frequency.value=5.6;
+    lg.gain.setValueAtTime(0,tt);lg.gain.setValueAtTime(0,tt+.2);lg.gain.linearRampToValueAtTime(30,tt+.5);
+    l.connect(lg);lg.connect(src.detune);l.start(tt);l.stop(stopT);}
+  if(ev.slide){src.detune.setValueAtTime(-200,tt);src.detune.linearRampToValueAtTime(0,tt+.08);}
+  if(out)src.connect(env);env.connect(fade);fade.connect(slot.bus.input);
+  src.start(tt);src.stop(stopT);
+  slot.voices.push(fade);if(slot.voices.length>64)slot.voices.shift();
+}
+/* Справжні семпли ударних:
+   acoustic — Pearl Master Studio (enoe, CC BY 3.0, через oramics/sampled);
+   electro — teropa/drumkit (DWDS deep-house kit CC BY; тарілки й томи CC0). */
+const DK_SRC={
+  acoustic:{base:'https://cdn.jsdelivr.net/gh/oramics/sampled@master/DRUMS/pearl-master-studio/samples/',
+    alt:'https://raw.githubusercontent.com/oramics/sampled/master/DRUMS/pearl-master-studio/samples/',
+    files:{kick:['kick-01.wav'],snare:['snare-01.wav','snare-02.wav'],hat:['hihat-closed.wav'],ohat:['hihat-open.wav'],
+      crash:['crash-01.wav','crash-02.wav'],ride:['ride-01.wav','ride-02.wav'],tom:['tom-01.wav','tom-02.wav','tom-03.wav']}},
+  electro:{base:'https://cdn.jsdelivr.net/npm/@teropa/drumkit/src/assets/',
+    files:{kick:['kick.mp3'],snare:['snare.mp3','snare2.mp3'],hat:['hatClosed.mp3','hatClosed2.mp3'],ohat:['hatOpen.mp3'],
+      crash:['crash.mp3'],ride:['ride.mp3'],tom:['tomHigh.mp3','tomMid.mp3','tomLow.mp3']}}
+};
+const DK_GAIN={kick:1,snare:.85,hat:.55,ohat:.5,crash:.55,ride:.5,tom:.8};
+const DKITS={};let DKIT=null;
+function loadKit(name){
+  if(DKITS[name])return DKITS[name];
+  const src=DK_SRC[name],kit={},bases=[src.base].concat(src.alt?[src.alt]:[]);
+  // jsDelivr інколи віддає 403 на окремі файли — тоді пробуємо GitHub напряму
+  const get=(f,i=0)=>i>=bases.length?Promise.resolve(null):fetch(bases[i]+f).then(r=>r.ok?r.arrayBuffer():get(f,i+1)).catch(()=>get(f,i+1));
+  return DKITS[name]=Promise.all(Object.entries(src.files).map(([k,list])=>Promise.all(list.map(f=>
+    get(f).then(b=>b?ctx.decodeAudioData(b):null).catch(()=>null)))
+    .then(bufs=>{kit[k]=bufs.filter(Boolean);}))).then(()=>{if(!kit.kick||!kit.kick.length){delete DKITS[name];return null;}return kit;});
+}
+const lastSample={};
+function playDrumSample(t,ev,d,v){
+  const list=DKIT&&DKIT[ev.drum];if(!list||!list.length)return false; // напр. 'rim' — лишається синтез
+  let i;if(ev.drum==='tom')i=Math.min(list.length-1,(ev.f||140)>=160?0:(ev.f||140)>=120?1:2);
+  else{i=Math.floor(Math.random()*list.length);if(list.length>1&&i===lastSample[ev.drum])i=(i+1)%list.length;lastSample[ev.drum]=i;} // не той самий семпл двічі поспіль
+  const src=ctx.createBufferSource(),g=ctx.createGain(),f=ctx.createBiquadFilter();
+  src.buffer=list[i];
+  // кожен удар трохи інший: висота ±3%, старт трохи всередині атаки, тихий удар — темніший (як справжній пластик/тарілка)
+  src.playbackRate.value=1+rnd(-.03,.03);
+  f.type='lowpass';f.frequency.value=1800+16000*Math.pow(Math.min(1,v),1.6);f.Q.value=.5;
+  g.gain.value=Math.min(1.2,v*(DK_GAIN[ev.drum]||.8));
+  src.connect(f);f.connect(g);g.connect(d);src.start(t,rnd(0,.003));
+  return true;
+}
+/* «Людина за установкою»: сила удару з акцентами (сильні долі гучніші), випадковий розкид сили,
+   подвійна бочка двома ногами (друга нога трохи слабша), мікрозсуви часу (хет «гуляє» більше за бочку). */
+function humanize(t,ev){
+  let v=ev.vel*rnd(.86,1.06),dt=0;
+  const sd=stepDur(),st=Math.floor(((t-seq.nextTime)/sd)+.01+seq.step)&15; // floor: джазовий свінг зсуває до 0,66 кроку // приблизний крок у такті
+  if(ev.drum==='kick'){
+    const lk=slot.lastKick;if(lk!==undefined&&t-lk<sd*2.2){slot.kickFoot=!slot.kickFoot;if(slot.kickFoot)v*=.84;}else slot.kickFoot=false;
+    slot.lastKick=t;dt=rnd(-.004,.004);}
+  else if(ev.drum==='hat'||ev.drum==='ride'){v*=st%4===0?1:st%2===0?.82:.68;dt=rnd(-.008,.008);}
+  else if(ev.drum==='snare'){dt=rnd(-.004,.006);}
+  else dt=rnd(-.005,.005);
+  return {t:Math.max(ctx.currentTime+.002,t+dt),v:Math.min(1.15,v)};
+}
+/* Глушіння барабанів: новий удар того самого барабана обриває хвіст попереднього (як на справжній установці).
+   Без цього на високому темпі хвости бочки по пів секунди накладалися в гудіння — «вертоліт». */
+const DRUM_GROUP={kick:'k',snare:'s',rim:'s',hat:'h',ohat:'h',ride:'r',crash:'c',tom:'t'};
+function drum(t,ev){
+  t+=ev.off||0;const hm=humanize(t,ev);t=hm.t;const v=hm.v;
+  const grp=DRUM_GROUP[ev.drum]||ev.drum,vg=ctx.createGain();vg.connect(slot.bus.input);
+  slot.drumv=slot.drumv||{};const old=slot.drumv[grp];
+  // тарілки (крэш, райд) не глушимо — вони мають дзвеніти до кінця, як справжні
+  // удари на ту саму долю (різниця < 20 мс, напр. малий + брейк) звучать разом; глушить лише наступна доля
+  if(old&&Math.abs(t-old.t)<.02)old.gs.push(vg);
+  else{if(old&&old.t<t&&grp!=='c'&&grp!=='r')for(const g of old.gs)g.gain.setTargetAtTime(0,t,grp==='h'?.008:.02);
+    slot.drumv[grp]={gs:[vg],t};}
+  const d=vg;
+  if(playDrumSample(t,ev,d,v))return;
+  const nz=(dur,type,freq,q,gain,t0)=>{const s=ctx.createBufferSource();s.buffer=noiseBuf;const f=ctx.createBiquadFilter();f.type=type;f.frequency.value=freq;f.Q.value=q;
+    const g=ctx.createGain();g.gain.setValueAtTime(gain,t0);g.gain.exponentialRampToValueAtTime(.0001,t0+dur);s.connect(f);f.connect(g);g.connect(d);s.start(t0,Math.random()*1.5);s.stop(t0+dur+.05);};
+  if(ev.drum==='kick'){
+    const o=ctx.createOscillator(),g=ctx.createGain();
+    o.frequency.setValueAtTime(120,t);o.frequency.exponentialRampToValueAtTime(48,t+.12);
+    g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+.5);
+    o.connect(g);g.connect(d);o.start(t);o.stop(t+.55);nz(.01,'highpass',2000,.7,.18*v,t);
+  }else if(ev.drum==='snare'){ // м'який лоу-фай малий: більше шуму, менше «тону»
+    const o=ctx.createOscillator(),g=ctx.createGain();o.type='triangle';o.frequency.setValueAtTime(190,t);o.frequency.exponentialRampToValueAtTime(150,t+.08);
+    g.gain.setValueAtTime(.35*v,t);g.gain.exponentialRampToValueAtTime(.001,t+.14);o.connect(g);g.connect(d);o.start(t);o.stop(t+.18);
+    nz(.22,'bandpass',2200,.6,.7*v,t);nz(.08,'highpass',5000,.7,.2*v,t);
+  }else if(ev.drum==='rim'){nz(.04,'bandpass',1800,4,.6*v,t);}
+  else if(ev.drum==='hat'){nz(.035,'highpass',8000,.8,.22*v,t);}
+  else if(ev.drum==='ohat'){nz(.25,'highpass',7000,.8,.2*v,t);}
+  else if(ev.drum==='ride'){nz(.5,'bandpass',5200,2.5,.18*v,t);nz(.08,'highpass',9000,.8,.12*v,t);}
+  else if(ev.drum==='crash'){nz(1.6,'highpass',4500,.6,.22*v,t);nz(1,'bandpass',7000,.8,.12*v,t);}
+  else if(ev.drum==='tom'){const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.setValueAtTime(ev.f||140,t);o.frequency.exponentialRampToValueAtTime((ev.f||140)*.7,t+.2);
+    g.gain.setValueAtTime(.6*v,t);g.gain.exponentialRampToValueAtTime(.001,t+.3);o.connect(g);g.connect(d);o.start(t);o.stop(t+.32);}
+}
+const buses={};
+function useInst(inst){
+  if(slot.inst!==inst)slot.sf=null;
+  slot.inst=inst;slot.voices=[];slot.strings=[];
+  for(const k in buses)buses[k].out.gain.setValueAtTime(0,ctx.currentTime);
+  if(!buses[inst])buses[inst]=makeBus(inst);
+  buses[inst].out.gain.setValueAtTime(MIX[inst],ctx.currentTime);
+  slot.bus=buses[inst];
+}
+function fire(t,evs){for(const ev of evs){if(ev.silent)continue;if(ev.drum)drum(t,ev);else playBuffered(t,ev);}}
+
+/* ================= ШАРИ ПАРТІЙ =================
+   steps(ch,s,bar,P) → ноти на кроці 1/16, де P = рівень малюнка (1..3).
+   Рівні 1–3 змінюють саму партію (те, що звучить), 4–5 — лише силу. Макс. 5 шарів на інструмент. */
+const MAXL=5,CONE=30*Math.PI/180; // кут гітарного конуса (повний), градуси → радіани
+const E=(midi,vel,dur,o)=>Object.assign({midi,vel,dur},o||{});
+const D=(drum,vel,o)=>Object.assign({drum,vel},o||{});
+const P=L=>Math.min(3,L);
+let DMGK=1,CUR_K=1,BAL={};const lv=L=>(1+.3*(L-1))*CUR_K; // CUR_K ставиться перед кожною атакою шару
+/* Типи удару по струнах:
+   D — вниз по всіх струнах (7–9 мс між струнами); U — вгору лише по верхніх 3–4, тихіше;
+   M — палм-мют (метал/рок «чаги»): нижні струни, дуже коротко; C — коротке джазове «комп»-взяття;
+   K — реґі-«скенк»: різкий короткий удар по верхніх струнах; B — бас великим пальцем (шансон «умпа»). */
+function strum(ch,dir,vel,dur,s){
+  const v=ch.vo;let notes,gap,d=dur,vv=vel,clear=false;
+  if(dir==='D'){notes=v.slice();gap=rnd(.007,.009);clear=true;}
+  else if(dir==='U'){notes=v.filter(n=>n.str>=2).slice(-4).reverse();if(!notes.length)notes=[v[v.length-1]];gap=rnd(.005,.007);vv=vel*.68;}
+  else if(dir==='M'){notes=v.slice(0,3);gap=.003;d=.5;vv=vel*.85;clear=true;}
+  else if(dir==='C'){notes=v.slice();gap=.004;d=1.3;vv=vel*.75;clear=true;}
+  else if(dir==='K'){notes=v.slice(-3).reverse();gap=.004;d=.45;vv=vel*.8;}
+  else{const n=v[s===8&&v.length>1?1:0];notes=[n];gap=0;d=4;vv=vel*.9;} // 'B'
+  const evs=notes.map((n,i)=>E(n.midi,vv*(1-i*.035),d,{str:n.str,off:i*gap,dir,jit:true,art:dir==='M'?'pm':undefined}));
+  if(clear)evs[0].clear=new Set(notes.map(n=>n.str)); // удар глушить струни, яких немає в новому акорді
+  return evs;
+}
+const STRUMS={
+  lofi:{1:{0:'D',4:'D',8:'D',12:'D'},2:{0:'D',4:'D',6:'U',8:'D',12:'D',14:'U'},3:{0:'D',4:'D',6:'U',10:'U',12:'D',14:'U'}},
+  // поп: «D · DU · UDU» — найпоширеніший поп-бій (вниз 1, 2; вгору на «і» 2, 3, 4)
+  pop:{1:{0:'D',4:'D',8:'D',12:'D'},2:{0:'D',4:'D',6:'U',10:'U',12:'D',14:'U'},3:{0:'D',3:'U',4:'D',6:'U',10:'U',11:'D',12:'D',14:'U'}},
+  rock:{1:{0:'D',4:'D',8:'D',12:'D'},2:{0:'D',2:'D',4:'D',6:'D',8:'D',10:'D',12:'D',14:'D'},3:{0:'D',3:'M',4:'D',6:'D',8:'D',11:'M',12:'D',14:'D'}},
+  metal:{1:{0:'M',2:'M',4:'M',6:'M',8:'M',10:'M',12:'M',14:'M'},2:{0:'D',2:'M',3:'M',4:'M',6:'M',7:'M',8:'M',10:'M',11:'M',12:'M',14:'M',15:'M'},
+    3:{0:'D',1:'M',2:'M',3:'M',4:'M',5:'M',6:'M',7:'M',8:'D',9:'M',10:'M',11:'M',12:'M',13:'M',14:'M',15:'M'}},
+  jazz:{1:{0:'C',4:'C',8:'C',12:'C'},2:{0:'C',6:'C',8:'C',14:'C'},3:{0:'C',3:'C',6:'C',10:'C',12:'C',14:'C'}},
+  // шансон: «умпа» (бас–акорд) → «шістка» (бас, вниз, вгору, вгору, вниз, вгору) → «вісімка» з басом
+  chanson:{1:{0:'B',4:'D',8:'B',12:'D'},2:{0:'B',4:'D',6:'U',10:'U',12:'D',14:'U'},3:{0:'B',2:'D',4:'U',6:'U',8:'B',10:'D',12:'U',14:'U'}},
+  // реґі: скенк — короткий приглушений «чоп» на «і» 2-ї та 4-ї долі; далі подвійний чоп
+  reggae:{1:{6:'K',14:'K'},2:{4:'K',6:'K',12:'K',14:'K'},3:{6:'K',7:'K',14:'K',15:'K'}}
+};
+// лоу-фай: бочка на 1 + «привид» перед малим, без бочки на 3; поп: 1, «і» 2, 3, «і» 4 (підхоп)
+const KICKS={lofi:[[0,3],[0,3,10],[0,3,7,10]],pop:[[0,8],[0,6,8,14],[0,6,8,11,14]],rock:[[0,8],[0,8,10],[0,3,8,10]],
+  metal:[[0,4,8,12],[0,2,4,6,8,10,12,14],[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]],jazz:[[0],[0,10],[0,7,10]],
+  chanson:[[0,8],[0,8,14],[0,6,8,14]],reggae:[[8],[8,14],[0,8,14]],industrial:[[0,4,8,12],[0,4,8,10,12],[0,4,6,8,12,14]]};
+// метал: на рівнях 2–3 бочка грає разом із рифом (подвійна бочка «в замок» з гітарою), а не суцільними 16-ми
+const kickOn=(s,bar,p)=>{const g=GK();if(g==='metal'&&p>1&&SONG.riff){const r=riffAt(p,bar,s);return !!r&&(p<3||s%2===0||r.k==='D');}
+  if(g==='industrial'&&p>1&&SONG.riff){const r=riffAt(p,bar,s);return !!r&&(p>2||s%2===0);} // індастріал: бочка «в замок» з «чагами», восьмими
+  return (KICKS[g]||KICKS.lofi)[p-1].includes(s);};
+const SN_STD=[[[4,1],[12,1]],[[14,.28]],[[6,.5,'rim'],[9,.5,'rim']]];
+const SNARES={lofi:SN_STD,pop:SN_STD,rock:SN_STD,metal:SN_STD,chanson:SN_STD,
+  jazz:[[[12,.6,'rim']],[[6,.3]],[[3,.3],[10,.35]]],reggae:[[[8,.9,'rim']],[[14,.3]],[[4,.4,'rim'],[12,.4,'rim']]]};
+// ритм акордів клавішних: крок → тривалість (від'ємна = випередити наступний акорд)
+const KCH={
+  // лоу-фай: Rhodes-септакорди, що комп'юють між долями
+  lofi:[{0:4,6:2,10:2},{0:2.5,3:1,6:2,10:2,14:1},{0:2.5,3:1,6:2,8:1,10:2,14:-4}],
+  pop:[{0:3,4:3,8:3,12:3},{0:1.6,2:1.6,4:1.6,6:1.6,8:1.6,10:1.6,12:1.6,14:1.6},{0:1.6,2:1.6,4:1.6,6:1.6,8:1.6,10:1.6,12:1.6,14:-4}],
+  rock:[{0:15,8:7},{0:6,6:2,8:6,14:2},{0:2,2:2,4:2,6:2,8:2,10:2,12:2,14:-3}],
+  metal:[{0:16},{0:8,8:8},{0:4,4:4,8:4,12:-4}],
+  industrial:[{0:16},{0:8,8:8},{0:6,6:2,8:6,14:-2}],
+  jazz:[{0:3,6:2},{0:2,6:2,10:2},{0:2,3:1,6:2,10:2,14:-3}],
+  chanson:[{4:2,12:2},{4:2,6:1,12:2,14:1},{2:1,4:2,6:1,10:1,12:2,14:-1.5}],
+  // реґі: орган-«бабл» — шістнадцяті, що обрамлюють слабкі долі
+  reggae:[{6:1,14:1},{5:.6,6:1,7:.6,13:.6,14:1,15:.6},{2:.7,5:.6,6:1,7:.6,10:.7,13:.6,14:1,15:-.6}]
+};
+const STRUM_ATK={D:[185,11,260],U:[130,6,150],M:[120,4.5,90],C:[160,8,180],K:[150,9,200],B:[170,7,160]};
+const LAYERS={
+  guitar:[
+    {id:'strum',name:'Бій',lv:['Базовий малюнок жанру','Густіший малюнок','Повний малюнок жанру'],
+      desc:'Удар по струнах у стилі жанру — хвиля-конус у найближчого ворога.',
+      // якщо є «Глушіння», на 2 і 4 долю замість удару звучить чак (класичний малюнок «бій-чак»)
+      // (звук прибираємо, а удар лишається — щоб «Глушіння» не послаблювало гітариста)
+      steps:(ch,s,bar,L)=>{let e;
+        if(SONG.riff){const r=riffAt(P(L),bar,s);if(!r)return[]; // метал/індастріал/рок: риф із «чагів» і пауер-акордів
+          const b=lowRoot((ch.root+r.off)%12),ns=r.k==='M'?[b,b+7]:[b,b+7,b+12];
+          e=ns.map((m,i)=>E(m,r.k==='M'?.8:.95,r.dur,{str:i,off:i*.004,dir:r.k,jit:true,art:r.k==='M'?'pm':undefined}));e[0].clear=new Set(ns.map((_,i)=>i));}
+        else{const d=(STRUMS[GK()]||STRUMS.lofi)[P(L)][s];if(!d)return[];e=strum(ch,d,.85,16,s);}
+        const ck=G&&G.layers.chuck?P(G.layers.chuck):0;
+        if(ck&&(s===4||s===12||(ck>1&&s===7)||(ck>2&&s===15)))e.forEach(x=>x.silent=true);return e;},
+      atk:(e,L)=>{const a=STRUM_ATK[e[0].dir]||STRUM_ATK.D;cone(a[0],a[1]*lv(L),a[2]);}},
+    {id:'chuck',name:'Глушіння',lv:['Глухий удар долонею на 2 і 4','+ удар перед третьою долею','+ ще один в кінці такту'],
+      desc:'Перкусійний «чак» по заглушених струнах — коротка хвиля, що сильно відкидає.',
+      steps:(ch,s,bar,L)=>{if(!([4,12].concat(P(L)>1?[7]:[],P(L)>2?[15]:[])).includes(s))return[];
+        const e=ch.vo.map((n,i)=>E(n.midi,.75,.5,{str:n.str,off:i*.005,dir:'M',art:'dead',jit:true}));e[0].clear=new Set(ch.vo.map(n=>n.str));return e;},
+      atk:(e,L)=>cone(115,5*lv(L),560)},
+    {id:'pick',name:'Перебір',lv:['Переливи між ударами бою: 4 ноти на такт','6 нот на такт','Безперервний перебір по шістнадцятих'],
+      desc:'Окремі струни між ударами бою — часті вузькі хвилі.',
+      // лише непарні шістнадцяті: бій на них ніколи не грає, тож щипки не тонуть в акорді
+      steps:(ch,s,bar,L)=>{if(!(s%2))return[];const p=P(L),use=p===1?[3,7,11,15]:p===2?[1,3,7,9,11,15]:[1,3,5,7,9,11,13,15];
+        const ck=G&&G.layers.chuck?P(G.layers.chuck):0;if(!use.includes(s)||(s===7&&ck>1)||(s===15&&ck>2))return[]; // не заважати чаку
+        const v=ch.vo,k=use.indexOf(s),order=[2,3,4,3,5,4,3,2],n=v[Math.max(0,Math.min(v.length-1,order[k%8]-(6-v.length)))];
+        return[E(n.midi,.95,6,{str:n.str,jit:true})];},
+      atk:(e,L)=>cone(140,4.5*lv(L),110)},
+    {id:'lead',name:'Мелодія',lv:['Кілька нот на два такти','Щільніша фраза','Повна фраза з підтяжками й вібрато'],
+      desc:'Мелодія на верхніх струнах — далекий промінь-конус.',
+      steps:(ch,s,bar,L)=>{const m=motifNote(SONG.lead,bar,s,ch,MOT_RHY.lead[P(L)-1]);if(m===null)return[];
+        return[E(m,.85,6,{str:m>=64?5:4,off:.05,vib:true,slide:P(L)>2&&s%8===6})];},
+      atk:(e,L)=>cone(340,12*lv(L),200)},
+    {id:'harm',name:'Флажолети',lv:['Один дзвін раз на два такти','Два дзвони','Три дзвони щотакту'],
+      desc:'Скляні високі ноти — віяло з кількох конусів.',
+      steps:(ch,s,bar,L)=>{if(s!==0||(P(L)<3&&bar%2))return[];return tones(ch,76,P(L)).map((m,i)=>E(m,.45,16,{off:i*.09}));},
+      atk:(e,L)=>{const n=e.length,sp=.7;for(let i=0;i<n;i++)cone(220,7*lv(L),180,n>1?(i/(n-1)-.5)*sp*2:0);}}
+  ],
+  drums:[
+    {id:'kick',name:'Бочка',lv:['Базовий біт жанру','Густіший біт','Повний грув жанру'],desc:'Хвиля навколо на кожен удар.',
+      steps:(ch,s,bar,L)=>kickOn(s,bar,P(L))?[D('kick',s===0?1:GK()==='jazz'?.55:GK()==='lofi'&&s===3?.5:.8)]:[],atk:(e,L)=>ring(95,9*lv(L),'#d6604d',3)},
+    {id:'snare',name:'Малий',lv:['Основні удари жанру','+ тихі «привиди»','+ ще більше прикрас'],desc:'Широка хвиля на сильний удар, мала — на тихий.',
+      steps:(ch,s,bar,L)=>{const t=(SNARES[GK()]||SNARES.lofi),p=P(L);for(let l=0;l<p;l++)for(const [st,v,k] of t[l])if(st===s)return[D(k||'snare',v)];return[];},
+      atk:(e,L)=>e[0].vel>.5?ring(170,13*lv(L),'#f2aca0',4):ring(80,4*lv(L),'#f2aca0',2)},
+    {id:'hat',name:'Тарілки ритму',lv:['Основний ритм (хет або райд)','+ тихі проміжні удари','+ відкритий хет'],desc:'Іскри б’ють найближчих ворогів.',
+      steps:(ch,s,bar,L)=>{const p=P(L),g=GK();
+        if(g==='jazz'){if(p>2&&(s===4||s===12))return[D('ride',.6),D('hat',.35)];if([0,4,8,12].includes(s))return[D('ride',.6)];if(p>1&&(s===6||s===14))return[D('ride',.4)];if(p>2&&(s===4||s===12))return[D('hat',.3)];return[];}
+        // реґі one drop: восьмі без першої долі, відкритий хет на кінці такту веде в наступний
+        if(g==='reggae'){if(p>2&&s===14)return[D('ohat',.55)];if(s%2===0&&s!==0)return[D('hat',s%4===2?.6:.4)];if(p>1&&s%2)return[D('hat',.16)];return[];}
+        if(g==='metal'&&p>2&&s%4===0)return[D('ride',.55)];
+        const os=g==='lofi'?15:14; // лоу-фай: відкритий хет на останню шістнадцяту
+        if(p>2&&s===os)return[D('ohat',.6)];if(s%2===0)return[D('hat',s%4===0?.7:.45)];if(p>1)return[D('hat',.18)];return[];},
+      atk:(e,L)=>zap(1,230,(e[0].vel>.3?4:2)*lv(L),'#ffe2b0')},
+    {id:'crash',name:'Тарілка',lv:['Раз на 4 такти','Раз на 2 такти','Щотакту'],desc:'Величезна хвиля, що відкидає всіх.',
+      steps:(ch,s,bar,L)=>s===0&&bar%[4,2,1][P(L)-1]===0?[D('crash',.55)]:[],atk:(e,L)=>ring(270,10*lv(L),'#ffe2b0',2,480)},
+    {id:'fill',name:'Брейк',lv:['Дріб малого в кінці 4-го такту','Довший дріб','Дріб по томах'],desc:'Серія хвиль наприкінці фрази.',
+      steps:(ch,s,bar,L)=>{if(bar%4!==3)return[];const p=P(L),from=[12,10,8][p-1];if(s<from)return[];
+        return p>2&&s<12?[D('tom',.7,{f:[180,150,120,100][s-8]})]:[D('snare',.45+.08*(s-from))];},
+      atk:(e,L)=>ring(130,7*lv(L),'#f2aca0',3)}
+  ],
+  bass:[
+    {id:'root',name:'Основа',lv:['Базова партія жанру','Густіша партія','+ підходи до наступного акорду'],desc:'Важка хвиля, що пробиває ряди.',
+      steps:(ch,s,bar,L)=>{const p=P(L),r=up(ch.root,33),g=GK(),t=tones(ch,r,4),x=(n,v,d)=>[E(n,v,d,{str:0})];
+        if(p>2&&s===14){const nr=up(chordAt(bar+1).root,33);return x(nr-1,.75,2);}
+        if(g==='pop'&&p===1){return [0,6,8,14].includes(s)?x(r,s%8?.75:.95,s%8?1.6:5):[];} // сучасний поп: бас іде за бочкою
+        if(g==='pop'||g==='rock'){if(s%2)return[];if(p>1&&(s===6||s===10))return x(r+12,.7,1.6);return x(r,s%4?.7:.95,1.8);}
+        if((g==='metal'||g==='industrial')&&SONG.riff){const rf=riffAt(p,bar,s);if(!rf)return[]; // бас дублює риф
+          return x(up((ch.root+rf.off)%12,33),rf.k==='M'?.8:.95,rf.k==='M'?.7:rf.dur);}
+        if(g==='jazz'){if(s%4)return[];if(p===1)return s===0?x(r,.9,7):s===8?x(t[2],.8,7):[];return x(t[s>>2]||r,.85,3.6);}
+        if(g==='chanson'){if(s===0)return x(r,.95,3.5);if(s===8)return x(t[2]||r+7,.85,3.5);if(p>1&&s===12)return x(t[1]||r+4,.7,1.8);return[];}
+        // реґі: рідкий синкопований бас із «повітрям»; перша доля порожня разом із барабаном (one drop)
+        if(g==='reggae'){if(s===8)return x(r,.95,4);if(s===13)return x(t[2]||r+7,.8,1.5);if(p>1&&s===6)return x(r,.7,1.5);if(p>1&&s===10)return x(r+12,.65,1.2);return[];}
+        if(s%4)return[];if(p>1&&s===8)return x(r+7,.85,3.5);return x(r,s===0?1:.8,3.5);},
+      atk:(e,L)=>shoot(aim(nearest(1)[0]),{spd:300,r:17,dmg:16*lv(L),life:1.4,pierce:5+L,col:'#4aa3df',kind:'wave'})},
+    {id:'walk',name:'Хода',lv:['Терція й квінта на 2 і 4','Ходовий бас по чвертях','+ поштовхи восьмими'],desc:'Хвилі вбік від тебе.',
+      steps:(ch,s,bar,L)=>{const p=P(L),t=tones(ch,up(ch.root,33),4);const map=p===1?{4:t[1],12:t[2]}:{0:t[0],4:t[1],8:t[2],12:t[3]};
+        if(p>2&&(s===6||s===14))return[E(t[2]+12-12,.55,1,{str:0})];return map[s]!==undefined&&!(p>1&&s===0)?[E(map[s],.75,3,{str:0})]:[];},
+      atk:(e,L,s)=>{const a=aim(nearest(1)[0])+(s%8<4?1:-1)*.9;shoot(a,{spd:300,r:13,dmg:9*lv(L),life:1.1,pierce:3+L,col:'#7cc0ef',kind:'wave'});}},
+    {id:'octave',name:'Октави',lv:['Октава перед третьою долею','+ ще одна в кінці такту','+ «поп» на кожну синкопу'],desc:'Хвиля назад — прикриває спину.',
+      steps:(ch,s,bar,L)=>([6].concat(P(L)>1?[14]:[],P(L)>2?[3,11]:[])).includes(s)?[E(up(ch.root,33)+12,.75,1.5,{str:0})]:[],
+      atk:(e,L)=>{const a=Math.atan2(G.p.fy,G.p.fx)+Math.PI;shoot(a,{spd:340,r:15,dmg:11*lv(L),life:1.2,pierce:6,col:'#a9d3f5',kind:'wave'});}},
+    {id:'groove',name:'Грув',lv:['Половина малюнка','Повний малюнок','+ привид у кінці такту'],desc:'Синкопований малюнок цієї пісні — малі хвилі на всі боки.',
+      steps:(ch,s,bar,L)=>{const g=SONG.groove,p=P(L),use=p===1?g.slice(0,2):g;const r=up(ch.root,33);
+        if(use.includes(s))return[E(use.indexOf(s)%2?r+12:r,.8,1.4,{str:0})];if(p>2&&s===15)return[E(r+7,.4,.6,{str:0})];return[];},
+      atk:(e,L,s)=>shoot(s*Math.PI/8+Math.random()*.4,{spd:280,r:11,dmg:6*lv(L),life:1,pierce:2,col:'#4aa3df',kind:'wave'})}
+  ],
+  piano:[
+    {id:'chords',name:'Акорди',lv:['Базовий ритм жанру','Густіший ритм','+ випередження наступного акорду'],desc:'Акорди в ритмі жанру — дві самонавідні ноти.',
+      steps:(ch,s,bar,L)=>{const p=P(L),k=(KCH[GK()]||KCH.lofi)[p-1],d=k[s];if(d===undefined)return[];
+        const c=d<0?chordAt(bar+1):ch,vo=c.pcs.length>3?tones(c,55,4,c.pcs.filter(x=>x!==c.root)):tones(c,55,3);
+        return vo.map((m,i)=>E(m,s===0?.65:.5,Math.abs(d),{off:i*.008}));},
+      atk:(e,L)=>homing(2,7*lv(L))},
+    {id:'mel',name:'Мелодія',lv:['Ноти на сильні долі','Щільніша фраза','Повна фраза'],desc:'Ноти самі наводяться на ворогів.',
+      steps:(ch,s,bar,L)=>{const m=motifNote(SONG.mel,bar,s,ch,MOT_RHY.mel[P(L)-1]);return m===null?[]:[E(m,.75,4)];},
+      atk:(e,L)=>homing(1,9*lv(L))},
+    {id:'arp',name:'Арпеджіо',lv:['Восьмі вгору','Вгору-вниз','Шістнадцяті'],desc:'Рій маленьких снарядів.',
+      steps:(ch,s,bar,L)=>{const p=P(L),t=tones(ch,60,5);if(p<3&&s%2)return[];const k=p<3?s>>1:s;
+        const i=p===1?k%4:[0,1,2,3,4,3,2,1][k%8];return[E(t[i],.38,1.5)];},
+      atk:(e,L)=>homing(1,3*lv(L),5)},
+    {id:'left',name:'Ліва рука',lv:['Низька тоніка на кожен такт','+ квінта на третю долю','+ октава'],desc:'Хвиля навколо.',
+      steps:(ch,s,bar,L)=>{const p=P(L),r=up(ch.root,36);if(s===0)return[E(r,.7,8)];if(p>1&&s===8)return[E(r+7,.55,6)];if(p>2&&s===12)return[E(r+12,.5,4)];return[];},
+      atk:(e,L)=>ring(140+L*8,10*lv(L),'#9b7fe0',3)}
+  ]
+};
+/* ПЕДАЛІ ЕФЕКТІВ: пасивні здібності, однакові для всіх. Змінюють і бій, і звук. До 4 педалей, рівні 1–3. */
+const MAXPED=4;
+const PEDALS=[
+  {id:'drive',name:'Дісторшн',ic:'🔥',lv:['+15% шкоди, удари підпалюють ворогів на 2 с','+30% шкоди, сильніше горіння','+45% шкоди, пекельне горіння']},
+  {id:'delay',name:'Ділей',ic:'🔁',lv:['Кожен удар повторюється відлунням (40% сили)','Відлуння 55% сили','Відлуння 70% сили']},
+  {id:'chorus',name:'Хорус',ic:'🌀',lv:['Влучання сповільнюють ворогів на 25%','Сповільнення 40%','Сповільнення 55%']},
+  {id:'reverb',name:'Ревер',ic:'💥',lv:['Вбиті вороги вибухають малою хвилею','Більший вибух','Великий вибух']},
+  {id:'comp',name:'Компресор',ic:'🗜',lv:['Сильніше відкидання й оглушення на 0,3 с','Оглушення 0,5 с','Оглушення 0,7 с']},
+  {id:'wah',name:'Вау-вау',ic:'⚡',lv:['10% шанс критичного удару ×2','Шанс 18%','Шанс 26%']},
+  {id:'tuner',name:'Тюнер',ic:'♥',lv:['Кожне вбивство лікує на 1 HP','Лікує на 2 HP','Лікує на 3 HP']}
+];
+const CHARS={
+  guitar:{name:'Гітарист',inst:'guitar',col:'#e0b252',hp:100,spd:150,glyph:'♪',desc:'Гітара під жанр: акустика, нейлон, перегруз, джаз. Б’є хвилями-конусами в найближчого ворога.'},
+  drums:{name:'Барабанщик',inst:'drums',col:'#d6604d',hp:130,spd:135,glyph:'◉',desc:'Біт під жанр. Починає з бочки: хвилі навколо себе.'},
+  bass:{name:'Басист',inst:'bass',col:'#4aa3df',hp:120,spd:140,glyph:'♩',desc:'Бас або контрабас. Важкі хвилі, що пробивають ряди.'},
+  piano:{name:'Клавішник',inst:'piano',col:'#9b7fe0',hp:85,spd:160,glyph:'▦',desc:'Рояль, орган, акордеон чи струнні — залежно від жанру. Ноти самі наводяться.'}
+};
+const MOBS={
+  fal:{name:'Фальшивка',hp:18,spd:58,r:13,dmg:10,col:'#7a5cc4',xp:1},
+  shum:{name:'Шумок',hp:9,spd:112,r:9,dmg:7,col:'#c4475c',xp:1},
+  glush:{name:'Глушняк',hp:110,spd:38,r:24,dmg:18,col:'#56743d',xp:6}
+};
+
+/* ================= ПРОЦЕДУРНИЙ СВІТ ================= */
+const TILE=64;
+function h2(x,y,seed){
+  let n=Math.imul(x|0,374761393)+Math.imul(y|0,668265263)+Math.imul(seed|0,1442695041);
+  n=Math.imul(n^(n>>>13),1274126177);n^=n>>>16;return (n>>>0)/4294967296;
+}
+function vnoise(x,y,seed){
+  const x0=Math.floor(x),y0=Math.floor(y),fx=x-x0,fy=y-y0,sx=fx*fx*(3-2*fx),sy=fy*fy*(3-2*fy);
+  const a=h2(x0,y0,seed),b=h2(x0+1,y0,seed),c=h2(x0,y0+1,seed),d=h2(x0+1,y0+1,seed);
+  return (a+(b-a)*sx)+((c+(d-c)*sx)-(a+(b-a)*sx))*sy;
+}
+const BIOME=[[[28,44,34],[34,52,40]],[[44,62,38],[52,70,42]],[[78,70,46],[88,78,52]]];
+function tileAt(tx,ty,seed){
+  const n=vnoise(tx/9,ty/9,seed)*.7+vnoise(tx/3,ty/3,seed+7)*.3;
+  const b=n<.4?0:n<.62?1:2,v=h2(tx,ty,seed+3),c=BIOME[b][v<.5?0:1];
+  const r=h2(tx,ty,seed+11);
+  let deco=null;
+  if(r<.05)deco='stone';else if(r<.15)deco=b===2?'twig':'grass';else if(r<.18&&b<2)deco='flower';else if(r<.184)deco='amp';
+  return {b,c:`rgb(${c[0]},${c[1]},${c[2]})`,deco,dx:h2(tx,ty,seed+5),dy:h2(tx,ty,seed+6)};
+}
+
+/* ================= СТАН ГРИ ================= */
+const cv=$('#cv'),g2=cv.getContext('2d');
+let W=0,H=0,DPR=1,zoom=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR;zoom=Math.max(.6,Math.min(1.3,Math.min(W,H)/620));}
+addEventListener('resize',resize);resize();
+
+let G=null,charKey=null,running=false,paused=false,choosing=false,audioOK=false,runId=0;
+let simT=0;const now=()=>audioOK?ctx.currentTime:simT;
+const seq={step:0,nextTime:0};
+let atkQ=[];
+const need=l=>4+l*5;
+
+/* Баланс: різні жанри б'ють з різною частотою (реґі — 2 удари на такт, метал — 16) і по-різному густіють з рівнями.
+   Для КОЖНОГО шару й КОЖНОГО рівня малюнка (1–3) рахуємо удари за секунду і підганяємо шкоду так, щоб
+   «удари/с × шкода» дорівнювали лоу-фаю при 86 BPM з множником 128/86 ≈ 1,49 (цей баланс перевірено в грі). */
+function hitsPerSec(gk,bpm,Ly,p){
+  // риф належить лише поточному жанру; еталон (лоу-фай) рахується зі своїм боєм, а не з рифом пісні
+  const S=SONG;SONG=Object.assign({},S,{genre:gk,bpm,riff:gk===S.genre?S.riff:null});
+  Ly=Ly||LAYERS[charKey][0];p=p||1;let w=0;
+  for(let bar=0;bar<8;bar++)for(let s=0;s<16;s++){const e=Ly.steps(chordAt(bar),s,bar,p);if(e.length){
+    if(Ly.id==='strum'){const a=STRUM_ATK[e[0].dir]||STRUM_ATK.D;w+=a[1]/11;}else w+=1;}}
+  SONG=S;return w/8/(60/bpm*4);
+}
+function balanceK(Ly,p){const ref=hitsPerSec('lofi',86,Ly,p),cur=hitsPerSec(SONG.genre,SONG.bpm,Ly,p);
+  return ref>0&&cur>0?(128/86)*ref/cur:128/SONG.bpm;}
+function balanceTable(){const t={};for(const Ly of LAYERS[charKey])t[Ly.id]=[1,2,3].map(p=>balanceK(Ly,p));return t;}
+let chosenGenre='rand';
+function newRun(){
+  const C=CHARS[charKey];
+  SONG=makeSong(SONG,chosenGenre==='rand'?null:chosenGenre);SONG.label=songLabel();
+  G=null;BAL=balanceTable();DMGK=BAL[LAYERS[charKey][0].id][0]; // DMGK — для горіння й вибухів
+  G={seed:(Math.random()*1e9)|0,t:0,kills:0,xp:0,level:1,
+    layers:{[LAYERS[charKey][0].id]:1},pedals:{},syn:synergy(SONG.prog.map(c=>c.off),SONG.genre).bonus,
+    p:{x:0,y:0,r:15,hp:C.hp,max:C.hp,spd:C.spd,fx:1,fy:0,pulse:0,hurt:0},
+    mobs:[],shots:[],rings:[],cones:[],zaps:[],gems:[],fx:[],texts:[],spawnAcc:0};
+  atkQ=[];slot.strings=[];slot.voices=[];slot.drumv={};slot.lastKick=undefined;applyPedalAudio();
+}
+
+/* ================= СЕКВЕНСЕР → АТАКИ ================= */
+function doStep(step,t){
+  const bar=step>>4,s=step&15,ch=chordAt(bar),hits=[];
+  if(s%4===2)t+=SONG.swing*stepDur(); // свінг: «і» кожної долі трохи пізніше
+  for(const Ly of LAYERS[charKey]){
+    const L=G.layers[Ly.id];if(!L)continue;
+    const evs=Ly.steps(ch,s,bar,L);if(!evs.length)continue;
+    if(audioOK)fire(t,evs);
+    hits.push({Ly,evs,L});
+  }
+  if(hits.length)qInsert({t,s,hits,run:runId});
+}
+function tickSeq(){
+  if(!running||paused||!G)return;
+  if(seq.nextTime<now()-.05)seq.nextTime=now()+.05;
+  while(seq.nextTime<now()+.25){doStep(seq.step,seq.nextTime);seq.nextTime+=stepDur();seq.step++;}
+}
+setInterval(tickSeq,25);
+
+function nearest(n,range=560){
+  const p=G.p,arr=[];
+  for(const m of G.mobs){if(m.hp<=0)continue;const d=(m.x-p.x)**2+(m.y-p.y)**2;if(d<range*range)arr.push([d,m]);}
+  arr.sort((a,b)=>a[0]-b[0]);return arr.slice(0,n).map(a=>a[1]);
+}
+function aim(m){const p=G.p;if(!m)return Math.atan2(p.fy,p.fx);return Math.atan2(m.y-p.y,m.x-p.x);}
+let ATK_SCALE=1; // <1 для відлуння (педаль «Ділей»)
+function shoot(a,o){const p=G.p;o.dmg*=ATK_SCALE;G.shots.push(Object.assign({x:p.x+Math.cos(a)*18,y:p.y+Math.sin(a)*18,vx:Math.cos(a)*o.spd,vy:Math.sin(a)*o.spd,hit:new Set(),age:0,ghost:ATK_SCALE<1},o));}
+// черга атак завжди відсортована за часом (відлуння «Ділея» не має затримувати звичайні удари)
+function qInsert(e){let i=atkQ.length;while(i>0&&atkQ[i-1].t>e.t)i--;atkQ.splice(i,0,e);}
+// ліміт кілець — лише для вибухів ревера, власні атаки не відкидаються
+function ring(maxR,dmg,col,width,kb=220,pos){if(pos&&G.rings.length>=60)return;G.rings.push({x:pos?pos.x:G.p.x,y:pos?pos.y:G.p.y,fixed:!!pos,boom:pos&&pos.boom,r:8,maxR,dmg:dmg*ATK_SCALE,col,width,kb,age:0,hit:new Set()});}
+// конус цілиться в найближчого ворога в радіусі удару (+запас); нікого поруч — туди, куди дивишся
+function cone(len,dmg,kb,da=0){const p=G.p,t=nearest(1,len+120)[0];G.cones.push({x:p.x,y:p.y,dir:aim(t)+da,r:10,maxR:len,dmg:dmg*ATK_SCALE,kb,age:0,hit:new Set(),ghost:ATK_SCALE<1});}
+function zap(n,range,dmg,col){for(const m of nearest(n,range)){hurtMob(m,dmg*ATK_SCALE,0,0);G.zaps.push({x1:G.p.x,y1:G.p.y,x2:m.x,y2:m.y,col,age:0});}}
+function homing(n,dmg,r=6){
+  const ts=nearest(n);
+  for(let i=0;i<n;i++){const t=ts[i]||ts[0];shoot(aim(t)+(Math.random()-.5)*1.2,{spd:360,r,dmg,life:1.7,pierce:0,col:'#c7b3ff',kind:'note',target:t,homing:true});}
+}
+function processQueues(){
+  const tn=now();
+  while(atkQ.length&&atkQ[0].t<=tn){
+    const a=atkQ.shift();if(a.run!==runId)continue;
+    ATK_SCALE=a.echo||1;
+    for(const h of a.hits){const b=BAL[h.Ly.id];CUR_K=b?b[P(h.L)-1]:DMGK;h.Ly.atk(h.evs,h.L,a.s);}
+    CUR_K=1;
+    ATK_SCALE=1;
+    if(!a.echo){G.p.pulse=1;
+      // «Ділей»: відлуння через 3/16 — тільки від оригіналу, не від відлуння; з тим самим runId
+      const dl=G.pedals.delay;if(dl)qInsert({t:a.t+stepDur()*3,s:a.s,hits:a.hits,run:a.run,echo:[0,.4,.55,.7][dl]});}
+  }
+}
+
+/* ================= ВВЕДЕННЯ ================= */
+const keys=new Set();
+addEventListener('keydown',e=>{
+  if(running&&!paused&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();
+  if((e.code==='KeyP'||e.code==='Escape')&&running&&!choosing){if(e.repeat)return;setPause(!paused);return;}
+  keys.add(e.code);
+});
+addEventListener('keyup',e=>keys.delete(e.code));
+addEventListener('blur',()=>keys.clear());
+let joy=null;
+cv.addEventListener('pointerdown',e=>{if(!running||paused||joy)return;joy={id:e.pointerId,x0:e.clientX,y0:e.clientY,x:e.clientX,y:e.clientY};cv.setPointerCapture(e.pointerId);});
+cv.addEventListener('pointermove',e=>{if(joy&&e.pointerId===joy.id){joy.x=e.clientX;joy.y=e.clientY;}});
+const endJoy=e=>{if(joy&&e.pointerId===joy.id)joy=null;};
+cv.addEventListener('pointerup',endJoy);cv.addEventListener('pointercancel',endJoy);
+function inputDir(){
+  let x=0,y=0;
+  if(keys.has('KeyA')||keys.has('ArrowLeft'))x--;if(keys.has('KeyD')||keys.has('ArrowRight'))x++;
+  if(keys.has('KeyW')||keys.has('ArrowUp'))y--;if(keys.has('KeyS')||keys.has('ArrowDown'))y++;
+  if(joy){const dx=joy.x-joy.x0,dy=joy.y-joy.y0,l=Math.hypot(dx,dy);if(l>8){const k=Math.min(1,l/60);x=dx/l*k;y=dy/l*k;}}
+  const l=Math.hypot(x,y);if(l>1){x/=l;y/=l;}return [x,y];
+}
+
+/* ================= РІВНІ ================= */
+/* Картка акорду: заміна акорду в одному такті. Половина карток «підказує» шлях до відомої послідовності жанру. */
+function chordCard(){
+  const g=GENRES[SONG.genre],cur=SONG.prog.map(c=>c.off),sy=synergy(cur,SONG.genre);
+  if(sy.crown)return null; // корону вже зібрано — не пропонуємо картки, що можуть лише її зламати
+  const pal=PAL[g.mode][g.st].map(x=>x[0]);let best=null;
+  if(Math.random()<.6){
+    const cands=[];
+    for(const F of g.famous)for(let r=0;r<4;r++){const T=cur.map((_,i)=>F[(i+r)%4]);const miss=T.map((o,i)=>o!==cur[i]?i:-1).filter(i=>i>=0);
+      if(miss.length&&miss.length<=2)for(const i of miss)cands.push({slot:i,off:T[i],w:miss.length===1?3:1});}
+    if(cands.length){let s=cands.reduce((a,c)=>a+c.w,0)*Math.random();for(const c of cands){s-=c.w;if(s<=0){best=c;break;}}best=best||cands[0];}
+  }
+  if(!best){const slot=pickR([1,2,3]),opts=pal.filter(o=>o!==cur[slot]);if(!opts.length)return null;best={slot,off:pickR(opts)};}
+  const next=cur.slice();next[best.slot]=best.off;
+  return {chord:true,slot:best.slot,off:best.off,old:sy,neu:synergy(next,SONG.genre)};
+}
+function synText(o){
+  const d=Math.round((o.neu.bonus-o.old.bonus)*100);
+  if(o.neu.crown)return`<span class="syn crown">♛ Корона: ${o.neu.crownName} — +${Math.round((o.neu.bonus-1)*100)}% шкоди</span>`;
+  if(d>0)return`<span class="syn good">✓ Синергує: квінтовий хід · +${d}% шкоди</span>`;
+  if(d<0)return`<span class="syn bad">✗ Не синергує: −${-d}% шкоди</span>`;
+  return`<span class="syn">≈ Нейтрально: шкода та сама, змінюється лише музика</span>`;
+}
+let levelBusy=false;
+function levelUp(){
+  G.xp-=need(G.level);G.level++;
+  const all=LAYERS[charKey],fresh=all.filter(l=>!G.layers[l.id]),grow=all.filter(l=>G.layers[l.id]&&G.layers[l.id]<MAXL);
+  const owned=Object.keys(G.pedals),pFresh=owned.length<MAXPED?PEDALS.filter(p=>!G.pedals[p.id]):[],pGrow=PEDALS.filter(p=>G.pedals[p.id]&&G.pedals[p.id]<3);
+  const shuffle=a=>a.sort(()=>Math.random()-.5);
+  // зважений пул: нові шари, прокачка шарів, нові педалі, прокачка педалей, акорд
+  const pool=[...fresh.map(l=>({l,isNew:true,w:3})),...grow.map(l=>({l,isNew:false,w:2})),
+    ...pFresh.map(pd=>({pd,isNew:true,w:1.6})),...pGrow.map(pd=>({pd,isNew:false,w:1.2}))];
+  const cc=charKey==='drums'?null:chordCard();if(cc){cc.w=2.4;pool.push(cc);} // барабани акордів не грають
+  let opts=[];
+  if(G.level<=3&&fresh.length)opts.push(pickR(pool.filter(o=>o.l&&o.isNew))); // перші рівні: партія гарантовано росте
+  while(opts.length<3){const rest=pool.filter(o=>!opts.includes(o));if(!rest.length)break;
+    let s=rest.reduce((a,o)=>a+o.w,0)*Math.random(),pk=rest[0];for(const o of rest){s-=o.w;if(s<=0){pk=o;break;}}opts.push(pk);}
+  opts=shuffle(opts);
+  if(!opts.length)opts=[{heal:true}];
+  $('#lvlT').textContent='Рівень '+G.level;
+  $('#opts').innerHTML='';
+  const col=CHARS[charKey].col;
+  for(const o of opts){
+    const b=document.createElement('button');b.className='card';b.style.setProperty('--c',o.pd?'#8fd0ff':o.chord?'#ffd76a':col);
+    if(o.heal)b.innerHTML=`<b>♥ Перепочинок</b><small>Відновити 40% здоров’я.</small>`;
+    else if(o.chord){const c=mkChord(SONG,o.off),was=SONG.prog[o.slot];
+      b.innerHTML=`<b>🎼 Акорд ${c.name}</b><small>У такт ${o.slot+1} замість ${was.name}.</small>${synText(o)}<span class="st">акорд пісні</span>`;}
+    else if(o.pd){const cur=G.pedals[o.pd.id]||0;
+      b.innerHTML=`<b>${o.pd.ic} ${o.isNew?'＋':'▲'} ${o.pd.name}</b><small>${o.pd.lv[cur]}.</small><span class="st">${o.isNew?'нова педаль ефектів':'педаль: рівень '+cur+' → '+(cur+1)}</span>`;}
+    else if(o.isNew)b.innerHTML=`<b>＋ ${o.l.name}</b><small>${o.l.desc} ${o.l.lv[0]}.</small><span class="st">новий шар</span>`;
+    else{const cur=G.layers[o.l.id],what=cur<3?o.l.lv[cur]:'Сильніше й далі';
+      b.innerHTML=`<b>▲ ${o.l.name}</b><small>${what}.</small><span class="st">рівень ${cur} → ${cur+1}</span>`;}
+    b.onclick=async()=>{
+      if(!choosing||levelBusy)return;levelBusy=true;
+      try{
+      if(o.heal)G.p.hp=Math.min(G.p.max,G.p.hp+G.p.max*.4);
+      else if(o.chord){
+        SONG.prog[o.slot]=mkChord(SONG,o.off);const sy=synergy(SONG.prog.map(c=>c.off),SONG.genre);
+        G.syn=sy.bonus;SONG.label=songLabel();
+        if(audioOK){$('#load').textContent='Готую звук…';const my=runId; // новий акорд — нові ноти: готуємо перед продовженням
+          await Promise.race([Promise.all(LAYERS[charKey].filter(l=>G.layers[l.id]).map(warmLayer)),new Promise(r=>setTimeout(r,4000))]);
+          $('#load').textContent='';if(my!==runId)return;
+          LAYERS[charKey].filter(l=>!G.layers[l.id]).forEach(warmLayer);}
+      }
+      else if(o.pd){G.pedals[o.pd.id]=(G.pedals[o.pd.id]||0)+1;applyPedalAudio();}
+      else{G.layers[o.l.id]=(G.layers[o.l.id]||0)+1;if(audioOK)warmLayer(o.l);}
+      choosing=false;$('#lvl').classList.add('hide');
+      if(document.hidden)setPause(true);else setPause(false); // поки готували звук, вкладку могли сховати
+      }finally{levelBusy=false;}
+    };
+    $('#opts').appendChild(b);
+  }
+  choosing=true;setPause(true,true);
+}
+
+/* ================= ОНОВЛЕННЯ ================= */
+function spawnDist(){return Math.hypot(W,H)/2/zoom+50;}
+function spawnMob(){
+  const t=G.t,r=Math.random();
+  let type='fal';if(t>45&&r<.08)type='glush';else if(t>20&&r<.38)type='shum';
+  const M=MOBS[type],a=Math.random()*Math.PI*2,d=spawnDist(),hpK=1+t/120;
+  G.mobs.push({type,x:G.p.x+Math.cos(a)*d,y:G.p.y+Math.sin(a)*d,r:M.r,hp:M.hp*hpK,max:M.hp*hpK,spd:M.spd*(.9+Math.random()*.2),flash:0,kx:0,ky:0,wob:Math.random()*6});
+}
+function hurtMob(m,dmg,kx,ky){
+  const pd=G.pedals;let crit=false;
+  dmg*=G.syn; // бонус синергії акордів
+  if(pd.drive){dmg*=1+.15*pd.drive;m.burn=2;}
+  if(pd.wah&&Math.random()<.02+.08*pd.wah){dmg*=2;crit=true;}
+  if(pd.comp){kx*=1+.5*pd.comp;ky*=1+.5*pd.comp;m.stun=Math.max(m.stun||0,.1+.2*pd.comp);}
+  if(pd.chorus){m.slow=1.5;m.slowAmt=.1+.15*pd.chorus;}
+  m.hp-=dmg;m.flash=.12;m.kx+=kx;m.ky+=ky;
+  if(G.texts.length<60)G.texts.push({x:m.x,y:m.y-m.r,v:Math.round(dmg),age:0,crit});
+}
+function angDiff(a,b){return Math.abs(((a-b+Math.PI*3)%(Math.PI*2))-Math.PI);}
+function update(dt){
+  G.t+=dt;if(!audioOK)simT+=dt;
+  processQueues();
+  const p=G.p,[ix,iy]=inputDir();
+  p.x+=ix*p.spd*dt;p.y+=iy*p.spd*dt;
+  if(ix||iy){const l=Math.hypot(ix,iy);p.fx=ix/l;p.fy=iy/l;}
+  p.pulse=Math.max(0,p.pulse-dt*6);p.hurt=Math.max(0,p.hurt-dt);
+
+  const rate=Math.min(12,.9+G.t/15);G.spawnAcc+=rate*dt;
+  while(G.spawnAcc>=1){G.spawnAcc--;if(G.mobs.length<220)spawnMob();}
+
+  const cell=48,grid=new Map(),far=spawnDist()*1.5;
+  for(const m of G.mobs){
+    const dx=p.x-m.x,dy=p.y-m.y,d=Math.hypot(dx,dy)||1;
+    if(d>far){const a=Math.atan2(dy,dx)+Math.PI+(Math.random()-.5);m.x=p.x+Math.cos(a)*spawnDist();m.y=p.y+Math.sin(a)*spawnDist();continue;}
+    // статуси від педалей: оглушення / сповільнення / горіння (горіння мінусує HP напряму, без відкидання й цифр)
+    let sp=m.spd;if(m.stun>0){m.stun-=dt;sp=0;}else if(m.slow>0){m.slow-=dt;sp*=1-m.slowAmt;}
+    if(m.burn>0){m.burn-=dt;m.hp-=(2+3*(G.pedals.drive||0))*DMGK*dt;}
+    m.x+=(dx/d*sp+m.kx)*dt;m.y+=(dy/d*sp+m.ky)*dt;
+    m.kx*=Math.pow(.02,dt);m.ky*=Math.pow(.02,dt);m.flash=Math.max(0,m.flash-dt);m.wob+=dt*8;
+    if(d<m.r+p.r){p.hp-=MOBS[m.type].dmg*dt;p.hurt=.15;}
+    const k=((m.x/cell)|0)+','+((m.y/cell)|0);let c=grid.get(k);if(!c)grid.set(k,c=[]);c.push(m);
+  }
+  for(const m of G.mobs){
+    const cx=(m.x/cell)|0,cy=(m.y/cell)|0;
+    for(let ox=-1;ox<=1;ox++)for(let oy=-1;oy<=1;oy++){const c=grid.get((cx+ox)+','+(cy+oy));if(!c)continue;
+      for(const o of c){if(o===m)continue;const dx=m.x-o.x,dy=m.y-o.y,d2=dx*dx+dy*dy,rr=m.r+o.r;
+        if(d2<rr*rr&&d2>.01){const d=Math.sqrt(d2),push=(rr-d)*.5;m.x+=dx/d*push;m.y+=dy/d*push;}}}
+  }
+
+  for(const s of G.shots){
+    s.age+=dt;
+    if(s.homing){if(!s.target||s.target.hp<=0)s.target=nearest(1,400)[0];
+      if(s.target){const want=Math.atan2(s.target.y-s.y,s.target.x-s.x),cur=Math.atan2(s.vy,s.vx);
+        const da=((want-cur+Math.PI*3)%(Math.PI*2))-Math.PI,na=cur+Math.max(-7*dt,Math.min(7*dt,da));
+        s.vx=Math.cos(na)*s.spd;s.vy=Math.sin(na)*s.spd;}}
+    s.x+=s.vx*dt;s.y+=s.vy*dt;
+    for(const m of G.mobs){
+      if(m.hp<=0||s.hit.has(m))continue;
+      if((m.x-s.x)**2+(m.y-s.y)**2<(m.r+s.r)**2){
+        const kb=s.kind==='wave'?260:120;hurtMob(m,s.dmg,s.vx/s.spd*kb,s.vy/s.spd*kb);s.hit.add(m);
+        if(--s.pierce<0){s.age=s.life;break;}
+      }
+    }
+  }
+  G.shots=G.shots.filter(s=>s.age<s.life);
+
+  for(const r of G.rings){
+    r.age+=dt;if(!r.fixed){r.x=p.x;r.y=p.y;}r.r=8+(r.maxR-8)*Math.min(1,r.age/.22);
+    for(const m of G.mobs){
+      if(m.hp<=0||r.hit.has(m))continue;
+      const dx=m.x-r.x,dy=m.y-r.y,d=Math.hypot(dx,dy)||1;
+      if(d<=r.r+m.r){hurtMob(m,r.dmg,dx/d*r.kb,dy/d*r.kb);r.hit.add(m);}
+    }
+  }
+  G.rings=G.rings.filter(r=>r.age<.4);
+  // конуси: хвиля, що розходиться дугою 30° від точки удару
+  for(const c of G.cones){
+    c.age+=dt;c.r=10+(c.maxR-10)*Math.min(1,c.age/.24);
+    for(const m of G.mobs){
+      if(m.hp<=0||c.hit.has(m))continue;
+      const dx=m.x-c.x,dy=m.y-c.y,d=Math.hypot(dx,dy)||1;
+      if(d>c.r+m.r)continue;
+      if(d>m.r&&angDiff(Math.atan2(dy,dx),c.dir)>CONE/2+Math.asin(Math.min(1,m.r/d)))continue;
+      hurtMob(m,c.dmg,Math.cos(c.dir)*c.kb,Math.sin(c.dir)*c.kb);c.hit.add(m);
+    }
+  }
+  G.cones=G.cones.filter(c=>c.age<.38);
+  for(const z of G.zaps)z.age+=dt;
+  G.zaps=G.zaps.filter(z=>z.age<.12);
+
+  for(const m of G.mobs)if(m.hp<=0){
+    G.kills++;
+    const pd=G.pedals;
+    if(pd.reverb)ring(45+22*pd.reverb,(3+3*pd.reverb)*DMGK,'#c7b3ff',2,160,{x:m.x,y:m.y,boom:true}); // вибух на місці ворога
+    if(pd.tuner)p.hp=Math.min(p.max,p.hp+pd.tuner);
+    if(G.gems.length<400)G.gems.push({x:m.x,y:m.y,v:MOBS[m.type].xp,mag:false});
+    for(let i=0;i<6&&G.fx.length<300;i++){const a=Math.random()*6.28,v=40+Math.random()*90;G.fx.push({x:m.x,y:m.y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,age:0,col:MOBS[m.type].col});}
+  }
+  G.mobs=G.mobs.filter(m=>m.hp>0);
+
+  for(const gm of G.gems){
+    const dx=p.x-gm.x,dy=p.y-gm.y,d=Math.hypot(dx,dy)||1;
+    if(d<80)gm.mag=true;
+    if(gm.mag){const v=Math.max(250,500-d);gm.x+=dx/d*v*dt;gm.y+=dy/d*v*dt;}
+    if(d<p.r+6){G.xp+=gm.v;gm.v=0;}
+  }
+  G.gems=G.gems.filter(gm=>gm.v>0);
+
+  for(const f of G.fx){f.age+=dt;f.x+=f.vx*dt;f.y+=f.vy*dt;}
+  G.fx=G.fx.filter(f=>f.age<.45);
+  for(const t of G.texts)t.age+=dt;
+  G.texts=G.texts.filter(t=>t.age<.6);
+
+  if(p.hp<=0){p.hp=0;gameOver();return;}
+  if(G.xp>=need(G.level))levelUp();
+}
+
+/* ================= МАЛЮВАННЯ ================= */
+function draw(){
+  g2.setTransform(DPR,0,0,DPR,0,0);
+  g2.fillStyle='#0e0f14';g2.fillRect(0,0,W,H);
+  if(!G)return;
+  const p=G.p,cx=W/2-p.x*zoom,cy=H/2-p.y*zoom;
+  g2.setTransform(DPR*zoom,0,0,DPR*zoom,cx*DPR,cy*DPR);
+  const vw=W/zoom,vh=H/zoom,x0=Math.floor((p.x-vw/2)/TILE)-1,y0=Math.floor((p.y-vh/2)/TILE)-1,x1=x0+Math.ceil(vw/TILE)+2,y1=y0+Math.ceil(vh/TILE)+2;
+  for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++){
+    const T=tileAt(tx,ty,G.seed),X=tx*TILE,Y=ty*TILE;
+    g2.fillStyle=T.c;g2.fillRect(X,Y,TILE+1,TILE+1);
+    if(!T.deco)continue;
+    const dx=X+10+T.dx*44,dy=Y+10+T.dy*44;
+    if(T.deco==='stone'){g2.fillStyle='#6e6a60';g2.beginPath();g2.ellipse(dx,dy,9,6,0,0,7);g2.fill();g2.fillStyle='#8a857a';g2.beginPath();g2.ellipse(dx-2,dy-2,4,2.5,0,0,7);g2.fill();}
+    else if(T.deco==='grass'){g2.strokeStyle='#6f9a4a';g2.lineWidth=2;g2.beginPath();for(let i=-1;i<=1;i++){g2.moveTo(dx+i*4,dy+4);g2.lineTo(dx+i*6,dy-6);}g2.stroke();}
+    else if(T.deco==='twig'){g2.strokeStyle='#5c4a30';g2.lineWidth=2;g2.beginPath();g2.moveTo(dx-8,dy+3);g2.lineTo(dx+8,dy-3);g2.moveTo(dx,dy);g2.lineTo(dx+3,dy-6);g2.stroke();}
+    else if(T.deco==='flower'){g2.fillStyle=T.dx<.5?'#e0b252':'#d6604d';for(let i=0;i<4;i++){g2.beginPath();g2.arc(dx+Math.cos(i*1.57)*3,dy+Math.sin(i*1.57)*3,2.5,0,7);g2.fill();}}
+    else if(T.deco==='amp'){
+      g2.fillStyle='#24222a';g2.fillRect(dx-14,dy-12,28,24);g2.fillStyle='#3a3742';g2.fillRect(dx-11,dy-9,22,15);
+      g2.fillStyle='#16151a';g2.beginPath();g2.arc(dx,dy-1,6,0,7);g2.fill();g2.fillStyle='#e0b25288';g2.fillRect(dx-11,dy+8,22,2);}
+  }
+  for(const gm of G.gems){const s=gm.v>1?6:4;g2.fillStyle=gm.v>1?'#c7f0ff':'#8fd0ff';g2.beginPath();g2.moveTo(gm.x,gm.y-s);g2.lineTo(gm.x+s*.7,gm.y);g2.lineTo(gm.x,gm.y+s);g2.lineTo(gm.x-s*.7,gm.y);g2.closePath();g2.fill();}
+  for(const r of G.rings){g2.strokeStyle=r.col;g2.globalAlpha=1-r.age/.4;g2.lineWidth=r.width;g2.beginPath();g2.arc(r.x,r.y,r.r,0,7);g2.stroke();}
+  for(const c of G.cones){
+    const a=1-c.age/.38;
+    g2.globalAlpha=a*.22;g2.fillStyle='#e0b252';g2.beginPath();g2.moveTo(c.x,c.y);g2.arc(c.x,c.y,c.r,c.dir-CONE/2,c.dir+CONE/2);g2.closePath();g2.fill();
+    g2.globalAlpha=a;g2.strokeStyle='#f1dba0';g2.lineWidth=3;g2.beginPath();g2.arc(c.x,c.y,c.r,c.dir-CONE/2,c.dir+CONE/2);g2.stroke();
+  }
+  g2.globalAlpha=1;
+  for(const m of G.mobs){
+    const M=MOBS[m.type],sq=1+Math.sin(m.wob)*.06;
+    g2.fillStyle='#0004';g2.beginPath();g2.ellipse(m.x,m.y+m.r*.8,m.r*.9,m.r*.35,0,0,7);g2.fill();
+    g2.fillStyle=m.flash>0?'#fff':M.col;g2.beginPath();g2.ellipse(m.x,m.y,m.r*sq,m.r/sq,0,0,7);g2.fill();
+    const a=Math.atan2(p.y-m.y,p.x-m.x),ex=Math.cos(a)*m.r*.35,ey=Math.sin(a)*m.r*.35;
+    g2.fillStyle='#f4efe0';for(const s of[-1,1]){g2.beginPath();g2.arc(m.x+ex+s*m.r*.3,m.y+ey-m.r*.15,m.r*.2,0,7);g2.fill();}
+    g2.fillStyle='#111';for(const s of[-1,1]){g2.beginPath();g2.arc(m.x+ex*1.3+s*m.r*.3,m.y+ey*1.3-m.r*.15,m.r*.1,0,7);g2.fill();}
+    if(m.hp<m.max&&m.type==='glush'){g2.fillStyle='#0008';g2.fillRect(m.x-m.r,m.y-m.r-8,m.r*2,3);g2.fillStyle='#d6604d';g2.fillRect(m.x-m.r,m.y-m.r-8,m.r*2*m.hp/m.max,3);}
+  }
+  const C=CHARS[charKey];
+  g2.fillStyle='#0005';g2.beginPath();g2.ellipse(p.x,p.y+p.r*.9,p.r,p.r*.38,0,0,7);g2.fill();
+  g2.strokeStyle=C.col;g2.globalAlpha=.25+.5*p.pulse;g2.lineWidth=3;g2.beginPath();g2.arc(p.x,p.y,p.r+5+p.pulse*6,0,7);g2.stroke();g2.globalAlpha=1;
+  g2.fillStyle=p.hurt>0?'#ffb0a0':'#f1ead6';g2.beginPath();g2.arc(p.x,p.y,p.r,0,7);g2.fill();
+  g2.strokeStyle=C.col;g2.lineWidth=3;g2.stroke();
+  // стрілка напрямку погляду (куди б'є гітара)
+  const fa=Math.atan2(p.fy,p.fx);g2.fillStyle=C.col;g2.beginPath();
+  g2.moveTo(p.x+Math.cos(fa)*(p.r+11),p.y+Math.sin(fa)*(p.r+11));g2.lineTo(p.x+Math.cos(fa+.35)*(p.r+3),p.y+Math.sin(fa+.35)*(p.r+3));g2.lineTo(p.x+Math.cos(fa-.35)*(p.r+3),p.y+Math.sin(fa-.35)*(p.r+3));g2.fill();
+  g2.font='bold 16px system-ui';g2.textAlign='center';g2.textBaseline='middle';g2.fillText(C.glyph,p.x,p.y+1);
+  for(const z of G.zaps){g2.strokeStyle=z.col;g2.globalAlpha=1-z.age/.12;g2.lineWidth=2;g2.beginPath();g2.moveTo(z.x1,z.y1);g2.lineTo((z.x1+z.x2)/2+(Math.random()-.5)*14,(z.y1+z.y2)/2+(Math.random()-.5)*14);g2.lineTo(z.x2,z.y2);g2.stroke();}
+  g2.globalAlpha=1;
+  for(const s of G.shots){
+    g2.fillStyle=s.col;
+    if(s.kind==='wave'){const a=Math.atan2(s.vy,s.vx);g2.save();g2.translate(s.x,s.y);g2.rotate(a);g2.globalAlpha=.85;g2.beginPath();g2.ellipse(0,0,s.r*.55,s.r,0,0,7);g2.fill();g2.restore();g2.globalAlpha=1;}
+    else if(s.kind==='note'){g2.beginPath();g2.arc(s.x,s.y,s.r,0,7);g2.fill();g2.fillRect(s.x+s.r-2,s.y-s.r*2.4,2,s.r*2.4);}
+    else{g2.beginPath();g2.arc(s.x,s.y,s.r,0,7);g2.fill();}
+  }
+  for(const f of G.fx){g2.globalAlpha=1-f.age/.45;g2.fillStyle=f.col;g2.fillRect(f.x-2,f.y-2,4,4);}
+  g2.globalAlpha=1;
+  g2.font='bold 11px system-ui';
+  for(const t of G.texts){g2.globalAlpha=1-t.age/.6;g2.fillStyle=t.crit?'#ffd76a':'#fff';g2.fillText(t.crit?t.v+'!':t.v,t.x,t.y-t.age*30);}
+  g2.globalAlpha=1;
+  g2.setTransform(DPR,0,0,DPR,0,0);
+  if(joy){g2.strokeStyle='#ffffff40';g2.lineWidth=2;g2.beginPath();g2.arc(joy.x0,joy.y0,60,0,7);g2.stroke();
+    const dx=joy.x-joy.x0,dy=joy.y-joy.y0,l=Math.hypot(dx,dy),k=l>60?60/l:1;g2.fillStyle='#ffffff50';g2.beginPath();g2.arc(joy.x0+dx*k,joy.y0+dy*k,22,0,7);g2.fill();}
+}
+function hud(){
+  if(!G)return;
+  $('#hp').style.width=(G.p.hp/G.p.max*100)+'%';
+  $('#xp').style.width=Math.min(100,G.xp/need(G.level)*100)+'%';
+  $('#lv').textContent='Рів. '+G.level;
+  const s=Math.floor(G.t);$('#time').textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+  $('#kills').textContent='☠ '+G.kills;
+  const sl='♫ '+SONG.label;if($('#song').textContent!==sl)$('#song').textContent=sl;
+  const txt=LAYERS[charKey].filter(l=>G.layers[l.id]).map(l=>l.name+(G.layers[l.id]>1?' '+G.layers[l.id]:'')).join(' · ')
+    +(Object.keys(G.pedals).length?'  |  '+PEDALS.filter(p=>G.pedals[p.id]).map(p=>p.ic+p.name+(G.pedals[p.id]>1?' '+G.pedals[p.id]:'')).join(' · '):'');
+  if($('#layers').textContent!==txt)$('#layers').textContent=txt;
+}
+let last=performance.now();
+function loop(ts){
+  const dt=Math.min(.05,(ts-last)/1000);last=ts;
+  if(running&&!paused&&G)update(dt);
+  draw();hud();requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ================= ЕКРАНИ ================= */
+function buildCards(){
+  $('#cards').innerHTML=Object.entries(CHARS).map(([k,c])=>
+    `<button class="card" data-k="${k}" style="--c:${c.col}"><b>${c.glyph} ${c.name}</b><small>${c.desc}</small><span class="st">HP ${c.hp} · швидкість ${c.spd}</span></button>`).join('');
+  $('#cards').querySelectorAll('.card').forEach(b=>b.onclick=()=>pick(b.dataset.k));
+  const gs=[['rand','🎲 Випадковий']].concat(Object.entries(GENRES).map(([k,g])=>[k,g.name]));
+  $('#genres').innerHTML=gs.map(([k,n])=>`<button data-g="${k}" class="${k===chosenGenre?'on':''}">${n}</button>`).join('');
+  $('#genres').querySelectorAll('button').forEach(b=>b.onclick=()=>{chosenGenre=b.dataset.g;
+    $('#genres').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));});
+}
+function layerNotes(Ly,song){
+  const set=new Set(),S=SONG;SONG=song||SONG;
+  for(let bar=0;bar<8;bar++)for(let s=0;s<16;s++)for(let L=1;L<=3;L++)Ly.steps(chordAt(bar),s,bar,L).forEach(e=>{if(e.midi!==undefined)set.add(e.midi);});
+  SONG=S;return set;
+}
+function warmLayer(Ly){return Promise.all([...layerNotes(Ly)].map(m=>reqBuf(CHARS[charKey].inst,m)));}
+let loading=false,workerChecked=false,resuming=false;
+let picking=false;
+async function pick(k){
+  if(loading||picking)return;picking=true;charKey=k;
+  try{
+    if(!ctx){initAudio();
+      ctx.onstatechange=()=>{if(running&&!paused&&!resuming&&ctx.state!=='running')setPause(true);};}
+    await ctx.resume();
+    audioOK=ctx.state==='running';
+    if(audioOK){
+      useInst(CHARS[k].inst);
+      if(!workerChecked){await workerReady();workerChecked=true;}
+    }
+  }catch(e){audioOK=false;console.warn('Звук недоступний:',e);}
+  $('#load').textContent='';picking=false;
+  await startRun();
+}
+async function startRun(){
+  if(loading)return;loading=true;
+  runId++;running=false;newRun();
+  const my=runId;
+  if(audioOK){
+    if(ctx.state!=='running')await ctx.resume().catch(()=>{});
+    // семпли цього жанру для цього інструмента (2–3 МБ, кешуються до зміни жанру)
+    const inst=CHARS[charKey].inst,name=GENRES[SONG.genre].sf[inst]||null;
+    if(inst==='drums'){
+      $('#load').textContent='Завантажую ударні…';
+      const kn=GENRES[SONG.genre].kit||'acoustic';
+      const kit=await Promise.race([loadKit(kn),new Promise(r=>setTimeout(()=>r(null),12000))]);
+      if(my!==runId)return;
+      DKIT=kit||null; // немає мережі — синтез
+    }
+    if(name&&!SF[name]){
+      $('#load').textContent='Завантажую семпли: '+GENRES[SONG.genre].name+'…';
+      const map=await Promise.race([fetchSF(name),new Promise(r=>setTimeout(()=>r(null),15000))]);
+      if(my!==runId)return; // застарілий запуск: нічого не чіпаємо (loading уже скинув toMenu)
+      if(map)SF[name]=map;
+    }
+    if(my!==runId)return;
+    slot.sf=name&&SF[name]?name:null;dropOtherSamples(srcName(inst));
+    slot.strings=[];slot.voices=[];
+    $('#load').textContent='Готую звук…';
+    await Promise.race([warmLayer(LAYERS[charKey][0]),new Promise(r=>setTimeout(r,8000))]);
+    if(my!==runId)return;
+    LAYERS[charKey].slice(1).forEach(warmLayer);
+    $('#load').textContent='';
+  }
+  if(my!==runId)return;
+  loading=false;
+  seq.step=0;seq.nextTime=now()+.15;
+  running=true;paused=false;choosing=false;
+  ['#menu','#over','#paused','#lvl'].forEach(s=>$(s).classList.add('hide'));$('#hud').classList.remove('hide');
+  if(document.hidden)setPause(true);
+}
+function setPause(v,silent){
+  if(!running)return;paused=v;joy=null;keys.clear();
+  $('#paused').classList.toggle('hide',!v||!!silent||choosing);
+  if(choosing&&v)$('#lvl').classList.remove('hide');
+  if(audioOK){if(v)ctx.suspend();else{resuming=true;ctx.resume().then(()=>{resuming=false;seq.nextTime=Math.max(seq.nextTime,ctx.currentTime+.05);})
+    .catch(()=>{resuming=false;if(running&&!paused)setPause(true);});}}
+}
+function gameOver(){
+  running=false;joy=null;
+  const s=Math.floor(G.t);
+  $('#sum').textContent=`${GENRES[SONG.genre].name}. ${CHARS[charKey].name} протримався ${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}, дійшов до ${G.level} рівня і переміг ${G.kills} ворогів.`;
+  $('#over').classList.remove('hide');$('#hud').classList.add('hide');
+}
+function toMenu(){running=false;paused=false;choosing=false;loading=false;runId++;G=null;
+  if(audioOK)for(const v of slot.voices)v.gain.setValueAtTime(0,ctx.currentTime); // не доігрувати старі ноти після виходу в меню
+  ['#paused','#over','#hud','#lvl'].forEach(s=>$(s).classList.add('hide'));$('#menu').classList.remove('hide');}
+$('#pause').onclick=()=>{if(!choosing)setPause(true);};
+$('#resume').onclick=()=>setPause(false);
+$('#quit').onclick=toMenu;
+$('#again').onclick=()=>startRun();
+$('#other').onclick=toMenu;
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&running&&!paused)setPause(true);});
+window.addEventListener('error',e=>{$('#load').textContent='Помилка: '+e.message;});
+buildCards();
+
+// для тестів і налагодження
+window.__game={get sampled(){return Object.keys(SF);},get cache(){return [...bufCache.keys()];},get G(){return G;},get SONG(){return SONG;},
+  get ctx(){return ctx;},get audioOK(){return audioOK;},tileAt,pick,setPause,levelUp,makeSong,voicing,LAYERS,layerNotes,strum,chordAt,
+  GENRES,synergy,hitsPerSec,balanceK,balanceTable,mkChord,chordCard,PEDALS,setChar(k){charKey=k;},setGenre(k){chosenGenre=k;},
+  logNotes(on){NOTE_LOG=on?[]:null;},get notes(){return NOTE_LOG;},setSong(s){SONG=s;},
+  get running(){return running;},get paused(){return paused;},get choosing(){return choosing;}};
+})();
+</script>
+</body>
+</html>

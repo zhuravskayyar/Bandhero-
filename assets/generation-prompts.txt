@@ -1,0 +1,28 @@
+Generated with built-in image_gen on 2026-11-20. True RGBA transparency.
+Both sheets use four equal columns and four equal rows. Read natural image dimensions when sampling.
+
+band-heroes-v1.png
+Use case: stylized-concept.
+Asset type: production transparent PNG sprite atlas for a top-down music roguelite named Band Hero.
+Create ONE square 1024x1024 sprite sheet with EXACTLY 4 columns and 4 rows of equal 256x256 cells. Transparent background, no text, no grid lines, no shadows painted on background. Every character full body, feet on an identical baseline at 80% of its cell height, centered horizontally in cell, occupying about 65% cell width and 75% cell height. NO overlap or bleed between cells. Same camera 3/4 top-down front view, facing slightly right, readable crisp high quality hand-painted pixel art as if drawn on a 64x64 pixel grid then upscaled, dark outlines, warm highlights, charming grown-up indie game look.
+Each row shows THE SAME character in FOUR coherent animation poses. Column 1 idle holding instrument; column 2 walking left foot forward; column 3 walking right foot forward; column 4 playing a powerful note, striking pose. Keep exact clothing, proportions, facial features and instrument throughout a row.
+Row 1: shaggy dark-haired rock guitarist, amber/gold jacket, black pants, clearly holding an amber electric guitar.
+Row 2: stocky drummer with short red hair and red bandana, rust red vest, dark pants, holds two drumsticks and a small marching bass/snare drum strapped to torso. Full body, mobile drummer, not seated drum kit.
+Row 3: tall bass player with blue jacket and dark hair, deep blue long-neck electric bass guitar visibly has FOUR strings.
+Row 4: violet-haired keyboard player in purple coat, compact violet keytar with visible black and white piano keys held diagonally on a strap.
+Important: all 16 individual sprites isolated on true alpha transparency; consistent equal cell grid and same scale; no UI, no labels, no mockup, no logos.
+
+band-mobs-v1.png
+Use case: stylized-concept.
+Asset type: transparent PNG enemy animation sprite atlas for Band Hero, a top-down music survival roguelite.
+Make ONE SQUARE 1024x1024 sprite sheet EXACTLY FOUR equal columns and FOUR equal rows (16 equal cells). Transparent background with real alpha. No text, no labels, no grid or scenery. Consistent 3/4 top-down front game viewpoint, facing slightly right, crisp richly shaded hand-drawn pixel art, dark outlines, readable compact silhouettes, warm off-white highlights. Each sprite fully within its cell with generous transparent margins. Occupy 65% cell width and 70% cell height, each sprite centered and feet baseline at 80% of cell.
+Rows 1,2,3 each contain four coherent animation frames for the SAME monster; columns: idle, left-step walk, right-step walk, attack/recoil expression. Stable design and scale across each row.
+ROW 1: 'False Note' small mischievous violet imp made of twisted musical notes, single glowing amber eye, two short curved horns, claw hands, two little boots, purple ink-like body. Cute menacing music-themed creature, NOT a musician.
+ROW 2: 'Noise' fast crimson bat-like sound gremlin with jagged waveform ears, pale face and glowing red eyes, tiny black claws, scarf-like streaming shadow tail, sharp narrow silhouette, fluttering walk poses.
+ROW 3: 'Silencer' heavy moss-green monster with a large battered dark green speaker cabinet as its armored torso, gorilla arms with massive hands, small squat legs, speaker grille and glowing amber mouth; huge lumbering silhouette, distinctly larger/heavier feel.
+ROW 4: entirely empty transparent cells. Do not draw anything in row 4.
+Visual style like polished indie pixel action games: clean intentional pixel clusters, slightly chunky proportions, no photorealism, no blurry edges, no text. No background painted behind any sprite. Sixteen uniform cells; twelve visible sprites only in first three rows.
+
+Final monster cleanup:
+Remove all straight grid and border lines, all red/yellow border noise and all background pixels. Keep only the twelve monster sprites on transparent alpha; preserve their exact designs, sizes, positions, poses and 4x4 layout. Fourth row stays empty.
+

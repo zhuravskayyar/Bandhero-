@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Оркестр — прототип звукового двіжка</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#0e0f14;color:#e8e6df;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+#app{max-width:520px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;padding:12px 12px 8px;gap:10px}
+header{display:flex;align-items:center;justify-content:space-between}
+h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.02em;color:#cfcab8}
+#pp{background:#1c1e27;border:1px solid #2c2f3b;color:#e8e6df;border-radius:10px;padding:6px 12px;font-size:14px}
+#chords{display:flex;gap:6px;flex-wrap:wrap}
+.ch{flex:1 1 20%;min-width:58px;text-align:center;padding:9px 0;border-radius:10px;background:#171922;border:1px solid #23262f;font-weight:700;font-size:17px;color:#6d7080;position:relative;overflow:hidden}
+.ch.on{color:#fff;border-color:#e0b252;background:#231f14}
+.ch i{position:absolute;left:0;bottom:0;height:3px;background:#e0b252;width:0}
+.ctrl{display:flex;align-items:center;gap:8px;font-size:12px;color:#9a9788;flex-wrap:wrap}
+.ctrl input[type=range]{flex:1;min-width:90px;accent-color:#e0b252}
+select{background:#1c1e27;color:#e8e6df;border:1px solid #2c2f3b;border-radius:8px;padding:6px 8px;font-size:14px}
+#slots{display:flex;flex-direction:column;gap:8px}
+.slot{background:#151720;border:1px solid #23262f;border-radius:14px;padding:10px;display:grid;grid-template-columns:1fr auto;gap:8px 10px;align-items:center;position:relative;overflow:hidden;transition:border-color .15s}
+.slot.me{border-color:#e0b252;background:#1b1a17}
+.slot.off{opacity:.45}
+.slot .glow{position:absolute;inset:0;background:var(--c);opacity:0;pointer-events:none;transition:opacity .25s}
+.slot .glow.f{opacity:.28;transition:none}
+.tg{border:0;border-radius:999px;padding:7px 14px;font-weight:700;font-size:13px;background:#2a8a55;color:#fff;min-width:58px}
+.slot.off .tg{background:#33363f;color:#999}
+.me-l{grid-column:1/3;display:flex;align-items:center;gap:8px;font-size:13px;color:#b5b19f}
+.me-l input{accent-color:#e0b252;width:18px;height:18px}
+.pads{display:grid;grid-template-columns:2fr 1fr;gap:10px;position:sticky;bottom:8px;margin-top:auto;padding-top:4px}
+.pad{height:23vh;min-height:120px;border-radius:18px;border:1px solid #3a3426;background:linear-gradient(160deg,#3a2f17,#201a0c);color:#f1dba0;font-size:20px;font-weight:800;letter-spacing:.08em;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+.p4{grid-template-columns:1fr 1fr!important}
+.p4 .pad{height:13vh;min-height:78px;font-size:26px;position:relative}
+.p4 .k{position:absolute;left:10px;top:6px;font-size:11px;opacity:.5;font-weight:600}
+.pad.t1{background:linear-gradient(160deg,#3a2f17,#201a0c);border-color:#5a4a22;color:#f1dba0}
+.pad.t2{background:linear-gradient(160deg,#1c3347,#0f1c28);border-color:#2f5878;color:#a9d3f5}
+.pad.t3{background:linear-gradient(160deg,#47201a,#26110d);border-color:#7a3a30;color:#f2aca0}
+.pad.cur{box-shadow:0 0 0 2px #fff7 inset}
+.pad.c{background:linear-gradient(160deg,#1f2b3a,#10171f);border-color:#2a3a4d;color:#a9cdf0;font-size:16px}
+.pad:active,.pad.hit{filter:brightness(1.5);transform:scale(.985)}
+.note{font-size:11px;color:#6f7183;text-align:center;line-height:1.35}
+#status{font-size:11px;color:#e0b252;min-height:14px;text-align:center}
+#start{position:fixed;inset:0;background:#0e0f14ee;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:9;padding:24px;text-align:center}
+#start button{font-size:20px;padding:16px 30px;border-radius:16px;border:1px solid #e0b252;background:#2a2412;color:#f1dba0;font-weight:700}
+#start p{max-width:330px;font-size:14px;color:#a9a592;margin:0;line-height:1.45}
+.row{display:flex;gap:8px}
+.row button{flex:1;border-radius:10px;border:1px solid #3a3426;background:#241f12;color:#f1dba0;padding:10px;font-weight:700;font-size:14px}
+.row button.s{flex:0 0 auto;background:#1c1e27;border-color:#2c2f3b;color:#aaa;font-weight:500}
+.row button:disabled{opacity:.4}
+#lv{position:fixed;inset:0;background:#0e0f14f2;z-index:8;display:none;flex-direction:column;justify-content:center;gap:10px;padding:20px;max-width:520px;margin:0 auto}
+#lv h2{margin:0 0 4px;font-size:16px;text-align:center;color:#f1dba0}
+.cd{background:#1b1a17;border:1px solid #e0b252;border-radius:14px;padding:14px;text-align:left;color:#e8e6df;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+.cd b{font-size:22px;color:#fff}.cd small{color:#a9a592;display:block;margin-top:2px}
+.cd .t{font-size:11px;padding:3px 8px;border-radius:99px;background:#33290f;color:#e0b252}
+.cd.t2{border-color:#4aa3df}.cd.t2 .t{background:#12283a;color:#4aa3df}
+.cd.t3{border-color:#d6604d}.cd.t3 .t{background:#3a1a15;color:#d6604d}
+
+.scenes{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.scenes button{padding:9px 0;border-radius:10px;border:1px solid #2c2f3b;background:#171922;color:#9a9788;font-weight:700;font-size:13px}
+.scenes button.on{border-color:#e0b252;color:#f1dba0;background:#241f12}
+#meter{height:10px;border-radius:99px;background:#171922;border:1px solid #23262f;overflow:hidden}
+#meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,#d6604d,#e0b252)}
+#meter.ready i{background:#f1dba0;box-shadow:0 0 12px #e0b252}
+#padC.ready{border-color:#e0b252;color:#fff;background:linear-gradient(160deg,#6b4a0f,#2d1f06);animation:pl .5s infinite alternate}
+#padC.dim{opacity:.45}
+@keyframes pl{to{filter:brightness(1.5)}}
+</style>
+</head>
+<body>
+<div id="start">
+  <p><b style="color:#f1dba0;font-size:18px">Оркестр · прототип</b><br><br>Ти граєш на одному інструменті кнопкою «УДАР», решта три грають самі. Удари заряджають ульту «СОЛО».<br><br>Краще в навушниках.</p>
+  <button id="go">▶ Почати</button>
+</div>
+<div id="app">
+  <header><h1>ОРКЕСТР · ПРОТОТИП</h1><button id="pp">⏸ Пауза</button></header>
+  <div class="scenes" id="scenes"></div>
+  <div id="chords"></div>
+  <div class="ctrl">
+    <span>Темп</span><input type="range" id="bpm" min="70" max="180" value="140"><span id="bpmv">140</span>
+    <span>Квантування</span>
+    <select id="q"><option value="16">1/16</option><option value="8">1/8</option><option value="0">вимк</option></select>
+  </div>
+  <div id="status"></div>
+  <div id="slots"></div>
+  <div id="meter"><i></i></div>
+  <div class="pads">
+    <button class="pad" id="padA">УДАР</button>
+    <button class="pad c dim" id="padC">СОЛО ★</button>
+  </div>
+  <div class="note">Швидкі удари підіймаються вгору по акорду. Влучання в долю заряджає СОЛО швидше. Коли шкала повна, натисни СОЛО: твій інструмент веде мелодію, а решта підсилюється. Пробіл = удар, Enter = соло.</div>
+</div>
+
+<script>
+(()=>{
+'use strict';
+const $=s=>document.querySelector(s);
+let ctx,master,reverbIn,noiseBuf;
+const mtof=m=>440*Math.pow(2,(m-69)/12);
+const up=(pc,low)=>low+((((pc-low)%12)+12)%12);
+function tones(ch,low,n){const out=[];let m=low-1;while(out.length<n){m++;if(ch.pcs.includes(((m%12)+12)%12))out.push(m);}return out;}
+const RO={C:0,'C#':1,Db:1,D:2,'D#':3,Eb:3,E:4,F:5,'F#':6,Gb:6,G:7,'G#':8,Ab:8,A:9,'A#':10,Bb:10,B:11};
+const QU={'':[0,4,7],m:[0,3,7],'7':[0,4,7,10],m7:[0,3,7,10],maj7:[0,4,7,11],dim:[0,3,6]};
+function chordOf(n){const m=/^([A-G][b#]?)(.*)$/.exec(n),r=RO[m[1]];return{n,pcs:QU[m[2]].map(x=>(r+x)%12)};}
+
+/* СЦЕНИ: гармонічна мова, а не копіювання мелодій.
+   explore ≈ атмосферні екшн-платформери (дорійський, 7-мі акорди)
+   battle  ≈ важкий шутер: фрігійський педаль-рифф на E з b2 та тритоном
+   boss    ≈ драматичний гармонічний мінор (Dm-Bb-Gm-A), «готична» гра
+   horde   ≈ хроматичний підйом по півтонах: наростання, що тисне */
+const SCENES={
+  explore:{name:'Розвідка',bpm:88,mode:'calm',key:9,scale:[0,2,3,5,7,9,10],prog:['Am7','Fmaj7','C','G','Am7','Dm7','Fmaj7','E7']},
+  battle:{name:'Бій',bpm:140,mode:'battle',key:4,scale:[0,1,4,5,7,8,10],prog:['Em','Em','F','Em','G','Em','Bb','B'],
+    riffs:[[0,0,3,0,0,1,0,6],[0,0,0,1,0,3,1,0],[0,3,0,5,0,1,0,3],[0,0,1,0,6,5,3,1]]},
+  boss:{name:'Бос',bpm:126,mode:'battle',key:2,scale:[0,2,3,5,7,8,11],prog:['Dm','Bb','Gm','A','Dm','Bb','C','A7'],
+    riffs:[[0,0,0,3,0,0,5,0],[0,0,3,0,0,7,0,1]]},
+  horde:{name:'Орда',bpm:160,mode:'battle',chordRel:true,key:4,scale:[0,3,5,7,10],prog:['Em','F','F#','G','G#','A','Bb','B'],
+    riffs:[[0,0,0,0,0,0,3,0],[0,0,0,3,0,0,0,5]]}
+};
+const state={scene:'battle',bpm:140,quant:16,playing:false,player:0,step:0,nextTime:0,pending:0,lastPlayT:-9,idx:0,curChord:null,
+  charge:0,soloReq:false,soloOn:false,soloEnd:-1,soloStart:0,soloPos:null};
+let PROG=[];
+const SC=()=>SCENES[state.scene];
+const BT=()=>SC().mode==='battle';
+const slots=[{inst:'guitar',on:true},{inst:'drums',on:true},{inst:'bass',on:true},{inst:'piano',on:true}];
+const COLORS=['#e0b252','#d6604d','#4aa3df','#9b7fe0'];
+const PAN=[-.28,.22,-.1,.3];
+const stepDur=()=>60/state.bpm/4;
+function riffOff(bar,k){const r=SC().riffs;return r?r[bar%r.length][k]:0;}
+
+/* ---------- AUDIO CORE ---------- */
+function makeIR(dur,decay){
+  const sr=ctx.sampleRate,len=Math.floor(sr*dur),b=ctx.createBuffer(2,len,sr);
+  for(let c=0;c<2;c++){const d=b.getChannelData(c);let lp=0;
+    for(let i=0;i<len;i++){const t=i/len;const a=.9-.82*t; // темніше з часом
+      lp+=a*((Math.random()*2-1)-lp);
+      d[i]=lp*Math.pow(1-t,decay)*(i<sr*.012?i/(sr*.012):1);}}
+  return b;
+}
+function initAudio(){
+  const AC=window.AudioContext||window.webkitAudioContext;ctx=new AC({latencyHint:'playback'});
+  const comp=ctx.createDynamicsCompressor();comp.threshold.value=-20;comp.knee.value=12;comp.ratio.value=6;comp.attack.value=.004;comp.release.value=.2;
+  master=ctx.createGain();master.gain.value=.45;
+  const lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=13500;
+  const sat=ctx.createWaveShaper(),cv=new Float32Array(2048);for(let i=0;i<2048;i++){const x=i/1024-1;cv[i]=Math.tanh(x*1.1)/Math.tanh(1.1);}sat.curve=cv;
+  master.connect(comp);comp.connect(lp);lp.connect(sat);sat.connect(ctx.destination);
+  const conv=ctx.createConvolver();conv.buffer=makeIR(1.5,2.2);
+  reverbIn=ctx.createGain();const wet=ctx.createGain();wet.gain.value=.34;
+  reverbIn.connect(conv);conv.connect(wet);wet.connect(master);
+  noiseBuf=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate);
+  const nd=noiseBuf.getChannelData(0);for(let i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;
+}
+
+/* ---------- INSTRUMENT BUSES ---------- */
+const EQ={
+  guitar:[['peaking',95,4,1.4],['peaking',230,3,1.2],['peaking',3200,2.5,1],['lowpass',7500,0,.7]],
+  bass:[['highpass',35,0,.7],['peaking',110,3,1.2],['peaking',700,-3,1],['lowpass',1800,0,.7]],
+  piano:[['highpass',50,0,.7],['peaking',250,-2,1],['peaking',2800,2,.9],['lowpass',9000,0,.7]],
+  harp:[['highpass',130,0,.7],['peaking',2400,2,1],['lowpass',9000,0,.7]],
+  violin:[['highpass',180,0,.7],['peaking',950,5,1.2],['peaking',2900,3,1],['lowpass',6500,0,.7]],
+  trumpet:[['highpass',180,0,.7],['peaking',1200,5,1.4],['peaking',2600,2,1],['lowpass',7000,0,.7]],
+  drums:[['highpass',30,0,.7]]
+};
+const MIX={guitar:.85,bass:.95,piano:.8,harp:.75,violin:.5,trumpet:.5,drums:.95};
+const SEND={guitar:.55,bass:.12,piano:.6,harp:.8,violin:.9,trumpet:.6,drums:.35};
+function makeBus(inst,i){
+  const input=ctx.createGain();let node=input;
+  if(BT()&&(inst==='guitar'||inst==='bass')){
+    const g=inst==='guitar',pre=ctx.createGain(),ws=ctx.createWaveShaper(),post=ctx.createGain(),c=new Float32Array(1024),k=g?7:2.5;
+    for(let i=0;i<1024;i++){const x=i/512-1;c[i]=Math.tanh(x*k)/Math.tanh(k*.9);}
+    ws.curve=c;ws.oversample='2x';pre.gain.value=g?3:1.4;post.gain.value=g?.42:.75;
+    input.connect(pre);pre.connect(ws);ws.connect(post);node=post;
+  }
+  for(const [type,f,g,q] of EQ[inst]){const b=ctx.createBiquadFilter();b.type=type;b.frequency.value=f;b.gain.value=g;b.Q.value=q;node.connect(b);node=b;}
+  const out=ctx.createGain();out.gain.value=MIX[inst];node.connect(out);
+  const pan=ctx.createStereoPanner();pan.pan.value=PAN[i];out.connect(pan);pan.connect(master);
+  const send=ctx.createGain();send.gain.value=SEND[inst];out.connect(send);send.connect(reverbIn);
+  return {input,out,pan,send};
+}
+function addVoice(slot,fade,t){
+  slot.voices=slot.voices||[];slot.voices.push(fade);
+  while(slot.voices.length>10){const v=slot.voices.shift();try{v.gain.setTargetAtTime(0,t,.04);}catch(e){}}
+}
+
+/* ---------- BUFFERS: Karplus–Strong + additive piano ---------- */
+const bufCache=new Map();
+function ksRender(f,T,alpha,pp,len,sr){
+  const N=Math.max(2,Math.round(sr/f)),line=new Float32Array(N);
+  let prev=0;for(let i=0;i<N;i++){prev+=alpha*((Math.random()*2-1)-prev);line[i]=prev;}
+  const p=Math.max(1,Math.round(N*pp)),tmp=line.slice();
+  for(let i=0;i<N;i++)line[i]=tmp[i]-tmp[(i+p)%N];
+  let mean=0;for(let i=0;i<N;i++)mean+=line[i];mean/=N;
+  let mx=1e-9;for(let i=0;i<N;i++){line[i]-=mean;mx=Math.max(mx,Math.abs(line[i]));}
+  for(let i=0;i<N;i++)line[i]/=mx;
+  const g=Math.exp(-6.9/(f*T)),out=new Float32Array(len);let idx=0;
+  for(let n=0;n<len;n++){const cur=line[idx],nxt=line[(idx+1)%N];out[n]=cur;line[idx]=g*.5*(cur+nxt);idx=(idx+1)%N;}
+  return {data:out,rate:f*(N+.5)/sr};
+}
+function pianoRender(f,len,sr){
+  const out=new Float32Array(len);
+  const B=.00009*Math.pow(f/261,2)+.00002,K=Math.max(3,Math.min(11,Math.floor(sr*.42/f)));
+  const T0=Math.min(6,Math.max(1.6,5.2*Math.pow(110/f,.45)));
+  for(let k=1;k<=K;k++){
+    const fk=f*k*Math.sqrt(1+B*k*k);
+    const amp=Math.pow(k,-.95)*Math.abs(Math.sin(Math.PI*k/8+.0001))*Math.exp(-k*.05);
+    const strings=[[1-.00035,1,0.6],[1+.00045,2.3,0.4]]; // дві струни: швидкий + «післязвук»
+    for(const [d,tm,aw] of strings){
+      const tau=T0*tm/(1+.35*(k-1)),dec=Math.exp(-1/(sr*tau)),w=2*Math.PI*fk*d/sr;
+      let e=amp*aw,ph=Math.random()*6.28,sn=Math.sin(ph),cs=Math.cos(ph);const ws=Math.sin(w),wc=Math.cos(w);
+      for(let n=0;n<len;n++){out[n]+=e*sn;const ns=sn*wc+cs*ws;cs=cs*wc-sn*ws;sn=ns;e*=dec;if(e<1e-5)break;}
+    }
+  }
+  let lp=0;for(let n=0;n<sr*.02&&n<len;n++){lp+=.35*((Math.random()*2-1)-lp);out[n]+=lp*.5*Math.exp(-n/(sr*.004));}
+  for(let n=0;n<sr*.002&&n<len;n++)out[n]*=n/(sr*.002);
+  let mx=1e-9;for(let n=0;n<len;n++)mx=Math.max(mx,Math.abs(out[n]));
+  for(let n=0;n<len;n++)out[n]/=mx;
+  return {data:out,rate:1};
+}
+const pend=new Map(),msgs=new Map();let worker=null;
+try{
+  const code=`const ksRender=${ksRender.toString()};const pianoRender=${pianoRender.toString()};
+  onmessage=e=>{const m=e.data;if(m.ping){postMessage({pong:1});return;}const r=m.kind==='ks'?ksRender(m.f,m.T,m.alpha,m.pp,m.len,m.sr):pianoRender(m.f,m.len,m.sr);
+  postMessage({key:m.key,data:r.data,rate:r.rate},[r.data.buffer]);};`;
+  worker=new Worker(URL.createObjectURL(new Blob([code],{type:'text/javascript'})));
+  const w=worker;
+  w.onmessage=e=>{if(e.data.pong){if(w.__ok)w.__ok();return;}finishBuf(e.data.key,e.data.data,e.data.rate);};
+  w.onerror=()=>{if(worker===w)worker=null;for(const [k,m] of msgs)if(pend.has(k))mainRender(m);};
+}catch(err){worker=null;}
+function workerReady(){return new Promise(res=>{
+  if(!worker)return res(false);const w=worker;
+  const to=setTimeout(()=>{if(worker===w)worker=null;res(false);},1500);
+  w.__ok=()=>{clearTimeout(to);res(true);};
+  try{w.postMessage({ping:1});}catch(e){clearTimeout(to);worker=null;res(false);}
+});}
+function finishBuf(key,data,rate){
+  const sr=ctx.sampleRate,len=data.length,fadeN=Math.floor(sr*.05);
+  for(let i=0;i<fadeN;i++)data[len-1-i]*=i/fadeN;
+  const ab=ctx.createBuffer(1,len,sr);ab.getChannelData(0).set(data);
+  bufCache.set(key,{buf:ab,rate});const p=pend.get(key);pend.delete(key);if(p)p.forEach(r=>r());
+}
+function mainRender(m){setTimeout(()=>{if(!pend.has(m.key))return;const r=m.kind==='ks'?ksRender(m.f,m.T,m.alpha,m.pp,m.len,m.sr):pianoRender(m.f,m.len,m.sr);finishBuf(m.key,r.data,r.rate);},0);}
+function reqBuf(inst,midi){
+  const key=inst+midi;if(bufCache.has(key))return Promise.resolve();
+  return new Promise(res=>{
+    if(pend.has(key)){pend.get(key).push(res);return;}pend.set(key,[res]);
+    const sr=ctx.sampleRate,f=mtof(midi);let m;
+    if(inst==='guitar')m={kind:'ks',T:2.4,alpha:.5,pp:.17,len:Math.floor(sr*2.8)};
+    else if(inst==='bass')m={kind:'ks',T:3.2,alpha:.22,pp:.25,len:Math.floor(sr*3)};
+    else if(inst==='harp')m={kind:'ks',T:3.6,alpha:.62,pp:.45,len:Math.floor(sr*3.2)};
+    else m={kind:'pn',len:Math.floor(sr*2.8)};
+    m.key=key;m.f=f;m.sr=sr;msgs.set(key,m);
+    if(worker)worker.postMessage(m);else mainRender(m);
+  });
+}
+function getBuf(inst,midi){const b=bufCache.get(inst+midi);if(!b)reqBuf(inst,midi);return b||null;}
+function playBuffered(slot,t,ev,cfg){
+  const b=getBuf(slot.inst,ev.midi);if(!b)return;const tt=t+(ev.off||0),sd=stepDur();
+  const src=ctx.createBufferSource();src.buffer=b.buf;src.playbackRate.value=b.rate;
+  const env=ctx.createGain(),fade=ctx.createGain();
+  const hold=ev.dur?ev.dur*sd:cfg.hold;
+  env.gain.setValueAtTime(Math.min(1,ev.vel*cfg.gain),tt);
+  env.gain.setTargetAtTime(.0001,tt+hold,cfg.rel);
+  src.connect(env);env.connect(fade);fade.connect(slot.bus.input);
+  src.start(tt);src.stop(tt+hold+cfg.rel*7+.1);addVoice(slot,fade,tt);
+}
+
+/* ---------- REAL-TIME VOICES ---------- */
+function noiseBurst(dest,tt,dur,freq,q,gain){
+  const s=ctx.createBufferSource();s.buffer=noiseBuf;const f=ctx.createBiquadFilter();f.type='bandpass';f.frequency.value=freq;f.Q.value=q;
+  const g=ctx.createGain();g.gain.setValueAtTime(gain,tt);g.gain.exponentialRampToValueAtTime(.0001,tt+dur);
+  s.connect(f);f.connect(g);g.connect(dest);s.start(tt,Math.random());s.stop(tt+dur+.05);
+}
+function playViolin(slot,t,ev){
+  const f=mtof(ev.midi),tt=t+(ev.off||0),dur=(ev.dur||6)*stepDur(),v=Math.min(1,ev.vel)*.55;
+  const o1=ctx.createOscillator(),o2=ctx.createOscillator(),o3=ctx.createOscillator();
+  o1.type=o2.type='sawtooth';o3.type='triangle';o1.frequency.value=f;o2.frequency.value=f*1.0042;o3.frequency.value=f*.998;
+  const lfo=ctx.createOscillator();lfo.frequency.value=5.3+Math.random()*.4;
+  const lg=ctx.createGain();lg.gain.setValueAtTime(0,tt);lg.gain.setValueAtTime(0,tt+.18);lg.gain.linearRampToValueAtTime(f*.0055,tt+.7);
+  lfo.connect(lg);[o1,o2,o3].forEach(o=>lg.connect(o.frequency));
+  const mix=ctx.createGain();mix.gain.value=.5;o1.connect(mix);o2.connect(mix);const g3=ctx.createGain();g3.gain.value=.4;o3.connect(g3);g3.connect(mix);
+  const lp=ctx.createBiquadFilter();lp.type='lowpass';lp.Q.value=.8;
+  lp.frequency.setValueAtTime(f*2,tt);lp.frequency.linearRampToValueAtTime(Math.min(7000,f*6),tt+.25);
+  const env=ctx.createGain(),fade=ctx.createGain();
+  env.gain.setValueAtTime(0,tt);env.gain.linearRampToValueAtTime(v,tt+.14);env.gain.setValueAtTime(v,tt+dur);env.gain.linearRampToValueAtTime(0,tt+dur+.3);
+  mix.connect(lp);lp.connect(env);env.connect(fade);fade.connect(slot.bus.input);
+  noiseBurst(slot.bus.input,tt,.18,3200,1.2,.03*v);
+  [o1,o2,o3,lfo].forEach(o=>{o.start(tt);o.stop(tt+dur+.4);});addVoice(slot,fade,tt);
+}
+function playTrumpet(slot,t,ev){
+  const f=mtof(ev.midi),tt=t+(ev.off||0),dur=(ev.dur||2)*stepDur(),v=Math.min(1,ev.vel)*.6;
+  const o1=ctx.createOscillator(),o2=ctx.createOscillator();o1.type='sawtooth';o2.type='square';
+  o1.frequency.setValueAtTime(f*.985,tt);o1.frequency.exponentialRampToValueAtTime(f,tt+.05);
+  o2.frequency.setValueAtTime(f*.985,tt);o2.frequency.exponentialRampToValueAtTime(f*1.003,tt+.05);
+  const mix=ctx.createGain();mix.gain.value=.5;const g2=ctx.createGain();g2.gain.value=.25;o1.connect(mix);o2.connect(g2);g2.connect(mix);
+  const lp=ctx.createBiquadFilter();lp.type='lowpass';lp.Q.value=2.2;
+  lp.frequency.setValueAtTime(500,tt);lp.frequency.exponentialRampToValueAtTime(Math.min(6500,f*7),tt+.07);
+  lp.frequency.setTargetAtTime(f*3.2,tt+.1,.25);
+  const env=ctx.createGain(),fade=ctx.createGain();
+  env.gain.setValueAtTime(0,tt);env.gain.linearRampToValueAtTime(v,tt+.03);env.gain.setValueAtTime(v*.8,tt+dur);env.gain.linearRampToValueAtTime(0,tt+dur+.12);
+  mix.connect(lp);lp.connect(env);env.connect(fade);fade.connect(slot.bus.input);
+  noiseBurst(slot.bus.input,tt,.07,2500,.8,.05*v);
+  [o1,o2].forEach(o=>{o.start(tt);o.stop(tt+dur+.2);});addVoice(slot,fade,tt);
+}
+
+/* ---------- DRUMS ---------- */
+function drum(slot,t,ev){
+  const d=slot.bus.input,v=ev.vel;
+  const nz=(dur,type,freq,q,gain,t0)=>{const s=ctx.createBufferSource();s.buffer=noiseBuf;const f=ctx.createBiquadFilter();f.type=type;f.frequency.value=freq;f.Q.value=q;
+    const g=ctx.createGain();g.gain.setValueAtTime(gain,t0);g.gain.exponentialRampToValueAtTime(.0001,t0+dur);s.connect(f);f.connect(g);g.connect(d);s.start(t0,Math.random()*1.5);s.stop(t0+dur+.05);};
+  if(ev.drum==='kick'){
+    const o=ctx.createOscillator(),g=ctx.createGain(),sh=ctx.createWaveShaper();
+    const c=new Float32Array(256);for(let i=0;i<256;i++){const x=i/128-1;c[i]=Math.tanh(x*1.8);}sh.curve=c;
+    o.frequency.setValueAtTime(155,t);o.frequency.exponentialRampToValueAtTime(46,t+.1);
+    g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+.42);
+    o.connect(sh);sh.connect(g);g.connect(d);o.start(t);o.stop(t+.45);nz(.012,'highpass',2500,.7,.35*v,t);
+  }else if(ev.drum==='snare'){
+    const o=ctx.createOscillator(),g=ctx.createGain();o.type='triangle';o.frequency.setValueAtTime(210,t);o.frequency.exponentialRampToValueAtTime(165,t+.08);
+    g.gain.setValueAtTime(.55*v,t);g.gain.exponentialRampToValueAtTime(.001,t+.16);o.connect(g);g.connect(d);o.start(t);o.stop(t+.2);
+    nz(.2,'highpass',1400,.7,.75*v,t);nz(.09,'bandpass',4200,.9,.3*v,t);
+  }else if(ev.drum==='hat'){nz(.045,'highpass',7800,.8,.3*v,t);nz(.03,'bandpass',10500,1.5,.18*v,t);}
+  else if(ev.drum==='ohat'){nz(.28,'highpass',7000,.8,.28*v,t);nz(.22,'bandpass',9800,1.5,.15*v,t);}
+  else if(ev.drum==='crash'){nz(1.3,'highpass',3800,.6,.35*v,t);nz(.8,'bandpass',7000,.8,.18*v,t);}
+}
+
+/* ---------- INSTRUMENT DEFINITIONS ---------- */
+const E=(midi,vel,dur,off)=>({midi,vel,dur,off});
+const GS=[0,2,3,6,8,10,11,14];
+const INST={
+  guitar:{name:'Гітара',lo:52,buf:true,cfg:{gain:.7,hold:1.5,rel:.18},
+    steps(ch,s,bar){
+      if(BT()){const k=GS.indexOf(s);if(k<0)return[];const v=[1,.7,.72,.8,.95,.7,.72,.82][k],r=up(ch.pcs[0],40)+riffOff(bar,k),long=s===0||s===8;
+        return[r,r+7,r+12].map((m,i)=>E(m,v*(.9+Math.random()*.1),long?3:1,i*.004));}
+      const tn=tones(ch,52,5);const strum=(arr,v)=>arr.map((m,i)=>E(m,v*(.85+Math.random()*.15),0,i*.014));
+      if(s===0)return strum(tn,.9);if(s===6)return strum(tn,.75);if(s===8)return strum(tn.slice(2).reverse(),.5);
+      if(s===10)return strum(tn,.78);if(s===14)return strum(tn.slice(1,4),.5);return[];},
+    chord(ch){if(BT()){const r=up(ch.pcs[0],40);return[E(r,1,4),E(r+7,1,4,.006),E(r+12,1,4,.012),E(r+19,.9,4,.018)];}
+      return tones(ch,48,6).map((m,i)=>E(m,.95,0,i*.016));},play:(sl,t,ev)=>playBuffered(sl,t,ev,INST.guitar.cfg)},
+  bass:{name:'Бас',lo:36,buf:true,cfg:{gain:.9,hold:.5,rel:.07},
+    steps(ch,s,bar){const r=up(ch.pcs[0],40);
+      if(BT()){const fast=state.soloOn;if(s%2&&!fast)return[];const k=s>>1,m=r+riffOff(bar,k)+((s===14&&riffOff(bar,k)===0)?12:0);return[E(m,s%4===0?1:.72,fast?1:1.6)];}
+      const m={0:[r,1,3],6:[r,.8,2],8:[r,.9,3],11:[r+7,.7,2],14:[r+12,.65,2]}[s];return m?[E(m[0],m[1],m[2])]:[];},
+    chord(ch){return[E(up(ch.pcs[0],40),1,6)];},play:(sl,t,ev)=>playBuffered(sl,t,ev,INST.bass.cfg)},
+  piano:{name:'Піаніно',lo:60,buf:true,cfg:{gain:.62,hold:1.8,rel:.25},
+    steps(ch,s,bar){
+      if(BT()){const v={0:1,3:.8,6:.85,10:.8,12:.7}[s];if(v===undefined)return[];const r=up(ch.pcs[0],48),t=tones(ch,57,3);
+        return[E(r,v,1.5),E(r+12,v*.8,1.5),E(t[1],v*.7,1.5),E(t[2],v*.65,1.5)];}
+      const tn=tones(ch,57,6),seq=[0,2,1,3,2,4,3,1];const ev=[];
+      if(s===0)ev.push(E(up(ch.pcs[0],40)+12,.55,6));
+      if(s%2===0)ev.push(E(tn[seq[s/2]],(s%4===0?.7:.5)*(.9+Math.random()*.1),0));return ev;},
+    chord(ch){return tones(ch,57,5).map((m,i)=>E(m,.8,0,i*.006));},play:(sl,t,ev)=>playBuffered(sl,t,ev,INST.piano.cfg)},
+  harp:{name:'Арфа',lo:60,buf:true,cfg:{gain:.62,hold:2.6,rel:.4},
+    steps(ch,s,bar){
+      if(BT()){const tn=tones(ch,60,8),k=s%8,i=s<8?k:7-k;return[E(tn[i],.5+(s%4===0?.2:0),1.5)];}
+      if(s%2)return[];const tn=tones(ch,60,8),k=s/2;return[E(tn[bar%2===0?k:7-k],.55+(k%4===0?.15:0),0)];},
+    chord(ch){return tones(ch,60,8).map((m,i)=>E(m,.7,0,i*.045));},play:(sl,t,ev)=>playBuffered(sl,t,ev,INST.harp.cfg)},
+  violin:{name:'Скрипка',lo:67,
+    steps(ch,s){const tn=tones(ch,67,3);
+      if(BT()){if(s%2)return[];return[E(tn[s%8===0?2:1],s%4===0?.85:.6,1.4)];}
+      if(s===0)return[E(tn[1],.8,8)];if(s===8)return[E(tn[2],.7,8)];return[];},
+    chord(ch){return[E(tones(ch,67,3)[1],.9,8)];},play:playViolin},
+  trumpet:{name:'Труба',lo:60,
+    steps(ch,s){const tn=tones(ch,60,4);
+      if(BT()){const m={0:[tn[2],1,2],3:[tn[2],.8,1],6:[tn[3],.9,2],10:[tn[2],.9,3],14:[tn[1],.8,1]}[s];return m?[E(m[0],m[1],m[2])]:[];}
+      if(s===0)return[E(tn[1],.85,3)];if(s===6)return[E(tn[2],.7,2)];if(s===10)return[E(tn[1],.8,3)];return[];},
+    chord(ch){return[E(tones(ch,60,4)[2],.95,4)];},play:playTrumpet},
+  drums:{name:'Ударні',lo:0,drum:true,
+    steps(ch,s,bar){const ev=[],D=(d,v)=>ev.push({drum:d,vel:v}),fill=bar%4===3&&!state.soloOn;
+      if(BT()){
+        if(s===0){D('kick',1);if(bar%4===0||state.soloOn&&bar%2===0)D('crash',.55);}
+        if([2,6,8,10,14].includes(s)&&!(fill&&s>=10))D('kick',s===8?.95:.75);
+        if(state.soloOn&&[3,11].includes(s))D('kick',.7);
+        if(s===4||s===12)D('snare',1);
+        if(fill&&s>=10)D(s%2?'snare':'kick',.55+.05*(s-10));
+        if(!fill){if(state.soloOn){D('hat',s%2?.45:.8);}else if(s%2===0)D('hat',s%4===0?.85:.55);}
+        if(s===14&&!fill&&!state.soloOn)D('ohat',.7);return ev;}
+      if(s===0){D('kick',1);if(bar%4===0)D('crash',.5);}if(s===8)D('kick',.9);if(s===10&&bar%2)D('kick',.7);if(s===6&&bar%2===0)D('kick',.6);
+      if(s===4||s===12)D('snare',.9);if(fill&&s>=13)D('snare',.5+.15*(s-13));
+      if(s%2===0&&!(fill&&s>=14))D('hat',s%4===0?.8:.5);if(s===14&&!fill)D('ohat',.7);
+      if(state.soloOn&&s%2)D('hat',.4);return ev;},
+    chord(){return[{drum:'kick',vel:1},{drum:'snare',vel:.9},{drum:'crash',vel:.6}];},play:drum}
+};
+function ladder(inst,ch){return tones(ch,INST[inst].lo,7);}
+function scaleNotes(inst,ch){
+  const lo=INST[inst].lo,sc=SC(),root=sc.chordRel?ch.pcs[0]:sc.key,L=[];
+  for(let m=lo;m<=lo+24;m++){const d=(((m-root)%12)+12)%12;if(sc.scale.includes(d)||ch.pcs.includes(m%12))L.push(m);}
+  return L;
+}
+
+/* ---------- PLAYER + SOLO ---------- */
+function playerEvents(slot,ch,t,vel){
+  const gap=t-state.lastPlayT<.5;state.idx=gap?state.idx+1:0;state.lastPlayT=t;
+  if(slot.inst==='drums'){const seq=['kick','hat','snare','hat'];return[{drum:seq[state.idx%4],vel}];}
+  const L=ladder(slot.inst,ch),pos=state.idx%12,k=pos<=6?pos:12-pos;
+  return[E(L[k],vel,slot.inst==='violin'?4:slot.inst==='trumpet'?2:3)];
+}
+const RHY=[1,0,1,1,0,1,0,1,1,0,1,1,0,1,1,1];
+function soloEvents(sl,ch,k){
+  const s=k%16;
+  if(sl.inst==='drums'){const ev=[];if(s%4===0)ev.push({drum:'kick',vel:.9});if(s%4===2)ev.push({drum:'snare',vel:.85});if(s%2)ev.push({drum:'hat',vel:.55});if(k===0||k===16)ev.push({drum:'crash',vel:.7});return ev;}
+  if(!RHY[s])return[];
+  const L=scaleNotes(sl.inst,ch);if(state.soloPos==null||state.soloPos>=L.length)state.soloPos=Math.floor(L.length*.4);
+  const target=Math.round((L.length-1)*(.3+.5*Math.sin(Math.PI*k/31)));
+  let d=target>state.soloPos?1:target<state.soloPos?-1:0;if(Math.random()<.35)d*=2;if(Math.random()<.2)d=-d;
+  state.soloPos=Math.max(0,Math.min(L.length-1,state.soloPos+d));
+  if(s%8===0||k===31){let best=state.soloPos,bd=99;L.forEach((m,i)=>{if(ch.pcs.includes(m%12)&&Math.abs(i-state.soloPos)<bd){bd=Math.abs(i-state.soloPos);best=i;}});state.soloPos=best;}
+  const nxt=RHY[(s+1)%16]?1:2.2;
+  return[E(L[state.soloPos],.8+Math.random()*.2,sl.inst==='violin'?nxt*1.6:nxt)];
+}
+function addCharge(s){state.charge=Math.min(1,state.charge+.06+(s%4===0?.03:0));}
+let flashQ=[],uiQ=[];
+function fire(i,t,evs){const sl=slots[i],I=INST[sl.inst];for(const ev of evs){if(ev.drum)drum(sl,t,ev);else I.play(sl,t,ev);}if(evs.length)flashQ.push({t,i});}
+
+/* ---------- SCHEDULER ---------- */
+function doStep(step,t){
+  const bar=Math.floor(step/16),s=step%16,idx=bar%PROG.length,ch=PROG[idx];
+  state.curChord=ch;uiQ.push({t,bar:idx,s});
+  const qOK=state.quant===16||(state.quant===8&&s%2===0);
+  if(state.soloReq&&state.charge>=1&&(qOK||state.quant===0)){state.soloReq=false;state.soloEnd=step+32;state.soloStart=step;state.charge=0;state.soloPos=null;}
+  state.soloOn=step<state.soloEnd;
+  slots.forEach((sl,i)=>{
+    if(!sl.on)return;
+    if(i===state.player){
+      if(state.soloOn){fire(i,t,soloEvents(sl,ch,step-state.soloStart));return;}
+      if(state.quant===0)return;
+      if(state.pending>0&&qOK){fire(i,t,playerEvents(sl,ch,t,Math.min(1,.7+.1*state.pending)));addCharge(s);state.pending=0;}
+    }else fire(i,t,INST[sl.inst].steps(ch,s,bar));
+  });
+}
+function tick(){if(!state.playing)return;while(state.nextTime<ctx.currentTime+.3){doStep(state.step,state.nextTime);state.nextTime+=stepDur();state.step++;}}
+function tap(){
+  if(!ctx||!state.playing)return;const sl=slots[state.player];if(!sl.on||state.soloOn)return;
+  $('#padA').classList.add('hit');setTimeout(()=>$('#padA').classList.remove('hit'),90);
+  if(state.quant===0){const t=ctx.currentTime+.02;fire(state.player,t,playerEvents(sl,state.curChord,t,.9));addCharge(1);}
+  else state.pending++;
+}
+function solo(){if(!ctx||!state.playing||state.charge<1||state.soloOn)return;state.soloReq=true;}
+
+/* ---------- PRELOAD ---------- */
+let warming=0;
+async function warm(sl){
+  const I=INST[sl.inst];if(!I.buf)return;const set=new Set();
+  for(const ch of PROG){for(let bar=0;bar<4;bar++)for(let s=0;s<16;s++)I.steps(ch,s,bar).forEach(e=>set.add(e.midi));I.chord(ch).forEach(e=>set.add(e.midi));ladder(sl.inst,ch).forEach(m=>set.add(m));scaleNotes(sl.inst,ch).forEach(m=>set.add(m));}
+  const list=[...set].filter(m=>!bufCache.has(sl.inst+m));if(!list.length)return;
+  warming++;$('#status').textContent='Готую звук…';
+  await Promise.all(list.map(m=>reqBuf(sl.inst,m)));
+  if(--warming===0)$('#status').textContent='';
+}
+
+/* ---------- UI ---------- */
+function buildUI(){
+  const wrap=$('#slots');wrap.innerHTML='';
+  slots.forEach((sl,i)=>{
+    const d=document.createElement('div');d.className='slot';d.style.setProperty('--c',COLORS[i]);
+    d.innerHTML=`<div class="glow"></div><select>${Object.entries(INST).map(([k,v])=>`<option value="${k}">${v.name}</option>`).join('')}</select><button class="tg">ON</button><label class="me-l"><input type="radio" name="pl"> Я граю на цьому</label>`;
+    const sel=d.querySelector('select'),tg=d.querySelector('.tg'),rd=d.querySelector('input');
+    sel.value=sl.inst;rd.checked=i===state.player;
+    sel.onchange=()=>{const old=sl.bus;sl.inst=sel.value;sl.bus=makeBus(sl.inst,i);sl.voices=[];if(old)setTimeout(()=>old.out.disconnect(),4000);warm(sl);};
+    tg.onclick=()=>{sl.on=!sl.on;tg.textContent=sl.on?'ON':'OFF';d.classList.toggle('off',!sl.on);};
+    rd.onchange=()=>{state.player=i;state.pending=0;state.idx=0;state.soloEnd=-1;refreshMe();};
+    sl.el=d;wrap.appendChild(d);
+  });
+  refreshMe();
+}
+function refreshMe(){slots.forEach((sl,i)=>sl.el.classList.toggle('me',i===state.player));}
+function buildChords(){$('#chords').innerHTML=PROG.map(p=>`<div class="ch">${p.n}<i></i></div>`).join('');}
+function buildScenes(){
+  const w=$('#scenes');w.innerHTML='';
+  Object.entries(SCENES).forEach(([k,v])=>{const b=document.createElement('button');b.textContent=v.name;b.dataset.k=k;b.onclick=()=>setScene(k);w.appendChild(b);});
+}
+async function setScene(k){
+  state.scene=k;const sc=SC();PROG=sc.prog.map(chordOf);state.curChord=PROG[0];state.bpm=sc.bpm;$('#bpm').value=sc.bpm;$('#bpmv').textContent=sc.bpm;
+  state.pending=0;state.idx=0;state.soloEnd=-1;state.soloReq=false;state.soloOn=false;
+  [...$('#scenes').children].forEach(b=>b.classList.toggle('on',b.dataset.k===k));buildChords();
+  if(!ctx)return;
+  slots.forEach((sl,i)=>{const old=sl.bus;sl.bus=makeBus(sl.inst,i);sl.voices=[];if(old)setTimeout(()=>old.out.disconnect(),4000);});
+  await Promise.all(slots.map(sl=>warm(sl)));
+}
+function raf(){
+  if(ctx){const now=ctx.currentTime;
+    while(flashQ.length&&flashQ[0].t<=now){const f=flashQ.shift(),g=slots[f.i].el.querySelector('.glow');g.classList.add('f');setTimeout(()=>g.classList.remove('f'),60);}
+    while(uiQ.length&&uiQ[0].t<=now){const u=uiQ.shift();[...$('#chords').children].forEach((c,j)=>{c.classList.toggle('on',j===u.bar);c.querySelector('i').style.width=j===u.bar?((u.s+1)/16*100)+'%':'0';});}
+    const m=$('#meter'),ready=state.charge>=1&&!state.soloOn;
+    m.firstChild.style.width=(state.soloOn?Math.max(0,1-(state.step-state.soloStart)/32):state.charge)*100+'%';
+    m.classList.toggle('ready',ready||state.soloOn);
+    const pc=$('#padC');pc.classList.toggle('ready',ready);pc.classList.toggle('dim',!ready);pc.textContent=state.soloOn?'СОЛО ♪':'СОЛО ★';
+  }
+  requestAnimationFrame(raf);
+}
+
+/* ---------- WIRING ---------- */
+window.addEventListener('error',e=>{const s=$('#status');if(s)s.textContent='Помилка: '+e.message;});
+buildScenes();buildUI();
+PROG=SC().prog.map(chordOf);state.curChord=PROG[0];buildChords();[...$('#scenes').children].forEach(b=>b.classList.toggle('on',b.dataset.k===state.scene));
+$('#go').onclick=async()=>{
+  initAudio();await ctx.resume();
+  slots.forEach((sl,i)=>sl.bus=makeBus(sl.inst,i));
+  $('#start').remove();$('#status').textContent='Готую звук…';
+  await workerReady();
+  await Promise.race([Promise.all(slots.map(sl=>warm(sl))),new Promise(r=>setTimeout(r,10000))]);
+  state.playing=true;state.step=0;state.nextTime=ctx.currentTime+.3;setInterval(tick,25);requestAnimationFrame(raf);
+};
+$('#pp').onclick=()=>{if(!ctx)return;state.playing=!state.playing;$('#pp').textContent=state.playing?'⏸ Пауза':'▶ Далі';
+  if(state.playing){state.nextTime=ctx.currentTime+.1;ctx.resume();}};
+$('#bpm').oninput=e=>{state.bpm=+e.target.value;$('#bpmv').textContent=state.bpm;};
+$('#q').onchange=e=>{state.quant=+e.target.value;state.pending=0;};
+$('#padA').addEventListener('pointerdown',e=>{e.preventDefault();tap();});
+$('#padC').addEventListener('pointerdown',e=>{e.preventDefault();solo();});
+window.addEventListener('keydown',e=>{if(e.repeat)return;if(e.code==='Space'){e.preventDefault();tap();}else if(e.code==='Enter'){e.preventDefault();solo();}});
+})();
+</script>
+</body>
+</html>

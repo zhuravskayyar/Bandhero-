@@ -1,0 +1,50 @@
+Built-in image_gen generation, 2026-11-20. Project-bound final assets.
+Art direction: living instruments and musical creatures, no human musicians; hand-painted pixel edges; midnight grove, warm amber / coral / cyan / violet.
+
+band-creatures-v2.png
+Use case: stylized-concept.
+Asset: final production transparent PNG animation sprite atlas for a whimsical dark forest music roguelite. FOUR columns and FOUR rows, exact regular 4x4 equal-cell layout, one whole creature per cell. Square image. Absolutely no people or humanoid musicians. The INSTRUMENT ITSELF is the living monster.
+Art direction: charming bizarre living instruments, hand-painted 2D game sprites with crisp chunky pixel-art edges and dark warm outlines, lush amber, coral, cyan and violet accents. Three-quarter top-down view, front facing slightly right. Readable strong silhouettes at 48 screen pixels, same design and size through each row. Full creature inside each cell with transparent margins at least 12% on every side. Feet/body baseline 82% of cell height. No text, no grid, no background, no painted drop shadow.
+Columns: 1 idle, 2 bouncing/walking first pose, 3 bouncing/walking second pose, 4 big musical attack pose with open mouth and excited eyes, not surrounded by large VFX.
+Row 1: a living amber electric GUITAR creature: guitar-shaped wooden body is its whole body, long guitar neck forms a crooked upward horn, two bright teal eyes directly on the guitar body, a toothy grinning sound-hole, four little root-like feet, coiled cable tail, strings across its chest. It is a funny little guitar beast, NOT a person holding a guitar. No human head, no clothes, no human torso.
+Row 2: a round coral-red DRUM monster: entire body is a little barrel drum, large expressive eyes on its front drumhead, brass rim, tiny stubby feet, two short floating drum mallets as magical appendages. Bounces like a chunky frog, no human anatomy.
+Row 3: a CYAN BASS BEETLE: a bass-guitar-shaped armored insect body, four thick strings, neck rising like a bent beetle horn, two curious glowing eyes, six short jointed bug legs, blue shell with teal luminous edges. Compact squat bug rather than humanoid.
+Row 4: a VIOLET KEYBOARD SLIME: adorable amorphous purple jelly creature, two large warm eyes, a curved row of black and white piano keys embedded in its wide grinning mouth, tiny flipper feet, two jelly horns, floating little note-shaped tail. No humanoid body, no keyboard carried by a person.
+Each row 4 consistent poses of one creature, exactly 16 sprites total. Genuinely transparent alpha background. Do not draw humans, clothing, humanoid arms, portrait heads, labels, cell dividers, UI or logos.
+
+music-fx-v2.png
+Use case: stylized-concept.
+Asset: a production TRANSPARENT PNG sprite animation atlas of magic musical attack VFX for a polished hand-painted 2D action roguelite. Square sheet with EXACTLY SIX columns and SIX rows, 36 equal SQUARE cells. No visible cell dividers. Each row ONE effect evolving smoothly through six frames left-to-right. All frames must fit inside their cells, centered and aligned, 12% transparent padding. Transparent alpha, no backdrop, no black squares, no labels or text.
+Style: chunky hand-drawn arcade impact art, crisp pixel-art edges, strong bright painted cores, short expressive sparks, squash/stretch and clear silhouettes. Cohesive amber, coral, cyan and violet palette. NOT thin geometric vector rings, NOT photo smoke, NOT soft huge blurry neon halos. Effects readable at small game scale.
+Row 1: AMBER GUITAR SLASH. A directional golden crescent sound slash sweeping to the RIGHT. Across frames it starts as a tiny bent stroke near cell center, then grows into a broad energetic arc on the RIGHT HALF of the cell, ending with broken gold sparks. The cast origin remains cell center, so leave the left half mostly empty.
+Row 2: CORAL DRUM SHOCKWAVE. A centered punchy hand-painted circular sonic shockwave, tiny impact center in frame 1, thick broken expanding ring in middle frames, fragments/dust fade in frame 6. Strong cream-hot rim with coral-red chunks, not a perfect computer circle.
+Row 3: CYAN BASS WAVE PROJECTILE. A centered, right-facing thick cyan crescent made of three flowing sound ribbons, six frames of fluid forward motion and trailing blue flecks. Keep its overall size consistent across frames as it travels through the game.
+Row 4: VIOLET KEYBOARD MAGIC BOLT. A centered glowing lilac music-note-shaped magical projectile with a pearly core and small orbiting purple sparks, six shimmering frames. Keep consistent size across frames, true alpha.
+Row 5: WHITE-GOLD HIT IMPACT. A centered sharp punchy asymmetric star burst: tiny spark, big hand-painted jagged white-gold impact, smaller shards fading over six frames. Short solid chunky strokes, subtle warm orange edges.
+Row 6: BRONZE CYMBAL CRASH. A centered radial burst of gold/cream/amber shards and little stylized music-note sparks, expanding into a broken sunburst over six frames and fading at the end.
+No instrument characters in this image. No stage or ground. Exactly 36 isolated VFX sprites in an evenly aligned 6x6 atlas. No lines, checkerboard or labels.
+
+night-grove-floor-v2.png
+Use case: stylized-concept.
+Asset type: seamless SQUARE top-down GROUND TEXTURE for a whimsical dark-forest music roguelite, production game background tile.
+Create one seamless tileable 1024x1024 overhead ground texture. Perfectly flat orthographic top-down, no horizon or perspective, no characters, no enemies, no text, no borders or grid, no UI.
+Style: painterly indie 2D game environment with chunky crisp pixel-art edges, matches charming living instrument monsters and musical fantasy creatures. Beautiful but LOW CONTRAST and DARK so bright characters and attack VFX are clearly visible above it.
+Base: midnight blue slate earth, subtle winding brown-violet dirt patches, rich desaturated teal moss clusters, small cool blue-gray pebbles and slate chips, tiny sparse fern leaves, occasional subtle warm amber plant flecks. Palette predominantly #101d2b, #142936, #1b3339, #243c41, #303442, muted violet-brown #35303d. No large objects, no giant foliage, no dominant bright flowers or bright neon glowing circles.
+Natural organic irregular surface, scattered pebble/leaf/moss detail, some breathing room of simpler soil patches. No visible square repeating grid. Soft moonlit ambient shading with fine dappled details, no strong directional cast shadows. Every edge must tile seamlessly into the opposite edge. This is the walkable floor only, NOT a full scene illustration. Opaque background.
+
+night-grove-props-v2.png
+Use case: stylized-concept.
+Asset: transparent square 4x4 sprite atlas of environmental props for a whimsical night forest music roguelite. Exactly four columns and four rows, equal square cells. No people, no characters, no ground rectangles, no text, no grid lines. Each prop entirely isolated on real transparent alpha, centered, 15% margin inside its cell, baseline 82% cell height. Same 3/4 overhead camera and scale; richly shaded hand-painted pixel-art edges with warm dark outlines, polished indie game look. Dominant desaturated deep teal, slate blue, violet-brown, tiny warm amber accents. Not bright neon.
+Every adjacent pair of cells shows the SAME prop in two subtle lighting states, same silhouette and position (idle and faint glowing pulse).
+Row 1 columns 1 and 2: a small ancient wooden speaker shrine, two dark speaker cones, teal moss on the wood, amber rune light.
+Row 1 columns 3 and 4: squat blue-gray stone amplifier with twisted roots, dark speaker grille and small amber knobs.
+Row 2 columns 1 and 2: small cluster of pale teal bioluminescent mushrooms with tiny warm-yellow specks.
+Row 2 columns 3 and 4: tuft of deep violet fern with a few luminous lavender flowers, compact low ground decoration.
+Row 3 columns 1 and 2: gnarled dark weathered tree stump with a little spiral of moss and one tiny amber mushroom.
+Row 3 columns 3 and 4: pile of rounded blue-gray rocks partially covered in teal ivy.
+Row 4 columns 1 and 2: a tiny amber firefly lantern hanging from a short curved root, not a large streetlamp.
+Row 4 columns 3 and 4: mossy abandoned round stage monitor/speaker lying diagonally on the ground, soft blue moss around its edge.
+Exactly sixteen clean separated prop sprites in an evenly aligned 4x4 atlas. No cast shadow backgrounds, no checkerboard, no cell dividers or colored border noise.
+
+Fonts: Rubik and Russo One are self-hosted from https://github.com/google/fonts/tree/main/ofl/rubik and https://github.com/google/fonts/tree/main/ofl/russoone. Original SIL Open Font License files are saved beside the fonts.
+

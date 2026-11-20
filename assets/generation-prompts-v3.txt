@@ -1,0 +1,265 @@
+BAND HERO — sprite prompts v3 (2026-11-20)
+=============================================================================
+Нові промти для персонажів і ефектів. v2 не чіпаємо, поки нові PNG не готові.
+
+ЩО ГЕНЕРУЄМО (13 листів, усі квадратні 1536x1536, сітка 6x6, клітинка 256x256)
+  Персонажі — по 2 листи на кожного:
+    hero-<id>-moves-v3.png    рядки: idle, walk, hurt, level-up, downed, revive
+    hero-<id>-attacks-v3.png  рядки: окрема анімація під КОЖЕН шар інструмента
+  Ефекти — по 1 листу на інструмент + 1 спільний:
+    fx-guitar-v3.png, fx-drums-v3.png, fx-bass-v3.png, fx-piano-v3.png, fx-common-v3.png
+  <id> = guitar | drums | bass | piano (як у CHARS у game.html)
+
+СТИЛЬ "STAGE-LIGHT PIXEL" (основний)
+  Персонажі ті самі живі інструменти (імена й описи в грі на них зав'язані),
+  але подача нова: ніби кожен — маленька рок-зірка під концертними софітами.
+  Чіткий піксель-арт на сітці 64x64, товстий темно-синій контур, дво-тонове
+  cel-затінення, з одного боку сильне холодне "софітне" контрове світло
+  (cyan/magenta rim light), дрібні блискітки-відблиски на лаку й металі.
+  Ефекти — як намальовані маркером на сцені: щільні яскраві ядра, рвані
+  краї, нотки й іскри, без м'яких розмитих неонових ореолів.
+  Альтернативи (підставити замість абзацу STYLE у кожному промті):
+    B "Gig poster": плоскі 3–4 фарби як у трафаретному друці, легкий зсув
+      кольорів (misregistration), грубі тіні-штрихи. Яскраво, але мобам/фону
+      доведеться теж оновитись, інакше буде різнобій.
+    C "Vinyl toy": глянцеві товстенькі колекційні фігурки, великі блікі,
+      м'які, але чіткі силуети. Найбільш "мило".
+
+ЗАГАЛЬНІ ПРАВИЛА (вже вшиті в кожен промт)
+  - справжня прозорість, без шахівниці, без ліній сітки, без тексту
+  - персонаж дивиться трохи вправо, 3/4 зверху, "ноги" на 82% висоти клітинки
+  - відступ ≥12% у кожній клітинці, нічого не залазить у сусідню
+  - ефекти-конуси: точка пострілу в ЦЕНТРІ клітинки, ліва половина порожня
+  - ефекти-снаряди: колонка 1 = поява, 2–5 = цикл (гра крутить 2–5), 6 = зникнення
+
+=============================================================================
+ЧАСТИНА 1. ПЕРСОНАЖІ
+=============================================================================
+
+-----------------------------------------------------------------------------
+hero-guitar-moves-v3.png   (Гітара-кусайка)
+-----------------------------------------------------------------------------
+Asset: production transparent PNG sprite animation atlas, square 1536x1536, EXACTLY 6 columns x 6 rows of equal 256x256 cells, one full creature per cell, animation frames read left to right. No text, no grid lines, no cell dividers, no background, no checkerboard, no painted floor shadow.
+STYLE: crisp hand-placed pixel art as if drawn on a 64x64 grid and upscaled, thick dark navy outline, two-tone cel shading, strong cool cyan-magenta concert rim light on the right edge, tiny glinting highlights on lacquer and metal. Charming, slightly unhinged indie-game energy. Readable silhouette at 48 screen pixels. Same 3/4 top-down camera, facing slightly right, feet baseline at 82% of cell height, 12% transparent margin, identical size and design in every cell.
+CHARACTER: a living amber acoustic-electric GUITAR creature. The guitar body IS its whole body; the neck rises like a crooked horn with tuning pegs as little spikes; two bright teal eyes on the upper body; the sound-hole is a toothy grinning mouth; six strings run across its chest; four short root-like wooden feet; a coiled black cable tail ending in a jack plug. NOT a person holding a guitar: no human head, arms, torso or clothes.
+Row 1 IDLE (loop): gentle breathing squash, strings shimmer, cable tail sways, one blink in frame 4.
+Row 2 WALK (loop): waddling on root feet, neck bobs, tail drags behind, clear contact poses in frames 1 and 4.
+Row 3 HURT: frames 1–3 recoil backwards with a white flash and a string snapping loose, frames 4–6 shake it off and return to idle pose.
+Row 4 LEVEL-UP: frame 1 crouch; 2 jumps up, tuning pegs spin; 3 a NEW glowing string snaps onto the neck; 4 body flashes gold, sound-hole grins wide; 5 tiny crown of golden sparks over the headstock; 6 lands proud, chest out. Sparks stay small and close to the body.
+Row 5 DOWNED: topples onto its back, strings go slack and curl, eyes become dizzy spirals, tail limp; frames 5–6 hold the lying pose with a tiny pulsing faint glow.
+Row 6 REVIVE: the reverse — strings re-tension with a twang, it flips up, shakes, ends in idle pose.
+Exactly 36 sprites, true alpha.
+
+-----------------------------------------------------------------------------
+hero-guitar-attacks-v3.png
+-----------------------------------------------------------------------------
+Asset: production transparent PNG sprite animation atlas, square 1536x1536, EXACTLY 6 columns x 6 rows of equal 256x256 cells, one full creature per cell, frames left to right. No text, no grid lines, no background, no checkerboard. The creature performs the move; at most tiny contact sparks, NO big attack VFX (they are separate sprites).
+STYLE: crisp hand-placed pixel art as if drawn on a 64x64 grid and upscaled, thick dark navy outline, two-tone cel shading, strong cool cyan-magenta concert rim light on the right edge, tiny glinting highlights on lacquer and metal. Charming, slightly unhinged indie-game energy. Readable silhouette at 48 screen pixels. Same 3/4 top-down camera, facing slightly right, feet baseline at 82% of cell height, 12% transparent margin, identical size and design in every cell.
+CHARACTER: a living amber acoustic-electric GUITAR creature. The guitar body IS its whole body; the neck rises like a crooked horn with tuning pegs as little spikes; two bright teal eyes on the upper body; the sound-hole is a toothy grinning mouth; six strings run across its chest; four short root-like wooden feet; a coiled black cable tail ending in a jack plug. NOT a person holding a guitar: no human head, arms, torso or clothes. Always faces right; the attack is thrown to the right.
+Row 1 STRUM: the cable tail swings down across all six strings like a pick, body twists with the swing, mouth shouts, frame 6 recover.
+Row 2 PALM MUTE CHUCK: one root foot slaps flat across the strings, body squashes low and hard, little puff of dust, muted grumpy face.
+Row 3 FINGERPICK: the jack-plug tail plucks single strings fast, one string highlighted per frame moving up, focused squinting eyes, small bounce.
+Row 4 LEAD MELODY: neck bends upward like a string bend, eyes closed in rapture, body vibrato-shakes, a single high string glows bright.
+Row 5 HARMONICS: tail tip lightly taps the neck at three spots, pale crystal glints appear on the frets, delicate tiptoe pose.
+Row 6 MAX POWER (all layers maxed): a second neck sprouts briefly into a double-neck, both necks blaze gold, big power-chord leap, lands in a wide rock stance.
+Exactly 36 sprites, true alpha.
+
+-----------------------------------------------------------------------------
+hero-drums-moves-v3.png   (Бум-барабан)
+-----------------------------------------------------------------------------
+Asset: production transparent PNG sprite animation atlas, square 1536x1536, EXACTLY 6 columns x 6 rows of equal 256x256 cells, one full creature per cell, frames left to right. No text, no grid lines, no background, no checkerboard, no painted floor shadow.
+STYLE: crisp hand-placed pixel art as if drawn on a 64x64 grid and upscaled, thick dark navy outline, two-tone cel shading, strong cool cyan-magenta concert rim light on the right edge, tiny glinting highlights on lacquer and metal. Charming, slightly unhinged indie-game energy. Readable silhouette at 48 screen pixels. Same 3/4 top-down camera, facing slightly right, feet baseline at 82% of cell height, 12% transparent margin, identical size and design in every cell.
+CHARACTER: a round coral-red DRUM monster. Its entire body is a chunky barrel drum with a brass rim and tension lugs; large expressive eyes painted on the front drumhead; a small pair of brass hi-hat cymbals sits on its top like a cap; tiny stubby feet; two short drumsticks float beside it as magical hands. No human anatomy.
+Row 1 IDLE (loop): bounces in place like a heartbeat, drumhead ripples, sticks twirl lazily.
+Row 2 WALK (loop): hops like a chunky frog, squash on landing, stretch in the air, hi-hat cap clicks.
+Row 3 HURT: dented drumhead flash, wobbles backwards, lugs rattle, then pops the dent out and steadies.
+Row 4 LEVEL-UP: 1 crouch; 2 big leap; 3 the tension lugs spin and tighten by themselves; 4 the brass rim shines new and the drumhead glows; 5 sticks twirl overhead in a cross, tiny burst of confetti-sparks; 6 lands with a proud BOOM squash.
+Row 5 DOWNED: rolls onto its side, drumhead sags inward, sticks drop to the ground, eyes become X marks; frames 5–6 hold with a faint pulse.
+Row 6 REVIVE: drumhead re-inflates with a pop, rolls upright, sticks fly back into its "hands", ends in idle pose.
+Exactly 36 sprites, true alpha.
+
+-----------------------------------------------------------------------------
+hero-drums-attacks-v3.png
+-----------------------------------------------------------------------------
+Asset: production transparent PNG sprite animation atlas, square 1536x1536, EXACTLY 6 columns x 6 rows of equal 256x256 cells, one full creature per cell, frames left to right. No text, no grid lines, no background, no checkerboard. The creature performs the move; at most tiny contact sparks, NO big attack VFX.
+STYLE: crisp hand-placed pixel art as if drawn on a 64x64 grid and upscaled, thick dark navy outline, two-tone cel shading, strong cool cyan-magenta concert rim light on the right edge, tiny glinting highlights on lacquer and metal. Charming, slightly unhinged indie-game energy. Readable silhouette at 48 screen pixels. Same 3/4 top-down camera, facing slightly right, feet baseline at 82% of cell height, 12% transparent margin, identical size and design in every cell.
+CHARACTER: a round coral-red DRUM monster. Its entire body is a chunky barrel drum with a brass rim and tension lugs; large expressive eyes painted on the front drumhead; a small pair of brass hi-hat cymbals sits on its top like a cap; tiny stubby feet; two short drumsticks float beside it as magical hands. No human anatomy.
+Row 1 KICK: whole body slams down into a deep squash, feet splay, a thud ripple on the drumhead, rebounds up.
+Row 2 SNARE: both sticks crack the top rim in a rimshot, body jolts, eyes wide, sharp snap pose.
+Row 3 HI-HAT: the hi-hat cap chicks open and shut rapidly, one stick ticks on it, small tight head-bob.
+Row 4 CRASH: leaps high, both sticks smash the cymbal cap which splays wide open, lands in a dramatic split-squash.
+Row 5 FILL: a frantic flurry — sticks blur around the rim left to right, body spins a quarter turn, ends with a flourish.
+Row 6 MAX POWER: summons a ring of tiny floating toms around itself for one beat, hits them all in a circle, lands in a heroic squash.
+Exactly 36 sprites, true alpha.
+
+-----------------------------------------------------------------------------
+hero-bass-moves-v3.png   (Басожук)
+-----------------------------------------------------------------------------
+Asset: production transparent PNG sprite animation atlas, square 1536x1536, EXACTLY 6 columns x 6 rows of equal 256x256 cells, one full creature per cell, frames left to right. No text, no grid lines, no background, no checkerboard, no painted floor shadow.
+STYLE: crisp hand-placed pixel art as if drawn on a 64x64 grid and upscaled, thick dark navy outline, two-tone cel shading, strong cool cyan-magenta concert rim light on the right edge, tiny glinting highlights on lacquer and metal. Charming, slightly unhinged indie-game energy. Readable silhouette at 48 screen pixels. Same 3/4 top-down camera, facing slightly right, feet baseline at 82% of cell height, 12% transparent margin, identical size and design in every cell.
+CHARACTER: a CYAN BASS BEETLE. Its armored body is shaped like a bass guitar body with a deep blue shell and luminous teal edges; the long bass neck rises from its head like a bent rhinoceros-beetle horn; FOUR thick strings run down its back; two curious glowing eyes; six short jointed bug legs; under the shell are hidden wing cases shaped like small speaker cones. Squat bug, not humanoid.
+Row 1 IDLE (loop): slow heavy breathing, antennae-pegs twitch, strings hum with a faint glow.
+Row 2 WALK (loop): scuttles with an alternating six-leg gait, low and heavy, horn bobs.
+Row 3 HURT: shell flashes white, skids back, legs scramble, then plants all six legs firmly.
+Row 4 LEVEL-UP (molt): 1 hunches; 2 the shell cracks along the seam with teal light; 3 the wing cases flare open revealing glowing speaker-cone wings; 4 the old shell flakes away, new shinier shell; 5 wings pulse once with bass rings; 6 wings fold, stands taller and prouder.
+Row 5 DOWNED: flips onto its back, legs wiggle in the air, eyes dizzy; frames 5–6 hold, legs slowly cycling.
+Row 6 REVIVE: rocks side to side, flips back over with its horn, shakes dust off, idle pose.
+Exactly 36 sprites, true alpha.
+
+-----------------------------------------------------------------------------
+hero-bass-attacks-v3.png
+-----------------------------------------------------------------------------
+Asset: production transparent PNG sprite animation atlas, square 1536x1536, EXACTLY 6 columns x 6 rows of equal 256x256 cells, one full creature per cell, frames left to right. No text, no grid lines, no background, no checkerboard. The creature performs the move; at most tiny contact sparks, NO big attack VFX.
+STYLE: crisp hand-placed pixel art as if drawn on a 64x64 grid and upscaled, thick dark navy outline, two-tone cel shading, strong cool cyan-magenta concert rim light on the right edge, tiny glinting highlights on lacquer and metal. Charming, slightly unhinged indie-game energy. Readable silhouette at 48 screen pixels. Same 3/4 top-down camera, facing slightly right, feet baseline at 82% of cell height, 12% transparent margin, identical size and design in every cell.
+CHARACTER: a CYAN BASS BEETLE. Its armored body is shaped like a bass guitar body with a deep blue shell and luminous teal edges; the long bass neck rises from its head like a bent rhinoceros-beetle horn; FOUR thick strings run down its back; two curious glowing eyes; six short jointed bug legs; under the shell are hidden wing cases shaped like small speaker cones. Squat bug, not humanoid.
+Row 1 ROOT: front legs pluck the lowest thick string, whole shell vibrates, horn dips forward like a battering ram.
+Row 2 WALK (bass walk): sidesteps left-right in rhythm while plucking, crab-like groove.
+Row 3 OCTAVE: rears up, swings its rear end around and fires backwards, two strings glow (low and high), turns back to face right.
+Row 4 GROOVE: bobs its body on the off-beats, legs tapping in syncopation, smug half-closed eyes.
+Row 5 PEDAL STOMP (picking up an effect pedal): stomps on a tiny glowing floor pedal with a middle leg, eyes light up with a colored glint.
+Row 6 MAX POWER: speaker-cone wings open fully and thump once, a low sub-bass pulse lifts it slightly off the ground, lands heavy.
+Exactly 36 sprites, true alpha.
+
+-----------------------------------------------------------------------------
+hero-piano-moves-v3.png   (Клавіслиз)
+-----------------------------------------------------------------------------
+Asset: production transparent PNG sprite animation atlas, square 1536x1536, EXACTLY 6 columns x 6 rows of equal 256x256 cells, one full creature per cell, frames left to right. No text, no grid lines, no background, no checkerboard, no painted floor shadow.
+STYLE: crisp hand-placed pixel art as if drawn on a 64x64 grid and upscaled, thick dark navy outline, two-tone cel shading, strong cool cyan-magenta concert rim light on the right edge, tiny glinting highlights on lacquer and metal. Charming, slightly unhinged indie-game energy. Readable silhouette at 48 screen pixels. Same 3/4 top-down camera, facing slightly right, feet baseline at 82% of cell height, 12% transparent margin, identical size and design in every cell.
+CHARACTER: a VIOLET KEYBOARD SLIME. An adorable translucent purple jelly creature with two large warm eyes, a wide grin whose teeth are a curved row of black-and-white piano keys, two small jelly horns, tiny flipper feet, and a floating eighth-note-shaped tail. No humanoid body, no keyboard held by a person.
+Row 1 IDLE (loop): jiggles, keys in the grin rise and fall in a slow wave, note-tail floats.
+Row 2 WALK (loop): sloshes forward with squash-and-stretch, leaves no trail, horns wobble.
+Row 3 HURT: splats flat with a flash, a few keys pop loose and snap back, reforms.
+Row 4 LEVEL-UP: 1 inflates like a balloon; 2 keys ripple in a glissando left to right; 3 splits into two small slimes (an octave); 4 they merge back bigger and shinier; 5 a new tiny note pops out of the top of its head; 6 settles, sparkly-eyed.
+Row 5 DOWNED: melts into a flat puddle with keys floating in it, eyes become little drips; frames 5–6 hold, faint pulse.
+Row 6 REVIVE: the puddle gathers up into a blob, keys click back into the grin, idle pose.
+Exactly 36 sprites, true alpha.
+
+-----------------------------------------------------------------------------
+hero-piano-attacks-v3.png
+-----------------------------------------------------------------------------
+Asset: production transparent PNG sprite animation atlas, square 1536x1536, EXACTLY 6 columns x 6 rows of equal 256x256 cells, one full creature per cell, frames left to right. No text, no grid lines, no background, no checkerboard. The creature performs the move; at most tiny contact sparks, NO big attack VFX.
+STYLE: crisp hand-placed pixel art as if drawn on a 64x64 grid and upscaled, thick dark navy outline, two-tone cel shading, strong cool cyan-magenta concert rim light on the right edge, tiny glinting highlights on lacquer and metal. Charming, slightly unhinged indie-game energy. Readable silhouette at 48 screen pixels. Same 3/4 top-down camera, facing slightly right, feet baseline at 82% of cell height, 12% transparent margin, identical size and design in every cell.
+CHARACTER: a VIOLET KEYBOARD SLIME. An adorable translucent purple jelly creature with two large warm eyes, a wide grin whose teeth are a curved row of black-and-white piano keys, two small jelly horns, tiny flipper feet, and a floating eighth-note-shaped tail. No humanoid body, no keyboard held by a person.
+Row 1 CHORDS: chomps down so three keys press at once, cheeks puff, spits two notes upward to the right.
+Row 2 MELODY: presses one key with its tongue-tip, a single note pops from the mouth, delicate head tilt.
+Row 3 ARPEGGIO: keys ripple rapidly up and down, the body vibrates, spits a rapid spray of tiny notes.
+Row 4 LEFT HAND: slaps its flipper on the ground, a low jelly wave runs through its whole body outward.
+Row 5 FAMILIAR: a tiny baby slime-note buds off its side and hops away to the right, parent waves.
+Row 6 MAX POWER: stretches tall into a grand-piano-lid shape, keys blaze, comes down in a joyful splash.
+Exactly 36 sprites, true alpha.
+
+=============================================================================
+ЧАСТИНА 2. ЕФЕКТИ — окремий лист на кожен інструмент
+=============================================================================
+Типи (як малює гра, drawAttack у game.html):
+  CONE  — атака-віяло з центру вправо, гра крутить спрайт у бік ворога.
+  RING  — коло, що росте з центру.
+  SHOT  — снаряд летить вправо; гра крутить колонки 2–5 по колу.
+  ZAP   — блискавка між двома точками; гра РОЗТЯГУЄ спрайт по довжині
+          і стискає до ~14px товщини, тож малювати тонку горизонтальну смугу.
+У рядках, які гра сплющує (pick, lead, walk), малюємо одразу вузьке.
+
+-----------------------------------------------------------------------------
+fx-guitar-v3.png
+-----------------------------------------------------------------------------
+Asset: production TRANSPARENT PNG VFX animation atlas, square 1536x1536, EXACTLY 6 columns x 6 rows of equal 256x256 cells, no visible dividers. Each row is ONE effect evolving over six frames left to right. True alpha, no backdrop, no black squares, no text.
+STYLE: chunky hand-painted arcade impact art with crisp pixel-art edges, dense bright cores, ragged torn edges, short expressive sparks, little music-note and string motifs, squash and stretch. Guitar palette: warm amber, honey gold, cream-hot cores, a hint of coral. NOT thin vector rings, NOT soft blurry neon halos, NOT photo smoke. Readable at 40 screen pixels.
+Every row except row 6 is a DIRECTIONAL effect cast from the exact CELL CENTER toward the RIGHT: leave the left half of each cell nearly empty.
+Row 1 STRUM: a broad amber crescent sound-slash wedge (about 30 degrees wide) sweeping right; tiny bent stroke in frame 1, full fat arc with six faint string lines inside it in frames 3–4, breaking into gold sparks in frame 6.
+Row 2 CHUCK: a short, thick, muffled punch — a stubby dusty amber-brown shock blob just right of center with a few wood-chip flecks; heavy and blunt, not sharp; fades to dust.
+Row 3 FINGERPICK: a single THIN, NARROW, fast pluck streak — one glowing string-line snapping right with a small bright pick-shaped tip; keep it no taller than 35% of the cell.
+Row 4 LEAD: a LONG, VERY THIN horizontal beam from center to the right edge, gently wavy like vibrato, a bright note-head at its tip; keep it no taller than 20% of the cell.
+Row 5 HARMONICS: ONE single slim pale glassy crystal shard pointing right (the game spawns up to three of them as a fan by itself), cool cream-white with amber edges, chiming sparkles, shattering into glitter in frame 6.
+Row 6 GUITAR HIT (centered, not directional): a snapped-string impact — a curling bright string whip and amber spark star at the cell center, fading over six frames.
+Exactly 36 isolated VFX sprites.
+
+-----------------------------------------------------------------------------
+fx-drums-v3.png
+-----------------------------------------------------------------------------
+Asset: production TRANSPARENT PNG VFX animation atlas, square 1536x1536, EXACTLY 6 columns x 6 rows of equal 256x256 cells, no visible dividers. Each row is ONE effect evolving over six frames left to right. True alpha, no backdrop, no text.
+STYLE: chunky hand-painted arcade impact art with crisp pixel-art edges, dense bright cores, ragged torn edges, short expressive sparks, squash and stretch. Drum palette: coral red, hot cream, brass gold, a little rust. NOT thin perfect computer circles, NOT soft neon halos, NOT photo smoke. Readable at 40 screen pixels.
+Rows 1, 2, 4, 5 are CENTERED rings that grow from the cell center to almost fill the cell by frame 5, then break apart in frame 6.
+Row 1 KICK: a heavy, low, thick coral shockwave ring with a dark punchy center thump, chunky broken rim, dust kicked up outward.
+Row 2 SNARE: a sharp, tight, cream-white crack ring with small jagged rimshot sparks on its edge, snappier and thinner than the kick.
+Row 3 HI-HAT ZAP: a THIN HORIZONTAL brass spark streak spanning the full cell width through the center, like a crackling chain of tiny cymbal glints; frames flicker its sparks; stays thin (under 15% of cell height) because the game stretches it into a lightning line. Put a slightly brighter round spark node at the exact center of the streak, so the frame still reads when shown small as a 34px burst at the target.
+Row 4 CRASH: an enormous golden sunburst ring of brass shards and little note sparks, the widest and brightest effect here.
+Row 5 FILL: three quick concentric coral ripples chasing each other outward, like a drum roll.
+Row 6 DRUM HIT (centered): a compact thump impact, coral star with a brass flash, fading over six frames.
+Exactly 36 isolated VFX sprites.
+
+-----------------------------------------------------------------------------
+fx-bass-v3.png
+-----------------------------------------------------------------------------
+Asset: production TRANSPARENT PNG VFX animation atlas, square 1536x1536, EXACTLY 6 columns x 6 rows of equal 256x256 cells, no visible dividers. Each row is ONE effect over six frames left to right. True alpha, no backdrop, no text.
+STYLE: chunky hand-painted arcade impact art with crisp pixel-art edges, dense bright cores, ragged edges, short sparks, squash and stretch. Bass palette: deep blue, cyan, teal, a pale ice-white core. NOT thin vector rings, NOT soft neon halos. Readable at 40 screen pixels.
+Rows 1–4 are PROJECTILES flying RIGHT, centered in the cell. Column 1 = spawn (small), columns 2–5 = a seamless travel LOOP at CONSTANT size, column 6 = pop/dissipate.
+Row 1 ROOT: a thick, heavy cyan crescent made of three flowing sound ribbons, deep blue trailing flecks, the heaviest-looking projectile.
+Row 2 WALK: a narrower, lighter cyan wave crescent with walking-step pulse lines; keep it no taller than 60% of the cell.
+Row 3 OCTAVE: two stacked crescents, a big low one and a smaller bright high one riding above it, twinned.
+Row 4 GROOVE: a small bouncy round teal wave blob with a syncopated wobble, cute and quick.
+Row 5 BASS HIT (centered): a deep thudding impact, dark-blue core with cyan shards and a low ripple.
+Row 6 SUB DROP (centered ring): a slow, massive low-frequency ring, dark navy fill with a cyan rim, rumbling ground cracks, expanding to fill the cell.
+Exactly 36 isolated VFX sprites.
+
+-----------------------------------------------------------------------------
+fx-piano-v3.png
+-----------------------------------------------------------------------------
+Asset: production TRANSPARENT PNG VFX animation atlas, square 1536x1536, EXACTLY 6 columns x 6 rows of equal 256x256 cells, no visible dividers. Each row is ONE effect over six frames left to right. True alpha, no backdrop, no text.
+STYLE: chunky hand-painted arcade magic art with crisp pixel-art edges, pearly bright cores, small orbiting sparkles, little black-and-white key motifs. Piano palette: lilac, violet, pearl white, a touch of pink. NOT soft neon halos, NOT thin vector shapes. Readable at 40 screen pixels.
+Rows 1, 2, 3, 5 are homing PROJECTILES flying RIGHT, centered. Column 1 = spawn, columns 2–5 = a seamless loop at CONSTANT size, column 6 = pop.
+Row 1 CHORD NOTE: a chunky violet note-bolt made of three stacked note heads (a triad), pearly core.
+Row 2 MELODY NOTE: a single elegant lilac eighth-note bolt with a flowing ribbon tail behind it.
+Row 3 ARPEGGIO SPARK: a tiny bright note-spark, half the size of the others, very twinkly.
+Row 4 LEFT HAND (centered ring): a low violet wave ring whose rim is a circle of black and white piano keys, expanding to fill the cell.
+Row 5 FAMILIAR: a tiny cute baby slime-note critter with dot eyes, hopping right as a projectile.
+Row 6 PIANO HIT (centered): glassy shattering impact — pearl star with flying black and white key shards.
+Exactly 36 isolated VFX sprites.
+
+-----------------------------------------------------------------------------
+fx-common-v3.png   (спільне для всіх)
+-----------------------------------------------------------------------------
+Asset: production TRANSPARENT PNG VFX animation atlas, square 1536x1536, EXACTLY 6 columns x 6 rows of equal 256x256 cells, no visible dividers. Each row is ONE centered effect over six frames left to right. True alpha, no backdrop, no text.
+STYLE: chunky hand-painted arcade impact art with crisp pixel-art edges, dense bright cores, ragged edges, short sparks and little music notes. Neutral white-gold with warm accents so it fits every instrument. NOT soft neon halos. Readable at 40 screen pixels.
+Row 1 GENERIC HIT: sharp asymmetric white-gold star burst, shards fading.
+Row 2 BOOM: a big round explosion of gold, cream and amber chunks with note sparks, expanding then breaking up.
+Row 3 LEVEL-UP PILLAR: a column of golden light rising from the ground at the bottom-center of the cell, with stage-spotlight beams and rising notes; frame 6 sparkles out. (Drawn behind the character.)
+Row 4 XP NOTE PICKUP: a small glowing music-note gem that winks, spins and pops into a sparkle.
+Row 5 REVIVE: soft-edged but crisp green-gold ring of rising sparks and notes around the cell center.
+Row 6 ENEMY DEFEAT POOF: a puff of violet-gray smoke chunks with a few broken note shards, fading.
+Exactly 36 isolated VFX sprites.
+
+=============================================================================
+ЧАСТИНА 3. ЯК ПІДКЛЮЧИТИ (для game.html)
+=============================================================================
+Зараз гра читає heroes (4x4) і fx (6x6) — нові листи потребують невеликої
+зміни в drawSprite / paintEffect / FX_PROFILES. Мапа рядків (з 0):
+
+Персонажі, moves: 0 idle · 1 walk · 2 hurt · 3 level-up · 4 downed · 5 revive
+Персонажі, attacks (рядок = шар у порядку LAYERS):
+  guitar: 0 strum · 1 chuck · 2 pick · 3 lead · 4 harm · 5 max power
+  drums:  0 kick · 1 snare · 2 hat · 3 crash · 4 fill · 5 max power
+  bass:   0 root · 1 walk · 2 octave · 3 groove · 4 pedal stomp · 5 max power
+  piano:  0 chords · 1 mel · 2 arp · 3 left · 4 familiar · 5 max power
+
+Ефекти (лист = інструмент):
+  guitar: strum 0 · chuck 1 · pick 2 · lead 3 · harm 4 · hit 5        (всі CONE, крім hit)
+  drums:  kick 0 · snare 1 · hat 2 (ZAP) · crash 3 · fill 4 · hit 5    (RING)
+  bass:   root 0 · walk 1 · octave 2 · groove 3 (усі SHOT) · hit 4 · sub-drop 5 (RING)
+  piano:  chords 0 · mel 1 · arp 2 (SHOT) · left 3 (RING) · familiar 4 (SHOT) · hit 5
+  common: hit 0 · boom 1 (o.boom) · level-up 2 · xp 3 · revive 4 · poof 5
+
+Ще два місця в коді, що беруть ефекти з листа:
+  - супутник «familiar», що кружляє навколо гравця -> fx-piano рядок 4
+  - спалах удару по ворогу -> рядок "hit" листа того інструмента, що вдарив
+    (fx-common рядок 0, якщо інструмент невідомий)
+
+ВАЖЛИВО при підключенні:
+  - У FX_PROFILES прибрати sy для pick (.42), lead (.24), harm (.55), bass-walk (.7):
+    нові спрайти вже намальовані вузькими, інакше їх сплющить двічі.
+  - Снаряди зараз показують лише колонки 2–5. Колонки 1 (поява) і 6 (зникнення)
+    варто показувати на старті й при влучанні — інакше їх просто не видно.
+  - ZAP (hat) малює колонки 1–5 смугою, а 6-ту — лише в точці влучання.
+
+Після генерації: перевірити, що клітинки рівні (6x6 по 256), що фон справді
+прозорий і що в рядках персонажа однаковий розмір/дизайн. Якщо генератор
+"плаває" — генерувати по 2 рядки за раз і зшивати.
