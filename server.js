@@ -41,6 +41,26 @@ const CHARS = ['guitar', 'drums', 'bass', 'piano'];
 let phase = 'lobby';
 let genre = 'rand';
 
+// ---------- Лічильник відвідувань (Neon Postgres через HTTP, без пакетів) ----------
+const DB_URL = process.env.DATABASE_URL || '';
+function logVisit(req) {
+  if (!DB_URL) return;
+  try {
+    const ua = String(req.headers['user-agent'] || '');
+    if (/bot|crawl|spider|uptime|monitor|curl|wget/i.test(ua)) return;
+    const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+    const vid = require('crypto').createHash('sha256').update(ip + '|' + ua).digest('hex').slice(0, 12);
+    const lang = String(req.headers['accept-language'] || '').slice(0, 2).toLowerCase();
+    const country = String(req.headers['cf-ipcountry'] || '').slice(0, 2);
+    const host = new URL(DB_URL.replace(/^postgres(ql)?:/, 'https:')).host;
+    fetch('https://' + host + '/sql', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Neon-Connection-String': DB_URL },
+      body: JSON.stringify({ query: 'INSERT INTO visits (path, lang, country, ua, vid) VALUES ($1,$2,$3,$4,$5)', params: [req.url.split('?')[0], lang, country, ua.slice(0, 200), vid] }),
+    }).catch(() => {});
+  } catch (e) {}
+}
+
 // ---------- HTTP: лише сама гра, без кешу (щоб завжди була свіжа версія) ----------
 const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0];
@@ -65,6 +85,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (req.method === 'GET' && (url === '/' || url === '/game.html')) {
+    logVisit(req);
     fs.readFile(GAME, (err, data) => {
       if (err) { res.writeHead(500); res.end('game.html not found'); return; }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
