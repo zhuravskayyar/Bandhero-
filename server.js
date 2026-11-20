@@ -13,6 +13,7 @@ const PORT = Number(process.env.PORT || 8080);
 const GAME = path.join(__dirname, 'game.html');
 const ASSETS = new Map([
   ['/game-effects.css', ['game-effects.css', 'text/css; charset=utf-8']],
+  ['/i18n.js', ['i18n.js', 'text/javascript; charset=utf-8']],
   ['/assets/band-heroes-v1.png', ['assets/band-heroes-v1.png', 'image/png']],
   ['/assets/band-mobs-v1.png', ['assets/band-mobs-v1.png', 'image/png']],
   ['/assets/band-creatures-v2.png', ['assets/band-creatures-v2.png', 'image/png']],
