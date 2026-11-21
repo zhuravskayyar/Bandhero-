@@ -16,6 +16,8 @@ const ASSETS = new Map([
   ['/i18n.js', ['i18n.js', 'text/javascript; charset=utf-8']],
   ['/pixel-heroes.js', ['pixel-heroes.js', 'text/javascript; charset=utf-8']],
   ['/assets/expansion-audio.js', ['assets/expansion-audio.js', 'text/javascript; charset=utf-8']],
+  ['/assets/sf2-bank.js', ['assets/sf2-bank.js', 'text/javascript; charset=utf-8']],
+  ['/assets/soundfonts/A320U.sf2', ['assets/soundfonts/A320U.sf2', 'application/octet-stream']],
   ['/assets/expansion-genres.js', ['assets/expansion-genres.js', 'text/javascript; charset=utf-8']],
   ['/assets/expansion-instruments.js', ['assets/expansion-instruments.js', 'text/javascript; charset=utf-8']],
   ['/tools/hero-lab.html', ['tools/hero-lab.html', 'text/html; charset=utf-8']],
@@ -76,7 +78,7 @@ const server = http.createServer((req, res) => {
     const [file, type] = ASSETS.get(url);
     fs.readFile(path.join(__dirname, file), (err, data) => {
       if (err) { res.writeHead(404); res.end('Asset not found'); return; }
-      res.writeHead(200, { 'Content-Type': type, 'Cache-Control': type === 'image/png' ? 'public, max-age=3600' : 'no-store' });res.end(data);
+      res.writeHead(200, { 'Content-Type': type, 'Cache-Control': type === 'image/png' ? 'public, max-age=3600' : type === 'application/octet-stream' ? 'public, max-age=604800' : 'no-store' });res.end(data);
     });return;
   }
   if (req.method === 'GET' && url === '/api/addresses') {

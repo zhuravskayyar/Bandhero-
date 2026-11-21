@@ -73,13 +73,17 @@ function session(origin, audio = false, audioFixture = {}) {
     innerWidth: 390, innerHeight: 844, devicePixelRatio: 1, performance, URL, URLSearchParams, Blob, atob,
     WebSocket, location: new URL(origin), setTimeout: later, clearTimeout, setInterval: interval,
     Image: class { constructor() { this.complete = true; this.naturalWidth = 1254; this.naturalHeight = 1254; } },
-    fetch: (url, opts) => { const u = new URL(url, origin); return u.origin === origin ? fetch(u, opts) : Promise.resolve(audioFixture.soundfontText?{ok:true,text:async()=>audioFixture.soundfontText}:{ok:false}); },
+    // SoundFont-банк (.sf2) не тягнемо з мережі: тест не має залежати від того, чи запущено сервер на 8080.
+    // audioFixture.sf2 — справжній файл із диска (див. тест «A320U bank renders…»), інакше банку «немає» → запасні семпли.
+    fetch: (url, opts) => { const u = new URL(url, origin);
+      if (u.pathname.endsWith('.sf2')) return Promise.resolve(audioFixture.sf2 ? { ok: true, arrayBuffer: async () => { const b = fs.readFileSync(path.join(__dirname, u.pathname)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.length); } } : { ok: false });
+      return u.origin === origin ? fetch(u, opts) : Promise.resolve(audioFixture.soundfontText?{ok:true,text:async()=>audioFixture.soundfontText}:{ok:false}); },
     ...(audio ? { AudioContext: TestAudioContext, Worker: TestWorker } : {}),
     requestAnimationFrame: fn => later(() => { if (framesHeld) pendingFrame = fn; else fn(performance.now()); }, 16),
     addEventListener: (name, fn) => { if (!events.has(name)) events.set(name, []); events.get(name).push(fn); },
   });
   context.window = context;
-  for(const file of ['assets/expansion-audio.js','assets/expansion-genres.js','assets/expansion-instruments.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,file),'utf8'),context,{filename:file});
+  for(const file of ['assets/expansion-audio.js','assets/sf2-bank.js','assets/expansion-genres.js','assets/expansion-instruments.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,file),'utf8'),context,{filename:file});
   vm.runInContext(source, context, { filename: 'game.html' });
   return {
     get game() { return context.__game; }, elements, errors,
@@ -177,7 +181,7 @@ test('Wi-Fi band: lobby, four actors, shared combat, upgrades, pause and host ha
   assert.equal(JSON.stringify(a.game.G.players[0].layers), before);
   for (const s of [b, c, d]) await s.elements.get('#opts').children[0].onclick();
   await until(() => sessions.every(s => !s.game.choosing && !s.game.paused), 'resume after every choice');
-  for (const actor of a.game.G.players) assert.ok(Object.keys(actor.layers).every(k => a.game.LAYERS[actor.char].some(l => l.id === k)), 'upgrades belong to the chosen instrument');
+  for (const actor of a.game.G.players) assert.ok(Object.keys(actor.layers).filter(k => k[0] !== '$').every(k => a.game.LAYERS[actor.char].some(l => l.id === k)), 'upgrades belong to the chosen instrument'); // '$boi'/'$pick' — обраний малюнок, не партія
   b.game.setPause(true); await until(() => a.game.paused && c.game.paused, 'guest requests global pause');
   a.game.setPause(false); await until(() => sessions.every(s => !s.game.paused), 'host resumes');
   for (const actor of a.game.G.players) actor.p.hp = 0;
@@ -253,8 +257,8 @@ test('distortion clips the waveform and compensates output; chorus and bass comp
   const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
   await s.game.pick('guitar');
   s.game.applyUpgrade({ pd: s.game.PEDALS.find(p => p.id === 'guitar_drive') });
-  const bus = s.game.buses.guitar; assert.ok(bus.pre.gain.value > 1); assert.ok(bus.makeup.gain.value < 1); assert.equal(bus.ws.oversample, '2x');
-  assert.equal(bus.cab.frequency.value, 3800);
+  const bus = s.game.buses.guitar; assert.ok(bus.pre.gain.value > 1); assert.ok(bus.makeup.gain.value < 1); assert.equal(bus.ws.oversample, '4x'); // м'якший дисторшн із меншим аліасингом
+  assert.equal(bus.cab.frequency.value, 5000); assert.equal(bus.tight.frequency.value, 150, 'low end is cut before clipping');
   const n = 4096, wave = [];
   for (let i = 0; i < n; i++) {
     const x = Math.max(-1, Math.min(1, .26 * Math.sin(i * Math.PI * 2 / n) * bus.pre.gain.value));
@@ -287,7 +291,7 @@ test('genre arrangements keep their rhythm and pitch articulation through every 
       const base=events(layer,1);assert.notEqual(base,'[]',genre+'/'+layer.id+' has a playable part');
       for(let rank=2;rank<=5;rank++)assert.equal(events(layer,rank),base,'rhythm never accelerates: '+genre+'/'+layer.id+'/'+rank);
     }
-    signatures[genre]=events(game.LAYERS.guitar[0],1);
+    signatures[genre]=events(game.LAYERS.guitar.find(l=>l.id==='strum'),1); // стартовий удар униз однаковий у всіх жанрах навмисно
     assert.equal(JSON.stringify(song),original,'arrangement generation does not change genre, tempo or phrase');
   }
   for(const [a,b] of [['rock','newwave'],['rock','chanson'],['chanson','chanson_ua']])assert.notEqual(signatures[a],signatures[b]);
@@ -428,14 +432,19 @@ test('chords are collected one by one; each instrument has a pool of 10 parts an
     g.applyUpgrade(card); assert.equal(g.SONG.have, k);
   }
   assert.equal(new Set([0, 1, 2, 3].map(b => g.chordAt(b).name)).size >= 2, true, 'collected chords now move');
-  for (const k of ['guitar','drums','bass','piano']) assert.equal(g.LAYERS[k].length, 10, k + ' keeps 10 parts');
-  for (const k of ['flute','violin','sax','accordion']) assert.equal(g.LAYERS[k].length, 4, k + ' has four distinct parts');
-  for (const l of g.LAYERS.guitar.slice(1, 4)) g.applyUpgrade({ l, isNew: true });
-  g.applyUpgrade({ l: g.LAYERS.guitar[5], isNew: true });
-  assert.equal(Object.keys(g.G.layers).length, 5);
+  // кожен інструмент починає зі стартової партії «у долю» (не картка); пул карток — решта: гітара 11 (+Пінч), інші 10, нові інструменти 4
+  for (const k of Object.keys(g.LAYERS)) { assert.ok(g.LAYERS[k][0].starter, k + ' starts on the beat'); assert.equal(g.LAYERS[k].filter(l => l.starter).length, 1); }
+  for (const k of ['guitar','drums','bass','piano']) assert.equal(g.LAYERS[k].filter(l => !l.starter).length, k === 'guitar' ? 11 : 10, k + ' card pool');
+  for (const k of ['flute','violin','sax','accordion']) assert.equal(g.LAYERS[k].filter(l => !l.starter).length, 4, k + ' has four distinct parts');
+  // стартова партія замовкає, щойно взято Бій, і місця не займає; Бій і Перебір — або-або
+  const real = g.LAYERS.guitar.filter(l => !l.starter && l.id !== 'pick');
+  const held = () => Object.keys(g.G.layers).filter(k => k[0] !== '$' && !g.LAYERS.guitar.find(l => l.id === k).starter).length;
+  for (const l of real.slice(0, 5)) g.applyUpgrade({ l, isNew: true });
+  assert.equal(held(), 5);
   for (let i = 0; i < 200; i++) assert.ok(g.levelOptions().every(o => !o.l || g.G.layers[o.l.id]), 'no sixth part is offered');
-  g.applyUpgrade({ l: g.LAYERS.guitar[9], isNew: true });
-  assert.equal(Object.keys(g.G.layers).length, 5, 'a sixth part cannot be added');
+  g.applyUpgrade({ l: real[6], isNew: true });
+  assert.equal(held(), 5, 'a sixth part cannot be added');
+  assert.ok(!g.G.layers.pick, 'picking cannot join the strum');
   // drums play no chords: instead of chord cards the drummer collects figures for a 4-bar rhythm phrase
   await g.pick('drums'); s.game.setPause(true);
   let drumCard = null; for (let i = 0; i < 400 && !drumCard; i++) drumCard = g.levelOptions().find(o => o.rhythm);
@@ -454,7 +463,7 @@ test('chords are collected one by one; each instrument has a pool of 10 parts an
   for (let bar = 0; bar < 8; bar++) for (let s = 0; s < 16; s++) if (fill.steps(g.SONG.prog[0], s, bar, 1).length) fillHits++;
   assert.ok(fillHits > 0 && g.hitsPerSec(g.SONG.genre, g.SONG.bpm, fill, 1) > 0, 'the fill part still plays on a stop bar');
   // бій шансону: густіша шістка/вісімка б'є частіше, але кожен удар слабший — шкода за такт однакова
-  const strum = g.LAYERS.guitar[0], perBar = [];
+  const strum = g.LAYERS.guitar.find(l => l.id === 'strum'), perBar = []; // бій жанру, не стартовий удар униз
   await g.pick('guitar'); g.setPause(true);
   for (const boi of [1, 2, 3]) { const S = { ...g.SONG, genre: 'chanson', boi }; g.setSong(S);
     const hps = g.hitsPerSec('chanson', S.bpm, strum, 1); perBar.push(hps); }
@@ -803,7 +812,7 @@ test('new starter instruments keep the sole unlocked chord until a chord card is
   for(const genre of Object.keys(g.GENRES)){
     const song=g.makeSong(null,genre);g.setSong(song);assert.equal(song.have,1);
     const starterNotes=inst=>Array.from({length:12},(_,bar)=>{
-      const notes=[];for(let step=0;step<16;step++)notes.push(...g.LAYERS[inst][0].steps(g.chordAt(bar),step,bar,1).map(e=>e.midi));return notes;
+      const notes=[];for(let step=0;step<16;step++)notes.push(...g.LAYERS[inst].find(l=>!l.starter).steps(g.chordAt(bar),step,bar,1).map(e=>e.midi));return notes; // головна партія, не стартова
     });
     for(const inst of ['flute','violin','sax','accordion']){
       const bars=starterNotes(inst),root=song.prog[0].root;
@@ -844,7 +853,7 @@ test('accordion holds and extends real reed voices, then changes harmony only wi
   const s=session('http://127.0.0.1:8080',true,{soundfontText:testSoundfont(),sampleLevel:.05});t.after(()=>s.close());const g=s.game;
   g.setGenre('chanson');await g.pick('accordion');g.setPause(true);s.holdFrames(true);
   const song=g.SONG;song.key=0;song.bpm=60;song.prog=[0,5,7,0].map(off=>g.mkChord(song,off));song.have=1;
-  const part=g.LAYERS.accordion[0],first=part.steps(g.chordAt(0),0,0,1);for(const e of first)await g.reqBuf('accordion',e.midi);
+  const part=g.LAYERS.accordion.find(l=>l.id==='bellows'),first=part.steps(g.chordAt(0),0,0,1);for(const e of first)await g.reqBuf('accordion',e.midi);
   g.logNotes(true);const at=g.ctx.currentTime+.1;g.fire(at,first);const original=g.voices.slice(-3);
   assert.equal(original.length,3);assert.ok(original.every(v=>v.source.loop&&v.source.loopStart>0&&v.source.loopEnd>v.source.loopStart));
   assert.ok(original.every(v=>v.source.stoppedAt-v.source.startedAt>3),'a held note outlasts the original one-shot sample');
@@ -857,4 +866,36 @@ test('accordion holds and extends real reed voices, then changes harmony only wi
   assert.ok(g.notes.slice(-3).every(n=>!n.continued&&n.harmony.startsWith('5:')));
   g.endNoteTails();g.fire(at+5,next);assert.ok(g.notes.slice(-3).every(n=>!n.continued),'stopping the run clears held voices');
   assert.deepEqual(s.errors,[]);
+});
+
+test('A320U bank renders real notes, electric guitars stay on FluidR3 recordings, accordion has musette reeds and bellows', async t => {
+  const s = session('http://127.0.0.1:8080', true, { sf2: true, soundfontText: testSoundfont() }); t.after(() => s.close()); const g = s.game;
+  g.setGenre('pop'); await g.pick('guitar'); g.setPause(true); await g.reqBuf('guitar', 52); g.logNotes(true);
+  g.playBuffered(g.ctx.currentTime + .05, { midi: 52, vel: .7, dur: 4 });
+  let n = g.notes.at(-1); assert.equal(n.source, 'acoustic_guitar_steel');
+  assert.ok(n.duration < 1.5, 'a sustained bank note is released after its written length, not the whole 3.5 s render');
+  g.setGenre('rock'); await g.pick('guitar'); g.setPause(true); await g.reqBuf('guitar', 52); g.logNotes(true);
+  g.playBuffered(g.ctx.currentTime + .05, { midi: 52, vel: .7, dur: 4 });
+  assert.equal(g.voices.at(-1).source.buffer.length, 12516, 'clean electric guitar comes from the decoded recording, not the A320U loop');
+  g.setGenre('chanson'); await g.pick('accordion'); g.setPause(true); g.logNotes(true);
+  g.fire(g.ctx.currentTime + .05, g.LAYERS.accordion[0].steps(g.chordAt(0), 0, 0, 1));
+  const v = g.voices.at(-1); assert.ok(v.reed2 && v.reed2.loop && v.source.loopStart > 0, 'two looping reeds per note');
+  assert.ok(g.notes.at(-1).musette > 3, 'the second reed is tuned up for a musette beat');
+  assert.ok(g.buses.accordion.bellows && g.buses.accordion.bellowsLP, 'the accordion bus has bellows gain and brightness');
+  assert.deepEqual(s.errors, []);
+});
+
+test('accordion frog picks the chord on the keys, one small ring per note that neither pulls nor reflects', async t => {
+  const s = session('http://127.0.0.1:8080', true); t.after(() => s.close()); const g = s.game;
+  g.setGenre('chanson'); await g.pick('accordion'); g.setPause(true);
+  const part = g.LAYERS.accordion[0], ch = g.chordAt(0), bars = [];
+  assert.ok(part.starter && part.by.length === 0, 'key picking stays after cards');
+  for (let bar = 0; bar < 4; bar++) { const notes = []; for (let st = 0; st < 16; st++) for (const e of part.steps(ch, st, bar, 1)) notes.push([st, e.midi, e.holdSteps]); bars.push(JSON.stringify(notes)); }
+  const first = JSON.parse(bars[0]);
+  assert.deepEqual(first.map(n => n[0]), [0, 4, 8, 12], 'one note per beat');
+  assert.ok(first.every(n => ch.pcs.includes(n[1] % 12) && n[2] < 4), 'chord tones only, each released before the next beat');
+  assert.ok(bars.every(b => b === bars[0]), 'the same picking every bar');
+  const G = g.G; G.instrumentFX = []; part.atk(part.steps(ch, 0, 0, 1), 1);
+  const ring = G.instrumentFX.at(-1); assert.equal(ring.kind, 'noteRing'); assert.ok(ring.maxR <= 120 && !ring.delay, 'small ring, no pull phase');
+  assert.deepEqual(s.errors, []);
 });

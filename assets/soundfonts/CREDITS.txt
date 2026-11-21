@@ -1,0 +1,13 @@
+A320U.sf2 - instrument and drum sounds for Band Hero
+
+Author:  Milton Paredes, Copyright 2005
+Licence: GNU General Public License v2 (full text: GPL-2.0.txt in this folder;
+         original notice: A320U-license.txt)
+Source:  taken unchanged from the Signal MIDI editor by ryohey
+         https://github.com/ryohey/signal
+         electron/assets/soundfonts/A320U.sf2, commit dc5e0313c1b1fd279c3f65b505f177532bd113ab
+
+The file is not modified. The game reads it at runtime with assets/sf2-bank.js
+(melodic presets from bank 0, drum kits "Standard" and "Electronic" from bank 128).
+Anyone who receives this game may also receive, use, change and share A320U.sf2
+under the terms of the GPL v2.

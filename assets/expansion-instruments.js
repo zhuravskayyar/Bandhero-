@@ -47,6 +47,10 @@ function buildInstrumentExpansion(api) {
   function pulse(L,radius=195,damage=9,delay=.34) {
     const p=state().p,q=pd();return add('bellows',{x:p.x,y:p.y,r:0,maxR:radius*(1+.12*(q.folds||0)),life:delay+.34,delay,dmg:damage*lv(L)*(1+.12*(q.reeds||0)),kb:230,col:colors.accordion});
   }
+  // Кільце від однієї ноти перебору: мале, лише штовхає назовні, не притягує і не відбиває снаряди.
+  function noteRing(L,o={}) {
+    const p=state().p,q=pd();return add('noteRing',{x:p.x,y:p.y,r:0,maxR:(o.r||100)*(1+.12*(q.folds||0)),life:o.down?.38:.3,dmg:(o.dmg||6)*lv(L)*(1+.12*(q.reeds||0)),kb:o.kb||40,col:colors.accordion,down:!!o.down});
+  }
   const layers={
     flute:[
       {id:'melody',icon:'boomerang',name:T('Пташина мелодія'),lv:strength,desc:T('Нота летить уперед і повертається до тебе. Вражає ворога один раз на кожному шляху.'),steps:(ch,s,b)=>events(ch,s,b,[0,6,10,14],72,.5),atk:(e,L)=>boom(L)},
@@ -118,7 +122,9 @@ function buildInstrumentExpansion(api) {
       f.x=t<.5?f.ox+(endX-f.ox)*k:p.x+(endX-p.x)*k;
       f.y=t<.5?f.oy+(endY-f.oy)*k:p.y+(endY-p.y)*k;
     } else if(f.kind==='beam'){f.x=p.x;f.y=p.y;}
-    else if(f.kind==='bellows')f.r=f.maxR*Math.min(1,(f.age<f.delay?f.age:f.age-f.delay)/.22);
+    // хвилі жаби закріплені за нею: центр кільця йде разом із жабою, а не лишається там, де пролунала нота
+    else if(f.kind==='bellows'){f.x=p.x;f.y=p.y;f.r=f.maxR*Math.min(1,(f.age<f.delay?f.age:f.age-f.delay)/.22);}
+    else if(f.kind==='noteRing'){f.x=p.x;f.y=p.y;f.r=f.maxR*Math.min(1,f.age/.2);}
   }
   function damage(f,m,kx=0,ky=0) {api.withAttack(f,()=>api.hurtMob(m,f.dmg,kx,ky));}
   function update(dt) {
@@ -138,6 +144,8 @@ function buildInstrumentExpansion(api) {
           const a=Math.abs(((Math.atan2(dy,dx)-f.dir+Math.PI*3)%(Math.PI*2))-Math.PI);
           if(d>f.range+m.r||d>m.r&&a>f.w/2+Math.asin(Math.min(1,m.r/d))||last!==undefined&&f.age-last<f.tick)continue;
           damage(f,m,Math.cos(f.dir)*f.kb,Math.sin(f.dir)*f.kb);f.hit.set(m,f.age);
+        } else if(f.kind==='noteRing'){
+          if(last===undefined&&d<=f.r+m.r){damage(f,m,dx/d*f.kb,dy/d*f.kb);f.hit.set(m,1);}
         } else if(f.kind==='bellows'){
           const phase=f.age<f.delay?1:2,mask=last||0;
           if(!(mask&phase)&&d<=f.r+m.r){const push=phase===1?-f.kb*.7:f.kb;damage(f,m,dx/d*push,dy/d*push);f.hit.set(m,mask|phase);}
@@ -145,7 +153,7 @@ function buildInstrumentExpansion(api) {
       }
       // Like the original attacks, a new instrument may parry notes. Each
       // effect has a small budget, so a long beam/thread cannot be a shield.
-      if(api.reflectNote&&(f.reflected||0)<2)for(const e of w.eshots||[]){
+      if(api.reflectNote&&f.kind!=='noteRing'&&(f.reflected||0)<2)for(const e of w.eshots||[]){
         if(e.fr||e.age>=e.life)continue;
         const dx=e.x-f.x,dy=e.y-f.y,d=Math.hypot(dx,dy)||1;
         let contact=false;
@@ -181,6 +189,8 @@ function buildInstrumentExpansion(api) {
         const a=f.dir,spread=f.w/2,len=f.range*(.88+.08*Math.sin(f.age*31));
         g.globalAlpha*=.24;g.beginPath();g.moveTo(f.x,f.y);g.lineTo(f.x+Math.cos(a-spread)*len,f.y+Math.sin(a-spread)*len);g.lineTo(f.x+Math.cos(a+spread)*len,f.y+Math.sin(a+spread)*len);g.closePath();g.fill();
         g.globalAlpha*=3;for(let j=0;j<4;j++){const r=((f.age*240+j*len/4)%len);g.beginPath();g.arc(f.x,f.y,r,a-spread,a+spread);g.stroke();}
+      } else if(f.kind==='noteRing'){
+        g.lineWidth=2;g.beginPath();g.arc(f.x,f.y,f.r,0,Math.PI*2);g.stroke();
       } else if(f.kind==='bellows'){
         const inward=f.age<f.delay,r=f.r;g.lineWidth=4;g.beginPath();g.arc(f.x,f.y,r,0,Math.PI*2);g.stroke();
         for(let k=0;k<8;k++){const a=k*Math.PI/4,tip=inward?r-11:r+11;g.beginPath();g.moveTo(f.x+Math.cos(a-.05)*r,f.y+Math.sin(a-.05)*r);g.lineTo(f.x+Math.cos(a)*tip,f.y+Math.sin(a)*tip);g.lineTo(f.x+Math.cos(a+.05)*r,f.y+Math.sin(a+.05)*r);g.stroke();}
@@ -188,6 +198,6 @@ function buildInstrumentExpansion(api) {
       g.restore();
     }
   }
-  return {chars,layers,gear,update,draw,interpolate,segmentDistance};
+  return {chars,layers,gear,update,draw,interpolate,segmentDistance,noteRing};
 }
 if(typeof module!=='undefined'&&module.exports)module.exports={buildInstrumentExpansion};

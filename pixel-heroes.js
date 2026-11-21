@@ -937,7 +937,25 @@ function cAccent(b,f){const W=b.w,H=b.h,cy=(H-1)/2,F=frontOf(f,1.2)*W,fade=f>=4;
     return 0;});
   if(!fade){const x=Math.round(Math.min(W-6,F)-2),c=Math.round(cy);star4(b,x,c,GC.w,'#ffb040',5);for(const [a,e] of [[-3,-3],[3,-3],[-3,3],[3,3]])P(b,x+a,c+e,'#ffe080');}
 }
-const CONES={strum:{W:72,draw:cStrum},chuck:{W:48,draw:cChuck},pick:{W:56,draw:cPick},lead:{W:128,draw:cLead},harm:{W:84,draw:cHarm},dstop:{W:72,draw:cDstop},accent:{W:92,draw:cAccent}};
+// УДАР УНИЗ (стартова партія): одна суцільна гаряча дуга — без шести струн бою; позаду біжать шеврони «вниз»
+function cDown(b,f){const W=b.w,H=b.h,cy=(H-1)/2,F=frontOf(f)*W,fade=f>=4;body(b,F,[GC.y,GC.o,GC.r],.7,fade);
+  sector(b,(x,v,y)=>{const d=Math.hypot(x,y-cy)-F;
+    if(d>-3&&d<=0&&F>4){if(fade&&(x+y)%2)return 0;return d>-1?GC.w:d>-2?GC.hot:GC.y;}
+    const c=(x+f*3)%8;if(x<F-5&&x>5&&Math.abs(Math.abs(y-cy)-(c<4?c:8-c))<.6&&Math.abs(v)<.5)return fade?0:GC.o;
+    return 0;});
+  if(!fade)star4(b,Math.round(F)-1,Math.round(cy),GC.w,GC.y,2);
+}
+// ПІНЧ: товста басова хвиля по осі (великий палець) + три тонкі «щипнуті» струни віялом угору з іскрами на кінцях (пальці)
+function cPinch(b,f){const W=b.w,H=b.h,cy=(H-1)/2,F=frontOf(f)*W,fade=f>=5;body(b,F,['#ffb060','#e8702a','#a8401a'],.5,fade);
+  for(let x=2;x<Math.min(W,F);x++){if(fade&&x%2)continue;const yy=cy+H*.12+Math.sin(x*.22-f*1.2)*1.5;
+    P(b,x,yy-1,GC.r);P(b,x,yy,GC.d);P(b,x,yy+1,GC.d);P(b,x,yy+2,x%2?GC.r:0);}
+  const from=Math.round(F*.45);
+  for(const [k,c] of [[.18,GC.w],[.34,GC.hot],[.5,GC.y]])for(let x=from;x<Math.min(W,F);x++){if(fade&&(x+f)%2)continue;
+    const yy=cy-(x-from)*(H/2)/W*k*2-Math.sin(x*.9-f*2)*.6;P(b,x,yy,c);}
+  if(!fade)for(const k of [.18,.34,.5]){const x=Math.round(Math.min(W-2,F)-1),yy=Math.round(cy-(x-from)*(H/2)/W*k*2);star4(b,x,yy,GC.w,GC.y,1);}
+}
+const CONES={strum:{W:72,draw:cStrum},chuck:{W:48,draw:cChuck},pick:{W:56,draw:cPick},lead:{W:128,draw:cLead},harm:{W:84,draw:cHarm},dstop:{W:72,draw:cDstop},accent:{W:92,draw:cAccent},
+  down:{W:64,draw:cDown},pinch:{W:72,draw:cPinch}};
 const coneCache=new Map();
 function coneFrame(part,deg,f){
   if(typeof document==='undefined')return null;const C=CONES[part];if(!C)return null;
@@ -1137,9 +1155,26 @@ function drawExpansionFx(ctx,kind,o,inst,age,dur,alpha,px){
 // Тривалі бойові вміння expansion-instruments.js. Поля f — та сама геометрія,
 // яку перевіряють колізії; час іде з симуляції, тому ефекти завмирають на паузі.
 // Листок має лише чотири запечені кадри; довільні довжини ниток/променів не кешуються.
+// Складчасте кільце (міхи акордеона): 2·folds вершин по черзі на r+amp і r-amp, зовнішній край світлий, внутрішній — тінь.
+function zigRing(pn,x,y,r,amp,folds,rot,c,c2){if(r<=pn.px*2)return;const n=folds*2;let px0,py0,ix0,iy0;
+  for(let i=0;i<=n;i++){const a=rot+i/n*Math.PI*2,rr=r+(i%2?-amp:amp),X=x+Math.cos(a)*rr,Y=y+Math.sin(a)*rr,ir=rr-pn.px,IX=x+Math.cos(a)*ir,IY=y+Math.sin(a)*ir;
+    if(i){pline(pn,px0,py0,X,Y,c);pline(pn,ix0,iy0,IX,IY,c2);}px0=X;py0=Y;ix0=IX;iy0=IY;}}
+function pbutton(pn,x,y,c,c2){const q=pn.px;for(let dx=-3;dx<=3;dx++)for(let dy=-3;dy<=3;dy++){const d=dx*dx+dy*dy;if(d<=10)pn.p(x+dx*q,y+dy*q,d<=2?c:c2);}} // кнопка акордеона: світле ядро, обідок
+function pheart(pn,x,y,c){const q=pn.px;for(const [a,b] of [[-1,-1],[1,-1],[-2,0],[-1,0],[0,0],[1,0],[2,0],[-1,1],[0,1],[1,1],[0,2]])pn.p(x+a*q,y+b*q,c);}
+// Аура-міхи навколо жаби: лише малюнок, без зіткнень (не відбиває снаряди). r — розтяг міхів, squeeze 0..1 — наскільки
+// стиснуті складки (стиснуті — глибокі й густі, розтягнуті — пласкі й рідкі), flash 0..1 — спалах на розвороті міхів.
+function drawBellowsAura(ctx,x,y,r,squeeze,flash,px=2.1,rot=0){
+  if(typeof document==='undefined')return false;const C=INSTC.accordion,pn=pen(ctx,px);
+  const folds=Math.max(10,Math.round(r/px*(.35+.25*squeeze))),amp=px*(.8+1.2*squeeze); // неглибокі складки, густота — від довжини кола
+  ctx.save();ctx.globalAlpha=.8+.2*flash;
+  zigRing(pn,x,y,r,amp,folds,rot,flash>.3?C[0]:C[1],C[2]);zigRing(pn,x,y,r-px*4,amp,folds,rot,C[2],C[3]); // смуга міхів: дві паралельні лінії складок
+  // ремінці міхів: чотири планки поперек складок
+  for(let k=0;k<4;k++){const a=rot+k*Math.PI/2+Math.PI/4,ca=Math.cos(a),sa=Math.sin(a);pline(pn,x+ca*(r-amp-px),y+sa*(r-amp-px),x+ca*(r+amp+px),y+sa*(r+amp+px),C[2]);}
+  pn.flush();ctx.restore();return true;
+}
 function drawInstrumentFx(ctx,f,px=2.1){
-  if(typeof document==='undefined'||!['boomerang','thread','beam','bellows'].includes(f.kind))return false;
-  const inst={boomerang:'flute',thread:'violin',beam:'sax',bellows:'accordion'}[f.kind],C=INSTC[inst],age=Math.max(0,f.age||0),alpha=Math.max(0,Math.min(1,((f.life||1)-age)*5)),pn=pen(ctx,px);
+  if(typeof document==='undefined'||!['boomerang','thread','beam','bellows','noteRing'].includes(f.kind))return false;
+  const inst={boomerang:'flute',thread:'violin',beam:'sax',bellows:'accordion',noteRing:'accordion'}[f.kind],C=INSTC[inst],age=Math.max(0,f.age||0),alpha=Math.max(0,Math.min(1,((f.life||1)-age)*5)),pn=pen(ctx,px);
   if(!alpha)return true;
   ctx.save();ctx.globalAlpha=alpha;
   if(f.kind==='boomerang'){
@@ -1162,11 +1197,27 @@ function drawInstrumentFx(ctx,f,px=2.1){
       if(k%2===0){const a=dir+Math.sin(age*7+k)*half*.6;pnote(pn,f.x+Math.cos(a)*r-px*2,f.y+Math.sin(a)*r-px*3,C[1]);}}
     for(const side of [-1,1]){const a=dir+side*half;for(let d=px*4;d<len;d+=px*6)pn.p(f.x+Math.cos(a)*d,f.y+Math.sin(a)*d,C[3]);}
     pn.flush();
+  }else if(f.kind==='noteRing'){
+    // Нота перебору: тонке гладке кільце (не складчасте, як у карток) і нотка, що злітає над ним
+    // сильна доля такту — товсте яскраве кільце з подвійним обідком і двома нотками; слабкі долі — тонке кільце
+    const r=Math.max(0,f.r||0);
+    if(f.down){circ(pn,f.x,f.y,r,[C[0],C[0],C[1]],{th:3});if(r>px*8)circ(pn,f.x,f.y,r-px*5,C[1],{th:2});
+      pnote(pn,f.x-px*6,f.y-r-px*6-age*36,C[0]);pnote(pn,f.x+px*3,f.y-r-px*9-age*30,C[1]);}
+    else{circ(pn,f.x,f.y,r,C[1]);if(r>px*4)circ(pn,f.x,f.y,r-px,C[3],{gap:(a,i)=>i%2});pnote(pn,f.x-px*2,f.y-r-px*6-age*30,C[2]);}
+    pn.flush();
   }else{
-    const r=Math.max(0,f.r||0),inward=age<(f.delay||0),sgn=inward?-1:1;
-    circ(pn,f.x,f.y,r,[C[0],C[1]],{th:2});circ(pn,f.x,f.y,Math.max(0,r-px*3),C[2],{gap:(a,i)=>i%3});
-    for(let k=0;k<8;k++){const a=k*Math.PI/4,ca=Math.cos(a),sa=Math.sin(a),tip=r+sgn*px*4,x=f.x+ca*tip,y=f.y+sa*tip;
-      pline(pn,f.x+ca*r-sa*px*2,f.y+sa*r+ca*px*2,x,y,C[0]);pline(pn,f.x+ca*r+sa*px*2,f.y+sa*r-ca*px*2,x,y,C[1]);}
+    // Хвилі жаби — складчасті кільця, як міхи; кожна партія свого вигляду (f.layer):
+    // «Вдих і видих» — гармошка, що спершу тягне всередину (шеврони до жаби), потім штовхає назовні;
+    // «Кнопковий акорд» — гармошка з трьома кнопками-нотами, що біжать по колу;
+    // «Ліва рука» — подвійна важка гармошка з великими складками; «Жаб'ячий танок» — кільце лапок-сердечок, що підстрибують.
+    const r=Math.max(0,f.r||0),inward=age<(f.delay||0),sgn=inward?-1:1,L=f.layer||'bellows';
+    if(L==='bass'){const fo=Math.max(8,Math.round(r/px*.22));for(let k=0;k<3;k++)zigRing(pn,f.x,f.y,Math.max(px*4,r-k*px*3),px*3,fo,age*.4,k?C[2]:C[1],C[3]);} // важка широка смуга міхів
+    else if(L==='dance'){circ(pn,f.x,f.y,r,C[2],{gap:(a,i)=>i%2});
+      for(let k=0;k<6;k++){const a=k*Math.PI/3+age*1.5,hop=Math.abs(Math.sin(age*14+k))*px*4,x=f.x+Math.cos(a)*(r+hop),y=f.y+Math.sin(a)*(r+hop);pheart(pn,x,y,k%2?C[0]:C[1]);}}
+    else{zigRing(pn,f.x,f.y,r,inward?px*3:px*2,inward?16:12,age*(inward?-1:1),C[1],C[2]);
+      if(L==='chords')for(let k=0;k<3;k++){const a=k*Math.PI*2/3+age*4,x=f.x+Math.cos(a)*r,y=f.y+Math.sin(a)*r;pbutton(pn,x,y,C[0],C[1]);}
+      else for(let k=0;k<8;k++){const a=k*Math.PI/4,ca=Math.cos(a),sa=Math.sin(a),tip=r+sgn*px*5,x=f.x+ca*tip,y=f.y+sa*tip;
+        pline(pn,f.x+ca*r-sa*px*2,f.y+sa*r+ca*px*2,x,y,C[0]);pline(pn,f.x+ca*r+sa*px*2,f.y+sa*r-ca*px*2,x,y,C[0]);}}
     pn.flush();
   }
   ctx.restore();return true;
@@ -1188,7 +1239,7 @@ function drawFx(ctx,kind,o,inst,age,dur,alpha,px){
 }
 
 root.PixelHeroes={draw,frame,pose,portrait,build,GW,GH,FOOT,chars:Object.keys(HEROES),
-  drawFx,drawSpark,fxFrame,drawInstrumentFx,
+  drawFx,drawSpark,fxFrame,drawInstrumentFx,drawBellowsAura,
   drawCone,coneFrame,coneParts:Object.keys(CONES),
   mobPose,mobFrame,drawMob,drawShot,drawCharge,mobTypes:Object.keys(MOBGFX),mobGrid:t=>MOBGFX[t]&&MOBGFX[t].g};
 })(typeof window!=='undefined'?window:globalThis);
