@@ -528,3 +528,46 @@ test('each level adds 10% of base HP to max and heals that much', async t => {
   assert.equal(g.G.p.max, base * 1.1); assert.equal(g.G.p.hp, 50 + base * .1);
   assert.deepEqual(s.errors, []);
 });
+
+test('pixel FX pack: instrument-coloured hit sparks, level-up star, revive lotus and boss death reach the guest', async t => {
+  const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
+  s.game.setGenre('pop'); await s.game.pick('bass');
+  const g = s.game, G = g.G;
+  assert.match(g.VISUAL_ASSETS.fxpack, /^assets\/fx-pack-v1\.png(\?v=\d+)?$/);
+  const m = g.addMob('glush', G.p.x + 40, G.p.y); m.spd = 0; m.hp = m.max = 1e6;
+  g.hurtMob(m, 1, 0, 0); assert.equal(m.hc, 3, 'a bass hit picks the blue spark row');
+  g.draw(); assert.ok(g.renderStats.packFX >= 1, 'the spark is drawn from the pack atlas');
+  // атаки героїв теж із пакета: конус, кільце, вибух ревера, снаряд і блискавка
+  const base = { owner: null, age: .1, hit: new Set() };
+  G.cones.push({ ...base, inst: 'guitar', layer: 'strum', x: G.p.x, y: G.p.y, dir: 0, r: 10, maxR: 90 });
+  G.rings.push({ ...base, inst: 'drums', layer: 'kick', x: G.p.x, y: G.p.y, r: 30, maxR: 80 }, { ...base, inst: 'piano', layer: 'chords', x: G.p.x + 20, y: G.p.y, r: 20, maxR: 50, boom: true });
+  G.shots.push({ ...base, inst: 'bass', layer: 'root', x: G.p.x + 30, y: G.p.y, r: 8, vx: 300, vy: 0, life: 1 }, { ...base, inst: 'piano', layer: 'mel', x: G.p.x - 30, y: G.p.y, r: 6, vx: 0, vy: 200, life: 1 });
+  G.zaps.push({ ...base, inst: 'drums', layer: 'hat', x1: G.p.x, y1: G.p.y, x2: G.p.x + 60, y2: G.p.y + 20 });
+  g.draw(); assert.ok(g.renderStats.packFX >= 8, 'every attack kind is drawn from the pack atlas');
+  G.cones = []; G.rings = []; G.shots = []; G.zaps = [];
+  // багато ворогів під ударом: іскри не виходять за спільний ліміт VFX, HP видно всім
+  for (let i = 0; i < 200; i++) { const e = g.addMob('fal', G.p.x + (i % 20) * 8 - 80, G.p.y + Math.floor(i / 20) * 8 - 40); e.flash = .1; e.hc = 1 + i % 4; }
+  g.draw(); assert.ok(g.renderStats.spriteFX <= 120, 'spark budget holds'); assert.equal(g.renderStats.hpBars, g.G.mobs.length);
+  G.mobs = []; G.xp = 99; g.levelUp(); assert.ok(G.pfx.some(f => f.k === 'star' && f.who === 'solo'), 'level-up star over the hero');
+  assert.deepEqual(s.errors, []);
+  // гурт: усе, що бачить хост, бачить і гість
+  const srv = await startServer(t);
+  // атлас може бути не в репозиторії (ліцензія пакета): тоді гра малює старі ефекти, а перевірку роздачі пропускаємо
+  if (fs.existsSync(path.join(__dirname, 'assets', 'fx-pack-v1.png'))) {
+    const atlas = await fetch(srv.origin + '/assets/fx-pack-v1.png'); assert.equal(atlas.status, 200, 'server serves the FX atlas');
+    assert.equal(atlas.headers.get('content-type'), 'image/png');
+  }
+  const [a, b] = await bandOfTwo(t, srv.origin);
+  const host = a.game, guest = b.game, H = host.G;
+  for (const p of H.players) p.p.hp = p.p.max;
+  const hit = host.addMob('glush', H.players[0].p.x + 300, H.players[0].p.y); hit.spd = 0; hit.hp = hit.max = 1e6;
+  host.hurtMob(hit, 1, 0, 0); assert.equal(hit.hc, 1, 'host guitar hit');
+  await until(() => guest.G.mobs.some(e => e.netId === hit.netId && e.hc === 1), 'guest gets the guitar spark colour (index 1 survives the wire)');
+  const boss = host.addMob('boss1', H.players[0].p.x + 200, H.players[0].p.y); boss.spd = 0; boss.hp = 0;
+  await until(() => (guest.G.pfx || []).some(f => f.k === 'boom') && guest.G.pfx.some(f => f.k === 'skull'), 'guest sees boss explosion and skull');
+  const mate = H.players.find(p => p.char === 'drums'); mate.p.hp = 0; H.xp = 99; host.levelUp();
+  assert.ok(H.pfx.some(f => f.k === 'lotus' && f.who === mate.id), 'downed teammate rises with a lotus');
+  await until(() => (guest.G.pfx || []).some(f => f.k === 'lotus') && guest.G.pfx.filter(f => f.k === 'star').length === 2, 'guest sees both stars and the lotus');
+  guest.draw(); host.draw();
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});

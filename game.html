@@ -1051,7 +1051,8 @@ const spriteImages={};
 const VISUAL_ASSETS={mobs:'assets/band-mobs-v1.png',
   hero_guitar:'assets/hero-guitar-v3.png',hero_drums:'assets/hero-drums-v3.png',hero_drums_atk:'assets/hero-drums-atk-v3.png',
   hero_bass:'assets/hero-bass-v3.png',hero_bass_atk:'assets/hero-bass-atk-v3.png',hero_piano:'assets/hero-piano-v3.png',hero_piano_atk:'assets/hero-piano-atk-v3.png',
-  fx_guitar:'assets/fx-guitar-v3.png',fx_drums:'assets/fx-drums-v3.png',fx_bass:'assets/fx-bass-v3.png',fx_piano:'assets/fx-piano-v3.png',floor:'assets/night-grove-floor-v2.png',props:'assets/night-grove-props-v2.png'};
+  fx_guitar:'assets/fx-guitar-v3.png',fx_drums:'assets/fx-drums-v3.png',fx_bass:'assets/fx-bass-v3.png',fx_piano:'assets/fx-piano-v3.png',floor:'assets/night-grove-floor-v2.png',props:'assets/night-grove-props-v2.png',
+  fxpack:'assets/fx-pack-v1.png?v=2'}; // ?v= — новий атлас не береться зі старого кешу (PNG кешуються на годину); міняй при зміні атласу
 for(const [key,file] of Object.entries(VISUAL_ASSETS)){
   if(typeof Image==='undefined')continue;
   const img=new Image();img.src=file;spriteImages[key]=img;
@@ -1085,7 +1086,7 @@ function heroFrame(a){
   if(q.hurt>0)return {sheet:base,row:2,frame:1+Math.floor(G.t*10)%2};
   return t-state.moved<130?{sheet:base,row:1,frame:Math.floor(G.t*10)%6}:{sheet:base,row:0,frame:Math.floor(G.t*6)%6};
 }
-const renderStats={spriteFX:0,hpBars:0,mobSprites:0,effectMode:'sprites',minimapMates:0,offscreenMates:0};
+const renderStats={spriteFX:0,hpBars:0,mobSprites:0,effectMode:'sprites',minimapMates:0,offscreenMates:0,packFX:0};
 let renderDT=1/60;
 const healthTrails=new WeakMap();
 function clearAttackFX(){spriteMotion.clear();renderStats.spriteFX=0;renderStats.hpBars=0;}
@@ -1108,12 +1109,64 @@ function paintEffect(sheet,row,frame,x,y,width,height=width,angle=0,alpha=1){
   g2.save();g2.translate(x,y);g2.rotate(angle);g2.globalAlpha=alpha;g2.imageSmoothingEnabled=true;
   g2.drawImage(img,frame*cw+2,row*ch+2,cw-4,ch-4,-width/2,-height/2,width,height);g2.restore();renderStats.spriteFX++;return true;
 }
+// Піксельний FX-пакет (BDragon1727, безкоштовна версія — лише для некомерційних ігор; див. assets/fx-pack-v1-CREDITS.txt).
+// Клітинка 64×64, ряд = ефект, кадри зліва направо. Без атласу гра малює старі ефекти.
+const PACK={beat:{row:0,n:11},down:{row:1,n:11},spark:{row:2,n:11},star:{row:6,n:9},lotus:{row:7,n:15},boom:{row:8,n:10},skull:{row:9,n:15}};
+const PACK_INST=['guitar','drums','bass','piano']; // m.hc = індекс+1 (ряди іскор 2..5): мережа відкидає нульові поля
+const PACK_LIFE={star:.8,lotus:1.2,boom:.7,skull:1.3},PACK_SIZE={star:130,lotus:110,boom:200,skull:120};
+function paintPack(row,frame,x,y,size,alpha=1,add=false){
+  if(!imageReady('fxpack'))return false;
+  g2.globalAlpha=alpha;if(add)g2.globalCompositeOperation='lighter';g2.imageSmoothingEnabled=false;
+  g2.drawImage(spriteImages.fxpack,frame*64,row*64,64,64,x-size/2,y-size/2,size,size);
+  g2.globalAlpha=1;g2.imageSmoothingEnabled=true;if(add)g2.globalCompositeOperation='source-over';renderStats.packFX++;return true;
+}
+// Події (рівень, воскресіння, смерть боса) живуть у G.pfx: хост шле їх гостям разом зі станом.
+function packFX(k,x,y,who,age=0){if(!G.pfx)G.pfx=[];if(G.pfx.length<40)G.pfx.push({k,x,y,who,age});}
+function drawPackEvents(visible){
+  for(const f of G.pfx||[]){
+    if(f.age<0)continue;const P=PACK[f.k],k=f.age/PACK_LIFE[f.k];if(!P||k>=1)continue;
+    const a=f.who!==undefined?players().find(a=>(a.id??'solo')===f.who):null,x=a?a.p.x:f.x,y=a?a.p.y-28:f.y;
+    if(!visible(x,y,120))continue;
+    paintPack(P.row,Math.min(P.n-1,Math.floor(k*P.n)),x,y,PACK_SIZE[f.k],k>.8?(1-k)/.2:1,f.k==='star');
+  }
+}
+// Атаки героїв з FX-пакета: ряд = 10 + вид*4 + колір інструмента (гітара, барабан, бас, клавіші).
+// Варіант виду (серп/удар, тонке кільце/хвиля з шипами, промінь/куля) — за парністю ряду шару у FX_PROFILES.
+const PACK_ATK={coneA:{s:0,n:10},coneB:{s:1,n:14},ringA:{s:2,n:12},ringB:{s:3,n:14},beam:{s:4,n:14},orb:{s:5,n:8}},PACK_BOOM={row:34,n:10};
+function paintPackR(row,frame,x,y,w,h,angle,alpha){
+  if(renderStats.spriteFX>=120)return;
+  g2.save();g2.translate(x,y);if(angle)g2.rotate(angle);g2.globalAlpha=alpha;g2.imageSmoothingEnabled=false;
+  g2.drawImage(spriteImages.fxpack,frame*64,row*64,64,64,-w/2,-h/2,w,h);g2.restore();renderStats.spriteFX++;renderStats.packFX++;
+}
+function drawAttackPack(o,kind,inst,profile,age,duration,alpha){
+  const col=Math.max(0,PACK_INST.indexOf(inst)),odd=profile.row%2===1,t=age/duration;
+  const at=k=>10+PACK_ATK[k].s*4+col,fr=(k,u)=>Math.max(0,Math.min(PACK_ATK[k].n-1,Math.floor(u*PACK_ATK[k].n)));
+  if(kind==='zap'){
+    const angle=Math.atan2(o.y2-o.y1,o.x2-o.x1),length=Math.hypot(o.x2-o.x1,o.y2-o.y1);
+    paintPackR(at('beam'),fr('beam',t),(o.x1+o.x2)/2,(o.y1+o.y2)/2,length*1.1,28,angle,alpha);
+    paintPackR(PACK.spark.row+col,Math.min(10,2+Math.floor(t*9)),o.x2,o.y2,44,44,0,alpha);return;
+  }
+  if(o.boom){const s=o.maxR*2.6;paintPackR(PACK_BOOM.row,Math.min(PACK_BOOM.n-1,Math.floor(t*PACK_BOOM.n)),o.x,o.y,s,s,0,alpha);return;}
+  if(kind==='ring'){const k=odd?'ringB':'ringA',s=o.maxR*2*(profile.scale||1)*1.35;paintPackR(at(k),fr(k,t),o.x,o.y,s,s,0,alpha);return;}
+  if(kind==='cone'){
+    // варіант B (лист 589) — дуга, що обходить центр клітинки й закінчується праворуч (0°): малюємо з центром на герої,
+    // тож замах обходить його й приходить у напрямок атаки; кадри 0–2 майже порожні — пропускаємо
+    const k=odd?'coneB':'coneA',s=o.maxR*2*(profile.scale||1)*(odd?1.3:1.1),off=odd?0:(profile.offset||0)*o.maxR,f0=odd?3:0,n=PACK_ATK[k].n;
+    paintPackR(at(k),Math.min(n-1,f0+Math.floor(Math.max(0,t)*(n-f0))),o.x+Math.cos(o.dir)*off,o.y+Math.sin(o.dir)*off,s,s,o.dir,alpha);return;
+  }
+  // снаряд летить: кадри йдуть по колу
+  const angle=Math.atan2(o.vy,o.vx),s=Math.max(26,o.r*3.2)*(profile.scale||1);
+  if(profile.trail)paintPackR(at('beam'),Math.floor(age*20+5)%14,o.x-Math.cos(angle)*17,o.y-Math.sin(angle)*17,s*1.3,s*.6,angle,.25*alpha);
+  if(odd)paintPackR(at('orb'),2+Math.floor(age*10)%2,o.x,o.y,s*1.3,s*1.3,0,alpha);
+  else paintPackR(at('beam'),Math.floor(age*20)%14,o.x,o.y,s*1.8,s*.9,angle,alpha);
+}
 function drawAttack(o,kind){
   if(renderStats.spriteFX>=120)return;
   const inst=o.inst||'guitar',profile=FX_PROFILES[inst+'-'+(o.layer||'strum')]||{row:5};
   const age=o.age||0,duration=kind==='cone'?.27:kind==='ring'?.28:kind==='zap'?.12:.4; // пік спрайта має припадати на удар, а не після нього
   const frame=kind==='shot'?1+Math.floor(age*14)%4:Math.min(5,Math.floor(age/duration*6));
   const alpha=o.ghost?.43:kind==='shot'?1:Math.max(0,Math.min(1,(duration-age)/.06));
+  if(imageReady('fxpack')){drawAttackPack(o,kind,inst,profile,age,duration,alpha);return;}
   if(kind==='zap'){
     const angle=Math.atan2(o.y2-o.y1,o.x2-o.x1),length=Math.hypot(o.x2-o.x1,o.y2-o.y1);
     paintEffect('drums',2,Math.min(frame,4),(o.x1+o.x2)/2,(o.y1+o.y2)/2,length,22,angle,alpha);
@@ -1355,7 +1408,7 @@ function levelHp(q,k){const add=CHARS[k].hp*.1;q.max=Math.round((q.max+add)*10)/
 function levelUp(){
   G.xp-=need(G.level);G.level++;
   if(net.active){netLevelUp();return;}
-  levelHp(G.p,charKey);
+  levelHp(G.p,charKey);packFX('star',G.p.x,G.p.y,'solo');
   renderChoices(levelOptions());
   choosing=true;setPause(true,true);
 }
@@ -1594,7 +1647,7 @@ function hurtMob(m,dmg,kx,ky){
   if(pd.comp){kx*=1+.5*pd.comp;ky*=1+.5*pd.comp;m.stun=Math.max(m.stun||0,.1+.2*pd.comp);}
   if(pd.chorus){m.slow=1.5;m.slowAmt=.1+.15*pd.chorus;}
   if(MOBS[m.type].boss){kx=0;ky=0;m.stun=0;m.slow=0;} // боса не можна заморозити чи відкинути
-  m.hp-=dmg;m.flash=.12;m.kx+=kx;m.ky+=ky;m.lastOwner=ownerId();
+  m.hp-=dmg;m.flash=.12;m.kx+=kx;m.ky+=ky;m.lastOwner=ownerId();m.hc=PACK_INST.indexOf(charKey)+1;
   if(G.texts.length<60)G.texts.push({x:m.x,y:m.y-m.r,v:Math.round(dmg),age:0,crit});
 }
 function angDiff(a,b){return Math.abs(((a-b+Math.PI*3)%(Math.PI*2))-Math.PI);}
@@ -1728,6 +1781,7 @@ function update(dt){
       if(G.p.hp>before&&G.texts.length<60)G.texts.push({x:G.p.x,y:G.p.y-45,v:'+'+Math.ceil(G.p.hp-before),age:0,heal:true});}
     });
     if(MOBS[m.type].boss){
+      packFX('boom',m.x,m.y-m.r*.5);packFX('skull',m.x,m.y-m.r*.8,undefined,-.25); // череп з'являється з вибуху
       for(let i=0;i<14;i++){const a=i/14*6.283;G.gems.push({x:m.x+Math.cos(a)*40,y:m.y+Math.sin(a)*40,v:MOBS[m.type].xp,mag:false});}
       if(MOBS[m.type].boss.final)G.won=true;
     }
@@ -1752,6 +1806,7 @@ function update(dt){
 
   for(const f of G.fx){f.age+=dt;f.x+=f.vx*dt;f.y+=f.vy*dt;}
   G.fx=G.fx.filter(f=>f.age<.45);
+  if(G.pfx){for(const f of G.pfx)f.age+=dt;G.pfx=G.pfx.filter(f=>f.age<PACK_LIFE[f.k]);}
   for(const t of G.texts)t.age+=dt;
   G.texts=G.texts.filter(t=>t.age<.6);
 
@@ -1825,7 +1880,10 @@ function drawHero(a){
   const p=a.p,C=CHARS[a.char],size=heroSizes[a.char],bob=p.hp>0?Math.sin(G.t*4.5)*1.2:0;
   g2.fillStyle='#030b1599';g2.beginPath();g2.ellipse(p.x,p.y+p.r*.55,p.r*1.15,p.r*.4,0,0,Math.PI*2);g2.fill();
   g2.strokeStyle=C.col;g2.globalAlpha=p.hp>0?Math.min(1,.3+p.pulse*.3+BK*.3):.15;g2.lineWidth=2+BK*1.5;
-  g2.beginPath();g2.ellipse(p.x,p.y+p.r*.55,p.r+4+p.pulse*3+BK*5,(p.r+4+BK*5)*.4,0,0,Math.PI*2);g2.stroke();g2.globalAlpha=p.hp>0?1:.35;
+  g2.beginPath();g2.ellipse(p.x,p.y+p.r*.55,p.r+4+p.pulse*3+BK*5,(p.r+4+BK*5)*.4,0,0,Math.PI*2);g2.stroke();g2.globalAlpha=1;
+  // Кільце-хвиля на кожну долю; на першій долі такту — більше, золоте й яскравіше.
+  if(BP&&p.hp>0){const down=BP.beat===0,P=down?PACK.down:PACK.beat;paintPack(P.row,Math.min(P.n-1,Math.floor(BP.ph*P.n)),p.x,p.y+p.r*.2,down?150:100,down?1:.6,down);}
+  g2.globalAlpha=p.hp>0?1:.35;
   const hf=heroFrame(a);
   if(!drawSprite(hf.sheet,hf.row,hf.frame,p.x,p.y+bob,size*(1+.05*BK),p.fx<0,p.hurt)){
     g2.fillStyle=C.col;g2.beginPath();g2.arc(p.x,p.y,p.r,0,Math.PI*2);g2.fill();
@@ -1839,7 +1897,7 @@ function drawHero(a){
   }
 }
 function draw(){
-  renderStats.spriteFX=0;renderStats.hpBars=0;renderStats.mobSprites=0;renderStats.effectMode=imageReady('fx_guitar')?'sprites':'fallback';
+  renderStats.spriteFX=0;renderStats.hpBars=0;renderStats.mobSprites=0;renderStats.packFX=0;renderStats.effectMode=imageReady('fx_guitar')?'sprites':'fallback';
   // Удар доли: сильніший на першій долі такту. На паузі й між забігами пульсу немає.
   BP=running&&!paused&&!choosing&&G?beatPos():null;BK=BP?Math.pow(1-BP.ph,3)*(BP.beat===0?1:.55):0;
   g2.setTransform(DPR,0,0,DPR,0,0);g2.fillStyle='#101d2b';g2.fillRect(0,0,W,H);
@@ -1865,8 +1923,14 @@ function draw(){
     g2.fillStyle=e.fr?'#fff8e6':'#1a0f24';g2.strokeStyle=e.col;g2.lineWidth=e.fr?3:2.5;g2.beginPath();g2.arc(e.x,e.y,e.r,0,Math.PI*2);g2.fill();g2.stroke();
     g2.fillStyle=e.col;g2.fillRect(e.x+e.r*.35,e.y-e.r*2,2,e.r*1.9);}
   for(const o of G.zaps)if(visible(o.x2,o.y2,60))drawAttack(o,'zap');
-  for(const m of mobs)if(m.flash>0)paintEffect('drums',5,Math.min(5,Math.floor((1-m.flash/.12)*6)),m.x,m.y-m.r*.8,30+m.r,30+m.r,0,.8);
+  // Іскра удару кольору інструмента (гітара оранжева, барабан червоний, бас синій, клавіші фіолетові); без атласу — стара іскра.
+  const pack=imageReady('fxpack');
+  for(const m of mobs)if(m.flash>0){
+    if(pack&&m.hc){if(renderStats.spriteFX<120){paintPack(PACK.spark.row+m.hc-1,Math.min(10,2+Math.floor((1-m.flash/.12)*9)),m.x,m.y-m.r*.8,40+m.r*1.4);renderStats.spriteFX++;}}
+    else paintEffect('drums',5,Math.min(5,Math.floor((1-m.flash/.12)*6)),m.x,m.y-m.r*.8,30+m.r,30+m.r,0,.8);
+  }
   for(const f of G.fx){g2.globalAlpha=Math.max(0,1-f.age/.45);g2.fillStyle=f.col;g2.fillRect(f.x-2,f.y-2,4,4);}g2.globalAlpha=1;
+  drawPackEvents(visible);
   // HP завжди поверх атак, у кожного видимого живого ворога.
   for(const m of mobs)drawMobHealth(m);
   g2.textAlign='center';g2.textBaseline='middle';g2.lineWidth=3;g2.strokeStyle='#0b1825';
@@ -2288,9 +2352,9 @@ function tryBandStart(){
   loading=false;running=true;paused=false;choosing=false;seq.step=0;seq.nextTime=now()+.4;
   hideScreens();$('#hud').classList.remove('hide');sendSnapshot();if(document.hidden)netPause(true);
 }
-const MOB_WIRE=['netId','type','x','y','r','hp','max','flash','wob','stun','slow','burn','mode','ax','ay','gen','age'];
+const MOB_WIRE=['netId','type','x','y','r','hp','max','flash','wob','stun','slow','burn','mode','ax','ay','gen','age','hc'];
 function cleanState(){
-  const fields=['seed','t','kills','xp','level','syn','bossNext','won','mobs','eshots','shots','rings','cones','zaps','gems','fx','texts'];
+  const fields=['seed','t','kills','xp','level','syn','bossNext','won','mobs','eshots','shots','rings','cones','zaps','gems','fx','texts','pfx'];
   for(const key of ['mobs','shots','gems','rings','cones'])for(const item of G[key])if(!item.netId)item.netId=++net.entity;
   const state={};for(const key of fields)state[key]=G[key];
   // гостям потрібно лише те, що малюється: внутрішні таймери й швидкості ворогів не шлемо (пізня гра — 140+ ворогів)
@@ -2344,7 +2408,7 @@ function smoothPosition(o,prev){o.toX=o.x;o.toY=o.y;if(prev&&Math.hypot(prev.x-o
 function interpolateWorld(dt){
   for(const list of [G.players.map(a=>a.p),G.mobs,G.shots,G.gems])for(const o of list)if(o.toX!==undefined){const k=Math.min(1,dt*20);o.x+=(o.toX-o.x)*k;o.y+=(o.toY-o.y)*k;}
   for(const e of G.eshots||[]){e.x+=e.vx*dt;e.y+=e.vy*dt;e.age+=dt;} // снаряди ворогів летять по прямій між знімками
-  G.t+=dt;for(const list of [G.rings,G.cones,G.zaps,G.shots,G.fx,G.texts])for(const o of list)o.age+=dt;
+  G.t+=dt;for(const list of [G.rings,G.cones,G.zaps,G.shots,G.fx,G.texts,G.pfx||[]])for(const o of list)o.age+=dt;
   for(const m of G.mobs){m.flash=Math.max(0,(m.flash||0)-dt);m.wob=(m.wob||0)+dt*8;}
   for(const a of G.players){a.p.pulse=Math.max(0,a.p.pulse-dt*6);a.p.hurt=Math.max(0,a.p.hurt-dt);}
 }
@@ -2369,7 +2433,7 @@ function netPause(v){
 }
 function netLevelUp(){
   choosing=true;paused=true;atkQ=[];keys.clear();joy=null;net.pending.clear();
-  for(const a of G.players){levelHp(a.p,a.char);if(a.p.hp<=0)a.p.hp=a.p.max*.4;net.pending.set(a.id,withPlayer(a,levelOptions));}
+  for(const a of G.players){levelHp(a.p,a.char);packFX('star',a.p.x,a.p.y,a.id);if(a.p.hp<=0){a.p.hp=a.p.max*.4;packFX('lotus',a.p.x,a.p.y,a.id);}net.pending.set(a.id,withPlayer(a,levelOptions));}
   updateBandScreens(Object.fromEntries([...net.pending].map(([id,opts])=>[id,opts.map(serializeOption)])));sendSnapshot();
 }
 function chooseBandUpgrade(id,index,level){

@@ -31,6 +31,7 @@ const ASSETS = new Map([
   ['/assets/fx-piano-v3.png', ['assets/fx-piano-v3.png', 'image/png']],
   ['/assets/night-grove-floor-v2.png', ['assets/night-grove-floor-v2.png', 'image/png']],
   ['/assets/night-grove-props-v2.png', ['assets/night-grove-props-v2.png', 'image/png']],
+  ['/assets/fx-pack-v1.png', ['assets/fx-pack-v1.png', 'image/png']],
   ['/assets/Rubik.ttf', ['assets/Rubik.ttf', 'font/ttf']],
   ['/assets/guitar-harmonics.js', ['assets/guitar-harmonics.js', 'text/javascript; charset=utf-8']],
   ['/assets/RussoOne.ttf', ['assets/RussoOne.ttf', 'font/ttf']]

@@ -1,0 +1,26 @@
+fx-pack-v1.png - pixel effects for Band Hero
+
+Source: "Effect and FX Pixel All Free" by BDragon1727 (free version).
+Licence: the free version may be used in NON-COMMERCIAL games only.
+Do not publish this file in a public repository or use it in a commercial
+release until the full version is bought or the repository is made private.
+
+Atlas layout: cells are 64x64, frames run left to right, one effect per row.
+Row  Source sheet  Colour row  Frames  Used for
+0    466           5 white     11      beat wave under the hero
+1    466           0 gold      11      beat wave, first beat of the bar
+2    474           0 orange    11      hit spark, guitar
+3    474           7 red       11      hit spark, drums
+4    474           2 blue      11      hit spark, bass
+5    474           1 purple    11      hit spark, keys
+6    293           0 gold      9       level-up star
+7    655           3 green     15      teammate revive lotus
+8    71            0 orange    10      boss death explosion
+9    633           5 white     15      boss death skull
+10-13 242 (mirrored) gold/red/blue/purple  10   hero swing (cone), variant A: guitar, drums, bass, keys
+14-17 589          gold/red/blue/purple  14      hero swing (cone), variant B
+18-21 187          gold/red/blue/purple  12      hero ring, variant A
+22-25 586          gold/red/blue/purple  14      hero shockwave ring, variant B
+26-29 579          gold/red/blue/purple  14      hero projectile beam and drum lightning
+30-33 427          gold/red/blue/purple  8       hero projectile orb
+34   71            1 purple    10      reverb pedal burst
