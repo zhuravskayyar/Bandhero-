@@ -1147,11 +1147,12 @@ function drawAttackPack(o,kind,inst,profile,age,duration,alpha){
     paintPackR(PACK.spark.row+col,Math.min(10,2+Math.floor(t*9)),o.x2,o.y2,44,44,0,alpha);return;
   }
   if(o.boom){const s=o.maxR*2.6;paintPackR(PACK_BOOM.row,Math.min(PACK_BOOM.n-1,Math.floor(t*PACK_BOOM.n)),o.x,o.y,s,s,0,alpha);return;}
-  if(kind==='ring'){const k=odd?'ringB':'ringA',s=o.maxR*2*(profile.scale||1)*1.35;paintPackR(at(k),fr(k,t),o.x,o.y,s,s,0,alpha);return;}
+  // розмір підібрано так, щоб видиме кільце збігалося з радіусом удару: тонке кільце (187) займає 16/32 клітинки, хвиля (586) ~24/32
+  if(kind==='ring'){const k=odd?'ringB':'ringA',s=o.maxR*2*(profile.scale||1)*(odd?1.35:2);paintPackR(at(k),fr(k,t),o.x,o.y,s,s,0,alpha);return;}
   if(kind==='cone'){
     // варіант B (лист 589) — дуга, що обходить центр клітинки й закінчується праворуч (0°): малюємо з центром на герої,
     // тож замах обходить його й приходить у напрямок атаки; кадри 0–2 майже порожні — пропускаємо
-    const k=odd?'coneB':'coneA',s=o.maxR*2*(profile.scale||1)*(odd?1.3:1.1),off=odd?0:(profile.offset||0)*o.maxR,f0=odd?3:0,n=PACK_ATK[k].n;
+    const k=odd?'coneB':'coneA',s=o.maxR*2*(profile.scale||1)*(odd?1:1.1),off=odd?0:(profile.offset||0)*o.maxR,f0=odd?3:0,n=PACK_ATK[k].n;
     paintPackR(at(k),Math.min(n-1,f0+Math.floor(Math.max(0,t)*(n-f0))),o.x+Math.cos(o.dir)*off,o.y+Math.sin(o.dir)*off,s,s,o.dir,alpha);return;
   }
   // снаряд летить: кадри йдуть по колу
@@ -1890,7 +1891,8 @@ function drawHero(a){
     g2.fillStyle='#13202a';g2.font='600 18px Rubik, sans-serif';g2.textAlign='center';g2.fillText(C.glyph,p.x,p.y+5);
   }
   g2.globalAlpha=1;
-  if(pedalEffects(a.pedals||G.pedals,a.char).familiar){const t=G.t*2;paintEffect('piano',4,1+Math.floor(G.t*8)%4,p.x+Math.cos(t)*31,p.y-25+Math.sin(t)*13,25,25,0,.9);}
+  if(pedalEffects(a.pedals||G.pedals,a.char).familiar){const t=G.t*2,fx=p.x+Math.cos(t)*31,fy=p.y-25+Math.sin(t)*13; // фамільяр: фіолетова куля з пакета, без атласу — старий спрайт
+    if(!paintPack(10+PACK_ATK.orb.s*4+3,2+Math.floor(G.t*8)%2,fx,fy,32,.9))paintEffect('piano',4,1+Math.floor(G.t*8)%4,fx,fy,25,25,0,.9);}
   if(net.active){
     g2.font='500 10px Rubik, sans-serif';g2.textAlign='center';g2.fillStyle=C.col;g2.fillText((a.id===net.id?T('Ти')+' · ':'')+C.name,p.x,p.y-size*.85-12);
     g2.fillStyle='#07131be6';g2.fillRect(p.x-22,p.y-size*.85-6,44,5);g2.fillStyle=C.col;g2.fillRect(p.x-21,p.y-size*.85-5,42*p.hp/p.max,3);
