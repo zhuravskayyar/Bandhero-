@@ -12,7 +12,7 @@ function fixture(inst='flute',gear={}){
     pedalEffects:()=>gear,meta:()=>({owner:null,inst,layer:'test',visualId:++id}),
     withAttack:(f,fn)=>{active=f;try{return fn();}finally{active=null;}},
     hurtMob:(m,dmg,kx,ky)=>{if(m.boss){kx=ky=0;m.slow=0;}m.hp-=dmg;hits.push({m,dmg,kx,ky,time:w.t,inst:active.inst,owner:active.owner});},
-    reflectNote:(e,f)=>{e.fr=true;parries.push(f);},get G(){return w;},get SONG(){return {genre:'lofi'};},get ATK_SCALE(){return 1;}};
+    reflectNote:(e,f)=>{e.fr=true;parries.push(f);},isBoss:m=>!!m.boss,get G(){return w;},get SONG(){return {genre:'lofi'};},get ATK_SCALE(){return 1;}};
   const module=buildInstrumentExpansion(api),mob=(x,y=0)=>{const m={x,y,r:8,hp:10000};w.mobs.push(m);return m;};
   function run(seconds,visual=false){const n=Math.ceil(seconds/.01);for(let i=0;i<n;i++){w.t+=.01;(visual?module.interpolate:module.update)(.01);}}
   return {w,hits,parries,module,mob,run};
@@ -21,7 +21,7 @@ function fixture(inst='flute',gear={}){
 test('new instrument parts keep exactly the same notes and times at every upgrade rank',()=>{
   const f=fixture(),ch={root:0};
   for(const [inst,layers] of Object.entries(f.module.layers)){
-    assert.equal(layers.length,4);assert.equal(f.module.gear[inst].length,4);
+    assert.equal(layers.length,inst==='accordion'?9:10);assert.equal(f.module.gear[inst].length,inst==='accordion'?12:10);
     for(const layer of layers){
       const notes=L=>JSON.stringify(Array.from({length:128},(_,step)=>layer.steps(ch,step%16,step>>4,L)));
       assert.notEqual(notes(1),JSON.stringify(Array.from({length:128},()=>[])),inst+'/'+layer.id+' plays');
@@ -46,12 +46,12 @@ test('starter parts hold a fixed note or simultaneous chord without rotating bet
   }
 });
 
-test('all accordion parts hold the same chord together without arpeggios or register changes',()=>{
+test('accordion chord pads hold the same harmony without register changes',()=>{
   const f=fixture('accordion'),ch={root:0,q:'m',pcs:[0,3,7]},block=[60,63,67];
-  for(const layer of f.module.layers.accordion)for(let bar=0;bar<12;bar++)for(let step=0;step<16;step++){
+  for(const layer of f.module.layers.accordion.slice(0,4))for(let bar=0;bar<12;bar++)for(let step=0;step<16;step++){
     const evs=layer.steps(ch,step,bar,1);if(!evs.length)continue;
     if(layer.id==='bass')assert.ok(evs.every(e=>e.midi%12===0));else assert.deepEqual(evs.map(e=>e.midi),block);
-    for(const e of evs){assert.ok(e.holdSteps>0&&e.holdSteps<=16-step);assert.equal(e.fixedRegister,true);assert.equal(e.harmony,'0:m');assert.ok(!e.off&&!e.seconds,'all chord voices start together and use the bellows gate');}
+    for(const e of evs){assert.ok(e.holdSteps>0&&e.holdSteps<=16-step);assert.equal(e.fixedRegister,true);assert.equal(e.harmony,'0:0,3,7');assert.ok(!e.off&&!e.seconds,'all chord voices start together and use the bellows gate');}
   }
 });
 
@@ -112,6 +112,15 @@ test('new gear changes its advertised geometry and damage without changing note 
   assert.ok(b.w.instrumentFX[0].range>a.w.instrumentFX[0].range);
   assert.ok(b.w.instrumentFX[0].dmg>a.w.instrumentFX[0].dmg);
   assert.equal(b.w.instrumentFX.length,a.w.instrumentFX.length);
+});
+
+test('frog ring gear boosts strong beats and applies bounded slow and poison',()=>{
+  const plain=fixture('accordion'),armed=fixture('accordion',{heavy:1,tongue:1,poison:1});
+  plain.module.noteRing(1,{down:true});armed.module.noteRing(1,{down:true});
+  assert.ok(Math.abs(armed.w.instrumentFX[0].dmg/plain.w.instrumentFX[0].dmg-1.5)<1e-9);
+  const target=armed.mob(60),boss=armed.mob(60);boss.boss=true;armed.run(.25);
+  assert.ok(target.slow>0&&Math.abs(target.slowAmt-.15)<1e-9);assert.ok(target.burn>0&&target.burnDmg>0);
+  assert.ok(!boss.slow,'boss cannot be slowed');
 });
 
 test('returning notes follow their network owner and vanish if that owner leaves',()=>{

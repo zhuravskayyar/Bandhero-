@@ -122,8 +122,8 @@ function frame(text) {
   head[0] = 0x81; // FIN + text
   return Buffer.concat([head, payload]);
 }
-const GRACE_MS = Number(process.env.GRACE_MS || 15000); // скільки чекаємо гостя, у якого обірвався зв’язок посеред забігу
-const DROP_BACKLOG = 128 * 1024;   // повільному гравцю пропускаємо чергові знімки світу, а не відключаємо його
+const GRACE_MS = Number(process.env.GRACE_MS || 30000); // скільки чекаємо гравця (і гостя, і хоста), у якого обірвався зв’язок посеред забігу
+const DROP_BACKLOG = 48 * 1024;    // повільному гравцю пропускаємо чергові знімки світу (а не копимо затримку й не відключаємо його)
 const HARD_BACKLOG = 8 * 1024 * 1024; // лише якщо зовсім нічого не приймає
 
 function sendRaw(c, buf, droppable) {
@@ -182,6 +182,7 @@ server.on('upgrade', (req, sock, head) => {
     if (old && !old.destroyed) { c.reason = null; old.destroy(); } // старе «напівмертве» з’єднання телефона
     send(c, { t: 'welcome', id: c.id, token: c.token, resumed: true, host: hostId, players: roster(), phase, genre });
     if (hostId && hostId !== c.id) send(clients.get(hostId), { t: 'back', id: c.id });
+    else if (hostId === c.id) broadcast({ t: 'hostBack' }, c.id);
     log(`↻ ${c.id} повернувся (${ip}).`);
   } else {
     if (clients.size >= MAX_PLAYERS) { sendRaw({ sock }, frame(JSON.stringify({ t: 'full' }))); sock.end(Buffer.from([0x88, 0])); return; }
@@ -235,10 +236,12 @@ server.on('upgrade', (req, sock, head) => {
     c.sock = null;
     const why = c.reason || (errCode ? 'помилка мережі ' + errCode : 'з’єднання обірвалося');
     c.reason = null;
-    // гість посеред забігу: тримаємо місце й персонажа, поки він перепідключається
-    if (!c.leaving && c.id !== hostId && phase !== 'lobby' && clients.get(c.id) === c) {
+    // гравець посеред забігу (зокрема хост): тримаємо місце й персонажа, поки він перепідключається.
+    // Свідомий вихід («bye») прибирає одразу.
+    if (!c.leaving && phase !== 'lobby' && clients.get(c.id) === c) {
       log(`… ${c.id} втратив зв’язок (${why}${c.dropped ? `, пропущено знімків: ${c.dropped}` : ''}). Чекаємо ${GRACE_MS / 1000} с.`);
       c.graceTimer = setTimeout(() => removeClient(c, 'не повернувся вчасно'), GRACE_MS);
+      if (c.id === hostId) broadcast({ t: 'hostAway' }, c.id); // гості одразу зупиняються, а не бігають у застиглому світі
       return;
     }
     removeClient(c, c.leaving ? 'вийшов сам' : why);

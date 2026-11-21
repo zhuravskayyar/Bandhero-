@@ -1181,6 +1181,8 @@ function drawInstrumentFx(ctx,f,px=2.1){
     const frame=Math.floor(age*12)%4,cv=shotFx('flute-leaf','flute',frame),size=Math.max(28,(f.r||11)*3);
     const angle=(f.dir||0)+age*9;
     for(let k=1;k<=3;k++)pn.p(f.x-Math.cos(angle)*k*5,f.y-Math.sin(angle)*k*5,k<2?C[1]:C[2]);pn.flush();
+    const accents={trill:2,stacc:1,legato:3,scale:4,high:5,duet:6}[f.layer]||0;
+    if(accents){for(let k=0;k<accents;k++){const a=angle+k*Math.PI*2/accents;pstar(pn,f.x+Math.cos(a)*(size*.55),f.y+Math.sin(a)*(size*.55),C[k%2],C[2],1);}pn.flush();}
     ctx.translate(f.x,f.y);ctx.rotate(angle);ctx.imageSmoothingEnabled=false;ctx.drawImage(cv,-size/2,-size/2,size,size);
   }else if(f.kind==='thread'){
     const L=Math.hypot(f.x2-f.x,f.y2-f.y)||1,nx=-(f.y2-f.y)/L,ny=(f.x2-f.x)/L,n=Math.max(1,Math.ceil(L/px));
@@ -1188,6 +1190,8 @@ function drawInstrumentFx(ctx,f,px=2.1){
     for(let k=0;k<=n;k++){const u=k/n,sw=Math.sin(u*Math.PI)*Math.sin(u*25-age*30)*px,x=f.x+(f.x2-f.x)*u+nx*sw,y=f.y+(f.y2-f.y)*u+ny*sw;
       pn.p(x,y,C[0]);pn.p(x+nx*px,y+ny*px,C[2]);}
     for(let k=0;k<=4;k++){const u=k/4;pstar(pn,f.x+(f.x2-f.x)*u,f.y+(f.y2-f.y)*u,C[0],C[1],k===0||k===4?2:1);}
+    const accents={tremolo:1,spicc:2,double:3,gliss:4,col:5,sing:6}[f.layer]||0;
+    if(accents)for(let k=0;k<accents;k++){const u=(k+1)/(accents+1);pnote(pn,f.x+(f.x2-f.x)*u+nx*px*3,f.y+(f.y2-f.y)*u+ny*px*3,k%2?C[1]:C[2]);}
     pn.flush();
   }else if(f.kind==='beam'){
     const dir=f.dir||0,half=(f.w||.34)/2,len=f.range||285;
@@ -1196,14 +1200,22 @@ function drawInstrumentFx(ctx,f,px=2.1){
       for(let j=0;j<=n;j++){const a=dir-half+j/n*half*2;pn.p(f.x+Math.cos(a)*r,f.y+Math.sin(a)*r,C[k%2?1:0]);pn.p(f.x+Math.cos(a)*(r-px),f.y+Math.sin(a)*(r-px),C[2]);}
       if(k%2===0){const a=dir+Math.sin(age*7+k)*half*.6;pnote(pn,f.x+Math.cos(a)*r-px*2,f.y+Math.sin(a)*r-px*3,C[1]);}}
     for(const side of [-1,1]){const a=dir+side*half;for(let d=px*4;d<len;d+=px*6)pn.p(f.x+Math.cos(a)*d,f.y+Math.sin(a)*d,C[3]);}
+    const accents={riff:1,subtone:2,growline:3,falloff:4,tongue:5,improv:6}[f.layer]||0;
+    if(accents)for(let k=0;k<accents;k++){const d=len*(k+1)/(accents+1),a=dir+(k%2?half*.45:-half*.45);pnote(pn,f.x+Math.cos(a)*d,f.y+Math.sin(a)*d,C[k%2?1:0]);}
     pn.flush();
   }else if(f.kind==='noteRing'){
     // Нота перебору: тонке гладке кільце (не складчасте, як у карток) і нотка, що злітає над ним
     // сильна доля такту — товсте яскраве кільце з подвійним обідком і двома нотками; слабкі долі — тонке кільце
     const r=Math.max(0,f.r||0);
+    const layer=f.layer||'pulse';
     if(f.down){circ(pn,f.x,f.y,r,[C[0],C[0],C[1]],{th:3});if(r>px*8)circ(pn,f.x,f.y,r-px*5,C[1],{th:2});
       pnote(pn,f.x-px*6,f.y-r-px*6-age*36,C[0]);pnote(pn,f.x+px*3,f.y-r-px*9-age*30,C[1]);}
     else{circ(pn,f.x,f.y,r,C[1]);if(r>px*4)circ(pn,f.x,f.y,r-px,C[3],{gap:(a,i)=>i%2});pnote(pn,f.x-px*2,f.y-r-px*6-age*30,C[2]);}
+    if(layer==='oompah')for(let k=0;k<4;k++){const a=k*Math.PI/2+age*2;pbutton(pn,f.x+Math.cos(a)*r,f.y+Math.sin(a)*r,C[0],C[2]);}
+    if(layer==='right'){const a=age*8;pnote(pn,f.x+Math.cos(a)*r,f.y+Math.sin(a)*r,C[0]);pline(pn,f.x+Math.cos(a)*(r-px*6),f.y+Math.sin(a)*(r-px*6),f.x+Math.cos(a)*r,f.y+Math.sin(a)*r,C[1]);}
+    if(layer==='under')for(let k=0;k<2;k++)pnote(pn,f.x-px*(4+k*5),f.y-r-px*(6+k*5)-age*20,k?C[2]:C[0]);
+    if(layer==='gliss')for(let k=0;k<4;k++){const a=-Math.PI*.75+k*Math.PI/6;pnote(pn,f.x+Math.cos(a)*r,f.y+Math.sin(a)*r,k%2?C[1]:C[0]);}
+    if(layer==='trem')for(let k=0;k<3;k++)circ(pn,f.x,f.y,Math.max(px*2,r-k*px*4),k%2?C[2]:C[0],{gap:(a,i)=>i%3===k});
     pn.flush();
   }else{
     // Хвилі жаби — складчасті кільця, як міхи; кожна партія свого вигляду (f.layer):

@@ -8,6 +8,8 @@ const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, 'game.html'), 'utf8').match(/<script>([\s\S]*)<\/script>/)[1];
+const dictionaryContext=vm.createContext({window:{}});vm.runInContext(fs.readFileSync(path.join(__dirname,'i18n.js'),'utf8'),dictionaryContext);
+const dictionary=dictionaryContext.window.I18N_DICT;
 const delay = ms => new Promise(r => setTimeout(r, ms));
 async function until(fn, label, ms = 5000) {
   const end = Date.now() + ms;
@@ -86,7 +88,7 @@ function session(origin, audio = false, audioFixture = {}) {
   for(const file of ['assets/expansion-audio.js','assets/sf2-bank.js','assets/expansion-genres.js','assets/expansion-instruments.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,file),'utf8'),context,{filename:file});
   vm.runInContext(source, context, { filename: 'game.html' });
   return {
-    get game() { return context.__game; }, elements, errors,
+    get game() { return context.__game; }, get dictionary(){return dictionary;}, elements, errors,
     click: async s => { const e = get(s); assert.ok(!e.disabled, s + ' is disabled'); await e.onclick(); },
     pick: k => get('#lobby-cards').children.find(e => e.dataset.k === k).onclick(),
     key: (name, code) => { for (const fn of events.get(name) || []) fn({ code, preventDefault() {} }); },
@@ -219,15 +221,15 @@ test('Wi-Fi band: lobby, four actors, shared combat, upgrades, pause and host ha
 test('each instrument receives only its own gear and incompatible bonuses stay inactive', async t => {
   const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
   for (const [inst, layers] of Object.entries(s.game.LAYERS)) for (const layer of layers) assert.ok(s.game.FX_PROFILES[inst + '-' + layer.id], 'sprite visual for ' + inst + '/' + layer.id);
-  const ids = s.game.PEDALS.map(p => p.id); assert.equal(new Set(ids).size, 41);
+  const ids = s.game.PEDALS.map(p => p.id); assert.equal(new Set(ids).size, ids.length);
   for (const inst of ['guitar', 'drums', 'bass', 'piano']) {
     await s.game.pick(inst); s.game.G.level = 10;
     const allowed = s.game.availableGear(inst); assert.ok(allowed.length >= 6);
     for (let i = 0; i < 200; i++) for (const o of s.game.levelOptions()) if (o.pd) assert.equal(o.pd.inst, inst);
     const foreign = s.game.PEDALS.find(p => p.inst !== inst);
     s.game.applyUpgrade({ pd: foreign }); assert.equal(Object.keys(s.game.G.pedals).length, 0, 'foreign upgrade rejected');
-    for (const pd of allowed.slice(0, 4)) s.game.applyUpgrade({ pd });
-    const options = s.game.levelOptions(); assert.ok(options.every(o => !o.pd || !o.isNew), 'four equipment slots');
+    for (const pd of allowed.filter(p=>p.cat==='sound')) s.game.applyUpgrade({ pd });
+    const options = s.game.levelOptions(); assert.ok(options.every(o => !o.pd || !o.isNew || o.pd.cat==='damage'), 'sound and damage use separate slots');
     s.game.setPause(true);
   }
   assert.deepEqual(s.errors, []);
@@ -295,6 +297,189 @@ test('genre arrangements keep their rhythm and pitch articulation through every 
     assert.equal(JSON.stringify(song),original,'arrangement generation does not change genre, tempo or phrase');
   }
   for(const [a,b] of [['rock','newwave'],['rock','chanson'],['chanson','chanson_ua']])assert.notEqual(signatures[a],signatures[b]);
+  assert.deepEqual(s.errors,[]);
+});
+
+test('genre hooks give aggressive, playful and singable phrases while staying in the unlocked chord', t => {
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  const styles=new Map();
+  for(const genre of ['metal','funk','pop','chanson']){
+    const song=g.makeSong(null,genre);song.have=4;g.setSong(song);
+    const layer=g.LAYERS.piano.find(l=>l.id==='mel'),notes=[];
+    for(let bar=0;bar<2;bar++)for(let step=0;step<16;step++)for(const e of layer.steps(g.chordAt(bar),step,bar,1)){
+      assert.ok(Number.isFinite(e.midi),genre+' has a real note');
+      assert.ok(g.chordAt(bar).pcs.includes(e.midi%12),genre+' melody follows the current chord');
+      notes.push({beat:bar*16+step,midi:e.midi,art:e.art,vel:e.vel});
+    }
+    assert.ok(new Set(notes.map(e=>e.midi)).size>1,genre+' has a melodic contour');
+    styles.set(genre,{mood:song.hook.mood,notes});
+  }
+  assert.equal(styles.get('metal').mood,'fierce');
+  assert.equal(styles.get('funk').mood,'playful');
+  assert.ok(styles.get('metal').notes.every(e=>e.art==='staccato'));
+  assert.ok(styles.get('funk').notes.every(e=>e.art==='staccato'));
+  assert.ok(styles.get('chanson').notes.every(e=>!e.art),'the singable phrase rings out');
+  assert.notDeepEqual(styles.get('metal').notes.map(e=>e.beat),styles.get('funk').notes.map(e=>e.beat));
+  assert.deepEqual(s.errors,[]);
+});
+
+test('frog right hand follows nearby motif notes between its quarter beats', t => {
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  const song=g.makeSong(null,'chanson');song.hook={mood:'anthem',variant:0};
+  song.mel={0:60,6:64,12:67,18:60,24:64,30:67};song.prog[0].root=0;song.prog[0].pcs=[0,4,7];
+  g.setSong(song);
+  const ch=song.prog[0],right=g.LAYERS.accordion.find(l=>l.id==='right');
+  const notes=[0,4,8,12].map(step=>right.steps(ch,step,0,1)[0].midi);
+  assert.deepEqual(notes,[60,64,64,67]);
+  assert.deepEqual(s.errors,[]);
+});
+
+test('every genre has its own fixed backing beat, bass, chords and hook without combat events', t => {
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game,beats=new Set();
+  for(const genre of Object.keys(g.GENRES)){
+    const song=g.makeSong(null,genre);g.setSong(song);
+    const events=Array.from({length:32},(_,i)=>g.backingEvents(i>>4,i&15));
+    const parts=new Set(events.flat().map(e=>e.kind));
+    assert.deepEqual([...parts].sort(),['bass','chord','drum','hook'],genre+' has the whole band');
+    for(let i=0;i<32;i++)for(const e of events[i]){
+      assert.ok(!e.atk&&!e.damage,genre+' backing has no attack');
+      if(e.midi!==undefined)assert.ok(g.chordAt(i>>4).pcs.includes(e.midi%12),genre+' backing stays in the chord');
+    }
+    const signature=events.map(a=>a.filter(e=>e.kind==='drum').map(e=>e.drum).join('+')).join('|');
+    beats.add(signature);
+    assert.equal(JSON.stringify(events),JSON.stringify(Array.from({length:32},(_,i)=>g.backingEvents(i>>4,i&15))),genre+' keeps the same arrangement');
+  }
+  assert.ok(beats.size>=10,'most genres have a distinct beat');
+  assert.deepEqual(s.errors,[]);
+});
+
+test('flute, violin and sax have complete playable and translated skill catalogs', t => {
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game,allMissing=new Set();
+  for(const inst of ['flute','violin','sax']){
+    const layers=g.LAYERS[inst].filter(l=>!l.starter),gear=g.availableGear(inst),voicings=g.VOICINGS[inst];
+    assert.equal(layers.length,10,inst+' active parts');
+    assert.equal(gear.filter(p=>p.cat==='sound').length,5,inst+' sound cards');
+    assert.equal(gear.filter(p=>p.cat==='damage').length,5,inst+' damage cards');
+    assert.equal(Object.keys(voicings).length,5,inst+' personal chords');
+    const words=[];
+    for(const l of layers){assert.ok(g.ICON.has(inst,l.id));assert.ok(g.FX_PROFILES[inst+'-'+l.id]);
+      assert.ok(!g.ICON.part(inst,l.id).includes('undefined'),inst+'/'+l.id+' icon is drawn');words.push(l.name,l.desc,...l.lv);}
+    for(const pd of gear){assert.ok(g.ICON.hasGear(pd.key),inst+'/'+pd.key+' gear icon');words.push(pd.name,...pd.lv);}
+    for(const v of Object.values(voicings))words.push(v.name,v.desc);
+    for(const [id,V] of Object.entries(g.VARIANTS))if(V.inst===inst){words.push(V.title,V.change);for(const c of Object.values(V.cards))words.push(c.name,c.desc);}
+    for(const word of words)for(const lang of ['en','de','ru'])if(!s.dictionary[lang][word])allMissing.add(inst+'/'+lang+': '+word);
+    for(const genre of Object.keys(g.GENRES)){
+      const song=g.makeSong(null,genre);song.have=4;g.setSong(song);
+      for(const l of layers){let n=0;for(let bar=0;bar<4;bar++)for(let step=0;step<16;step++)for(const e of l.steps(g.chordAt(bar),step,bar,1)){
+        if(e.midi!==undefined){assert.ok(g.chordAt(bar).pcs.includes(e.midi%12),inst+'/'+l.id+' follows the chord');n++;}
+      }assert.ok(n>0,inst+'/'+l.id+' plays in '+genre);}
+    }
+  }
+  assert.deepEqual([...allMissing],[],[...allMissing].join('\n'));
+  assert.deepEqual(s.errors,[]);
+});
+
+test('guitar, drums, bass and piano have complete skills and mutually exclusive parts', t => {
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game,missing=new Set();
+  for(const inst of ['guitar','drums','bass','piano']){
+    const parts=g.LAYERS[inst].filter(l=>!l.starter),gear=g.availableGear(inst),chords=g.VOICINGS[inst]||{};
+    assert.ok(parts.length>=10,inst+' active parts');
+    assert.equal(gear.filter(p=>p.cat==='sound').length,5,inst+' sound');
+    assert.equal(gear.filter(p=>p.cat==='damage').length,5,inst+' damage');
+    if(inst!=='drums')assert.equal(Object.keys(chords).length,5,inst+' personal chords');
+    const words=[];
+    for(const l of parts){assert.ok(g.ICON.has(inst,l.id),inst+'/'+l.id);assert.ok(g.FX_PROFILES[inst+'-'+l.id]);words.push(l.name,l.desc,...l.lv);}
+    for(const pd of gear){assert.ok(g.ICON.hasGear(pd.key),inst+'/'+pd.key);words.push(pd.name,...pd.lv);}
+    for(const v of Object.values(chords))words.push(v.name,v.desc);
+    for(const V of Object.values(g.VARIANTS))if(V.inst===inst){words.push(V.title,V.change);for(const c of Object.values(V.cards))words.push(c.name,c.desc);}
+    for(const word of words)for(const lang of ['en','de','ru'])if(!s.dictionary[lang][word])missing.add(word);
+  }
+  assert.deepEqual([...missing],[],[...missing].join('\n'));
+  assert.deepEqual(s.errors,[]);
+});
+
+test('new families change the played rhythm and personal chords leave the band song intact', async t => {
+  for(const [inst,left,right,first,last] of [
+    ['drums','hat','ride','closed','sixteenth'],['bass','root','walk','quarter','eighth'],['piano','chords','arp','beat','skank']
+  ]){
+    const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+    g.setGenre('funk');await g.pick(inst);g.setPause(true);
+    const l=g.LAYERS[inst].find(x=>x.id===left),r=g.LAYERS[inst].find(x=>x.id===right);
+    g.applyUpgrade({l,variant:first});assert.equal(g.G.layers[left],1,inst+' family part');
+    const played=()=>Array.from({length:16},(_,step)=>l.steps(g.chordAt(0),step,0,1).map(e=>e.midi??e.drum).join('+')).join('|');
+    const before=played();g.applyUpgrade({l,variant:last});assert.notEqual(played(),before,inst+' variant changes notes');
+    g.applyUpgrade({l:r,variant:Object.keys(g.VARIANTS[right].cards)[0]});assert.ok(!g.G.layers[right],inst+' rival remains unavailable');
+    assert.deepEqual(s.errors,[]);
+  }
+  for(const [inst,key,step] of [['guitar','power',0],['bass','octbass',4],['piano','cluster',0]]){
+    const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+    g.setGenre('funk');await g.pick(inst);g.setPause(true);
+    const before=JSON.stringify(g.SONG.prog),base=g.chordAt(0),v=g.voiced(base,{['$v_'+key]:1},step,0);
+    assert.notEqual(JSON.stringify(v),JSON.stringify(base),inst+' personal chord changes its own notes');
+    assert.equal(JSON.stringify(g.SONG.prog),before,inst+' shared song is untouched');
+    assert.deepEqual(s.errors,[]);
+  }
+});
+
+test('new combat gear changes hits, rings and notes without changing the song', async t => {
+  for(const inst of ['guitar','drums','bass','piano']){
+    const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+    g.setGenre('rock');await g.pick(inst);g.setPause(true);
+    const gear=Object.fromEntries(g.availableGear(inst).map(pd=>[pd.key,pd]));
+    const song=JSON.stringify(g.SONG.prog),at=(layer,fn)=>g.withPlayer(null,()=>g.withAttack({layer,step:0,owner:null},fn));
+    if(inst==='guitar'){
+      g.applyUpgrade({pd:gear.sparks});g.applyUpgrade({pd:gear.fuzzHit});
+      const m=g.addMob('glush',100,0);at('accent',()=>g.hurtMob(m,10,0,0));
+      assert.ok(m.burn>0&&m.burnDmg>0,'string sparks burn');assert.ok(m.max-m.hp>10,'fuzz accent adds damage');
+    }else if(inst==='drums'){
+      g.applyUpgrade({pd:gear.wave});g.applyUpgrade({pd:gear.stun});
+      at('kick',()=>g.LAYERS.drums.find(l=>l.id==='kick').atk([{drum:'kick',vel:1}],1));
+      assert.ok(g.G.rings[0].maxR>95,'kick wave widens ring');
+      const m=g.addMob('glush',100,0);at('snare',()=>g.hurtMob(m,10,0,0));assert.ok(m.stun>=.2,'snare stuns');
+    }else if(inst==='bass'){
+      g.applyUpgrade({pd:gear.heavyLow});g.applyUpgrade({pd:gear.pierce});g.applyUpgrade({pd:gear.vibration});
+      const m=g.addMob('glush',100,0);at('root',()=>g.hurtMob(m,10,100,0));
+      assert.ok(m.kx>100&&m.slow>0,'bass knockback and slow');
+      at('root',()=>g.LAYERS.bass.find(l=>l.id==='root').atk([{midi:40}],1));
+      assert.ok(g.G.shots[0].pierce>=7,'bass wave pierces more enemies');
+    }else{
+      g.applyUpgrade({pd:gear.homingPlus});g.applyUpgrade({pd:gear.split});g.applyUpgrade({pd:gear.slow});
+      at('mel',()=>g.LAYERS.piano.find(l=>l.id==='mel').atk([{midi:60}],1));
+      assert.ok(g.G.shots[0].spd>360&&g.G.shots[0].split>0,'piano note flies faster and splits');
+      const m=g.addMob('glush',100,0);at('mel',()=>g.hurtMob(m,10,0,0));assert.ok(m.slow>0,'piano note slows');
+    }
+    assert.equal(JSON.stringify(g.SONG.prog),song,'gear leaves shared song intact');
+    assert.deepEqual(s.errors,[]);
+  }
+});
+
+test('every new personal chord card changes its starter part immediately', async t => {
+  for(const inst of ['guitar','bass','piano']){
+    const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+    g.setGenre('pop');await g.pick(inst);g.setPause(true);g.SONG.have=4;
+    const starter=g.LAYERS[inst][0],song=JSON.stringify(g.SONG.prog);
+    const heard=layers=>Array.from({length:4},(_,bar)=>Array.from({length:16},(_,step)=>{
+      const ch=g.voiced(g.chordAt(bar),layers,step,bar);
+      return starter.steps(ch,step,bar,1).map(e=>e.midi).join('+');
+    }).join('|')).join('/');
+    const before=heard({});
+    for(const id of Object.keys(g.VOICINGS[inst]))assert.notEqual(heard({['$v_'+id]:1}),before,inst+'/'+id+' has an audible pitch or rhythm change');
+    assert.equal(JSON.stringify(g.SONG.prog),song,'personal voicings do not rewrite shared chords');
+    assert.deepEqual(s.errors,[]);
+  }
+});
+
+test('solo flute hears a backing band and new sound cards change the audio path', async t => {
+  const s=session('http://127.0.0.1:8080',true);t.after(()=>s.close());const g=s.game;
+  g.setGenre('funk');await g.pick('flute');await until(()=>g.backingVoices>0,'backing band starts in solo');g.setPause(true);
+  const gear=Object.fromEntries(g.availableGear('flute').map(pd=>[pd.key,pd]));
+  g.applyUpgrade({pd:gear.echo});assert.ok(g.buses.flute.fb.gain.value>0,'echo changes the delay bus');
+  g.applyUpgrade({pd:gear.flutter});assert.ok(g.buses.flute.tremDepth.gain.value>0,'flutter modulates volume');
+  g.applyUpgrade({pd:gear.vibrato});g.applyUpgrade({pd:gear.breath});g.applyUpgrade({pd:gear.octave});
+  const midi=g.LAYERS.flute[0].steps(g.chordAt(0),0,0,1)[0].midi;await g.reqBuf('flute',midi);await g.reqBuf('flute',midi+12);
+  const before=g.voices.length;g.logNotes(true);g.fire(g.ctx.currentTime+.05,[{midi,vel:.5,dur:3}]);
+  assert.ok(g.voices.length>=before+3,'main note, octave and air attack are audible voices');
+  assert.ok(g.notes.some(n=>n.midi===midi+12),'flute octave sounds above the note');
   assert.deepEqual(s.errors,[]);
 });
 
@@ -409,6 +594,34 @@ test('a guest who was away while the band returned to the lobby comes back to th
   assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
 });
 
+test('a host whose connection drops mid-run comes back: the run pauses and continues, nobody is sent to the lobby', async t => {
+  const srv = await startServer(t);
+  const [a, b] = await bandOfTwo(t, srv.origin);
+  const id = a.game.net.id, match = a.game.net.match, t0 = a.game.G.t;
+  a.game.net.ws.close(); // обрив у хоста, без свідомого виходу
+  await until(() => srv.output.includes('втратив зв’язок'), 'server keeps the host seat');
+  assert.ok(a.game.paused, 'host pauses the run while it is offline');
+  await until(() => a.game.net.ws && a.game.net.ws.readyState === 1 && !a.game.net.reconnecting, 'host reconnects by itself', 8000);
+  assert.equal(a.game.net.id, id); assert.ok(a.game.net.isHost, 'still the host');
+  assert.equal(a.game.net.match, match, 'same run');
+  await until(() => !a.game.paused && !b.game.paused && b.game.running, 'run continues for everyone');
+  assert.notEqual(b.game.net.phase, 'lobby');
+  assert.ok(!srv.output.includes('відключився') && a.game.G.t >= t0, 'nobody was removed');
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+test('a guest moves its own musician immediately and stays in agreement with the host', async t => {
+  const srv = await startServer(t);
+  const [a, b] = await bandOfTwo(t, srv.origin);
+  await delay(200);
+  const bx = b.game.G.p.x;
+  b.key('keydown', 'KeyD'); await delay(60);
+  assert.ok(b.game.G.p.x > bx + 1, 'own hero moves before the host answers');
+  await delay(600); b.key('keyup', 'KeyD');
+  await until(() => Math.abs(b.game.G.p.x - a.game.G.players[1].p.x) < 6, 'prediction converges to the host position', 3000);
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
 test('band finder: teammates show on the minimap and get an edge arrow when off-screen', async t => {
   const srv = await startServer(t);
   const [a, b] = await bandOfTwo(t, srv.origin);
@@ -432,10 +645,11 @@ test('chords are collected one by one; each instrument has a pool of 10 parts an
     g.applyUpgrade(card); assert.equal(g.SONG.have, k);
   }
   assert.equal(new Set([0, 1, 2, 3].map(b => g.chordAt(b).name)).size >= 2, true, 'collected chords now move');
-  // кожен інструмент починає зі стартової партії «у долю» (не картка); пул карток — решта: гітара 11 (+Пінч), інші 10, нові інструменти 4
+  // кожен інструмент починає зі стартової партії «у долю» (не картка); пул карток — решта: гітара 11 (+Пінч), інші 10
   for (const k of Object.keys(g.LAYERS)) { assert.ok(g.LAYERS[k][0].starter, k + ' starts on the beat'); assert.equal(g.LAYERS[k].filter(l => l.starter).length, 1); }
   for (const k of ['guitar','drums','bass','piano']) assert.equal(g.LAYERS[k].filter(l => !l.starter).length, k === 'guitar' ? 11 : 10, k + ' card pool');
-  for (const k of ['flute','violin','sax','accordion']) assert.equal(g.LAYERS[k].filter(l => !l.starter).length, 4, k + ' has four distinct parts');
+  for (const k of ['flute','violin','sax']) assert.equal(g.LAYERS[k].filter(l => !l.starter).length, 10, k + ' has ten distinct parts');
+  assert.equal(g.LAYERS.accordion.filter(l=>!l.starter).length,9,'frog has nine selectable parts plus its permanent starter');
   // стартова партія замовкає, щойно взято Бій, і місця не займає; Бій і Перебір — або-або
   const real = g.LAYERS.guitar.filter(l => !l.starter && l.id !== 'pick');
   const held = () => Object.keys(g.G.layers).filter(k => k[0] !== '$' && !g.LAYERS.guitar.find(l => l.id === k).starter).length;
@@ -759,6 +973,13 @@ test('four new instruments join a real Wi-Fi band, sound on each device and shar
     assert.ok(s.game.notes.every(n=>Number.isFinite(n.t)&&Number.isFinite(n.duration)));
     assert.doesNotThrow(()=>JSON.stringify(s.game.cleanState()));s.game.draw();assert.deepEqual(s.errors,[]);
   }
+  const frog=host.game.G.players.find(a=>a.char==='accordion'),songBefore=JSON.stringify(host.game.SONG.prog);
+  host.game.withPlayer(frog,()=>host.game.applyUpgrade({voicing:'sev'}));
+  assert.equal(host.game.cleanState().players.find(a=>a.char==='accordion').layers.$v_sev,1);
+  assert.equal(JSON.stringify(host.game.SONG.prog),songBefore);
+  await host.click('#resume');
+  await until(()=>sessions[1].game.G.players.find(a=>a.char==='accordion')?.layers.$v_sev===1,'personal frog chord reaches the band');
+  assert.equal(JSON.stringify(sessions[1].game.SONG.prog),songBefore,'the shared song stays unchanged on the guest');
 });
 
 test('offline electronic voices use separate caches and new instrument envelopes stay finite', async t=>{
@@ -770,10 +991,72 @@ test('offline electronic voices use separate caches and new instrument envelopes
     g.setGenre('folkrock');await g.pick(inst);g.setPause(true);g.logNotes(true);
     await g.reqBuf(inst,72);g.playBuffered(g.ctx.currentTime+.05,{midi:72,vel:.5,seconds:.6});
     assert.ok(g.notes.some(n=>n.inst===inst&&n.duration>0&&n.duration<=.6));
-    assert.equal(g.availableGear(inst).length,4);
+    assert.equal(g.availableGear(inst).length,inst==='accordion'?12:10);
     const foreign=g.PEDALS.find(p=>p.inst!==inst);g.applyUpgrade({pd:foreign});assert.equal(Object.keys(g.G.pedals).length,0);
     for(const layer of g.LAYERS[inst])assert.ok(g.ICON.has(inst,layer.id));
   }
+  assert.deepEqual(s.errors,[]);
+});
+
+test('frog skill catalog has distinct art, attack profiles and all three translations',async t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game,inst='accordion';
+  const layers=g.LAYERS[inst],gear=g.availableGear(inst),voicings=g.VOICINGS[inst],variants=g.VARIANTS.pulse.cards;
+  assert.equal(layers.length,10);assert.equal(gear.filter(p=>p.cat==='sound').length,5);
+  assert.ok(gear.filter(p=>p.cat==='damage').length>=5);assert.equal(Object.keys(voicings).length,5);
+  const partArt=new Set();for(const layer of layers){assert.ok(g.ICON.has(inst,layer.id),layer.id+' icon');assert.ok(g.FX_PROFILES[inst+'-'+layer.id],layer.id+' attack profile');partArt.add(g.ICON.part(inst,layer.id));}
+  assert.equal(partArt.size,layers.length,'each frog part has its own icon');
+  const gearArt=new Set();for(const pd of gear){assert.ok(g.ICON.hasGear(pd.key),pd.key+' gear icon');gearArt.add(g.ICON.gear(pd));}
+  assert.equal(gearArt.size,gear.length,'each frog gear card has its own icon');
+  const dictContext=vm.createContext({window:{}});vm.runInContext(fs.readFileSync(path.join(__dirname,'i18n.js'),'utf8'),dictContext);
+  const dict=dictContext.window.I18N_DICT;
+  const texts=[...layers.slice(5).flatMap(l=>[l.name,l.desc]),...gear.slice(4).flatMap(p=>[p.name,...p.lv]),...Object.values(voicings).flatMap(v=>[v.name,v.desc]),...Object.values(variants).flatMap(v=>[v.name,v.desc]),'Звук','Шкода','Акорд','Партія'];
+  for(const value of texts)for(const lang of ['en','de','ru'])assert.ok(dict[lang][value],lang+' translation: '+value);
+});
+
+test('frog personal chords, variants and sound gear stay personal',async t=>{
+  const s=session('http://127.0.0.1:8080',true);t.after(()=>s.close());const g=s.game;
+  g.setGenre('chanson');await g.pick('accordion');g.setPause(true);const original=JSON.stringify(g.SONG.prog);
+  for(const id of Object.keys(g.VOICINGS.accordion))g.applyUpgrade({voicing:id});
+  assert.equal(Object.keys(g.G.layers).filter(k=>k.startsWith('$v_')).length,5);
+  assert.equal(JSON.stringify(g.SONG.prog),original,'personal voicings do not edit the song');
+  const ch=g.chordAt(0),v=g.voiced(ch,g.G.layers,0);assert.notEqual(v,ch);assert.ok(v.pcs.length>=ch.pcs.length);
+  assert.equal(g.voiced(ch,{},0),ch,'another player keeps the original chord');
+  g.SONG.have=4;
+  for(let bar=0;bar<4;bar++)for(let step=0;step<16;step++){
+    const voiced=g.voiced(g.chordAt(bar),g.G.layers,step);
+    for(const part of g.LAYERS.accordion)for(const e of part.steps(voiced,step,bar,1))if(e.midi!==undefined)assert.ok(voiced.pcs.includes(((e.midi%12)+12)%12),part.id+' stays in the personal chord');
+  }
+  assert.ok(g.levelOptions().every(o=>!o.voicing),'five chord slots are full');
+  const starter=g.LAYERS.accordion[0],before=starter.steps(ch,0,0,1)[0].midi;
+  g.applyUpgrade({l:starter,variant:'waltz'});assert.equal(g.G.layers.pulse,1);assert.equal(g.G.layers.$frogpick,'waltz');
+  assert.equal(starter.steps(ch,0,0,1)[0].midi,before);assert.notEqual(starter.steps(ch,4,0,1)[0].midi,starter.steps(ch,8,0,1)[0].midi);
+  const left=g.LAYERS.accordion.find(l=>l.id==='bass'),oompah=g.LAYERS.accordion.find(l=>l.id==='oompah');
+  g.applyUpgrade({l:left});g.applyUpgrade({l:oompah});assert.equal(g.G.layers.oompah,undefined,'rival stays locked');
+  const sound=g.availableGear('accordion').filter(p=>p.cat==='sound');for(const pd of sound)g.applyUpgrade({pd});
+  assert.equal(Object.keys(g.G.pedals).length,5);assert.ok(g.levelOptions().every(o=>!o.pd||!o.isNew||o.pd.cat==='damage'));
+  assert.ok(g.buses.accordion.tremDepth.gain.value>0,'bellows shake changes the audio bus');
+  g.logNotes(true);const event=starter.steps(g.voiced(ch,g.G.layers,0),0,0,1);g.fire(g.ctx.currentTime+.05,event);
+  assert.ok(g.notes.some(n=>n.midi===event[0].midi-12),'bandoneon adds a lower reed');
+  assert.ok(g.notes.some(n=>n.midi===event[0].midi+12),'piccolo adds an upper reed');
+  assert.deepEqual(s.errors,[]);
+});
+
+test('each frog sound card changes an audible voice or bus control',async t=>{
+  const s=session('http://127.0.0.1:8080',true);t.after(()=>s.close());const g=s.game;
+  g.setGenre('chanson');await g.pick('accordion');g.setPause(true);
+  const gear=Object.fromEntries(g.availableGear('accordion').map(p=>[p.key,p]));
+  const e=g.LAYERS.accordion[0].steps(g.chordAt(0),0,0,1),at=()=>g.ctx.currentTime+.05;
+  g.logNotes(true);g.fire(at(),e);const musetteBefore=g.notes[0].musette;
+  g.applyUpgrade({pd:gear.musette});g.logNotes(true);g.fire(at(),e);
+  assert.ok(g.notes[0].musette>musetteBefore,'musette changes reed beating');
+  g.bellowsBar(at(),0);const before=g.buses.accordion.bellowsLP.frequency.events.filter(x=>x[0]==='set').at(-1)[1];
+  g.applyUpgrade({pd:gear.cassotto});g.bellowsBar(at(),0);
+  const after=g.buses.accordion.bellowsLP.frequency.events.filter(x=>x[0]==='set').at(-1)[1];
+  assert.ok(after<before*.9,'cassotto lowers the bellows filter');
+  g.applyUpgrade({pd:gear.shake});assert.ok(g.buses.accordion.tremDepth.gain.value>.1,'shake modulates bus gain');
+  g.applyUpgrade({pd:gear.bandoneon});g.applyUpgrade({pd:gear.piccolo});g.logNotes(true);g.fire(at(),e);
+  assert.ok(g.notes.some(n=>n.midi===e[0].midi-12),'16-foot reed is lower');
+  assert.ok(g.notes.some(n=>n.midi===e[0].midi+12),'4-foot reed is higher');
   assert.deepEqual(s.errors,[]);
 });
 
@@ -824,8 +1107,8 @@ test('new starter instruments keep the sole unlocked chord until a chord card is
     for(const inst of ['flute','violin','sax','accordion']){
       const roots=new Set(starterNotes(inst).flat().map(m=>m%12));
       if(inst==='accordion'){
-        const pcs=new Set(Array.from(song.prog.slice(0,2)).flatMap(ch=>Array.from(ch.pcs)));assert.ok(roots.size>3);
-        for(const root of roots)assert.ok(pcs.has(root),genre+'/'+inst+' never plays a locked chord');
+        const pcs=new Set(Array.from(song.prog.slice(0,2)).flatMap(ch=>Array.from(ch.pcs)));
+        assert.deepEqual([...roots].sort((a,b)=>a-b),[...pcs].sort((a,b)=>a-b),genre+'/'+inst+' plays exactly the unlocked chord tones');
       }else{assert.equal(roots.size,2,genre+'/'+inst+' follows the second chord only after the card');for(const root of roots)assert.ok(allowed.has(root),genre+'/'+inst+' never plays a locked chord');}
     }
   }
