@@ -1128,6 +1128,14 @@ const net={active:false,ws:null,id:null,host:null,roster:[],phase:'lobby',match:
   get isHost(){return !!this.id&&this.id===this.host;}};
 let simT=0;const now=()=>net.active?performance.now()/1000:audioOK?ctx.currentTime:simT;
 const seq={step:0,nextTime:0};
+/* Годинник ритму: остання заплановано 16-а доля секвенсера. Усе, що малюється «в біт» (пульс героя, ворогів, рамки, лічильник долей),
+   рахується з нього, тож картинка завжди збігається зі звуком і атаками. */
+const beat={step:0,t:0,ok:false};let BK=0,BP=null;
+function beatPos(){
+  if(!beat.ok||!SONG)return null;
+  const s=beat.step+(now()-beat.t)/stepDur(),b=s/4,bi=Math.floor(b);
+  return {beat:((bi%4)+4)%4,ph:b-bi};
+}
 let atkQ=[];
 const need=l=>4+l*5;
 // Загроза: вороги ростуть переважно з часом і трохи — з твоїм рівнем (до 30-го), щоб сила йшла плюс-мінус нарівні.
@@ -1158,7 +1166,7 @@ function newRun(){
     layers:{[LAYERS[charKey][0].id]:1},pedals:{},syn:synergy(songOffs(),SONG.genre).bonus,
     p:{x:0,y:0,r:15,hp:C.hp,max:C.hp,spd:C.spd,fx:1,fy:0,pulse:0,hurt:0},
     mobs:[],eshots:[],shots:[],rings:[],cones:[],zaps:[],gems:[],fx:[],texts:[],spawnAcc:0,bossNext:0,won:false};
-  atkQ=[];slot.strings=[];slot.voices=[];slot.drumv={};slot.lastKick=undefined;applyPedalAudio();
+  atkQ=[];slot.strings=[];slot.voices=[];slot.drumv={};slot.lastKick=undefined;applyPedalAudio();beat.ok=false;
 }
 
 // Тимчасово підставляємо учасника в наявні бойові функції; світ залишається один.
@@ -1190,6 +1198,7 @@ function doPlayerStep(step,t){
   if(hits.length&&(!net.active||net.isHost))qInsert({t,s,hits,run:runId,owner:ownerId()});
 }
 function doStep(step,t){
+  beat.step=step;beat.t=t;beat.ok=true;
   if(net.active){for(const a of G.players)if(a.p.hp>0)withPlayer(a,()=>doPlayerStep(step,t));}
   else doPlayerStep(step,t);
 }
@@ -1796,7 +1805,7 @@ function drawMob(m,p){
   if(m.mode==='wind'){ // попередження перед ривком тарана
     g2.strokeStyle='#ff6b5a';g2.globalAlpha=.25+.35*Math.abs(Math.sin(m.wob*3));g2.lineWidth=m.r*1.4;g2.lineCap='round';
     g2.beginPath();g2.moveTo(m.x,m.y);g2.lineTo(m.x+(m.ax||0)*300,m.y+(m.ay||0)*300);g2.stroke();g2.globalAlpha=1;g2.lineCap='butt';}
-  if(drawSprite('mobs',mobRows[M.sprite||m.type],frame,m.x,m.y,m.r*4,p.x<m.x,m.flash,M.tint))renderStats.mobSprites++;
+  if(drawSprite('mobs',mobRows[M.sprite||m.type],frame,m.x,m.y,m.r*4*(1+.06*BK),p.x<m.x,m.flash,M.tint))renderStats.mobSprites++;
   else{g2.fillStyle=M.col;g2.beginPath();g2.arc(m.x,m.y,m.r,0,Math.PI*2);g2.fill();}
   if(m.slow>0){g2.strokeStyle='#90cddf66';g2.lineWidth=2;g2.beginPath();g2.ellipse(m.x,m.y+m.r*.6,m.r*1.15,m.r*.35,0,0,Math.PI*2);g2.stroke();}
   if(m.burn>0){g2.fillStyle='#ffc27e';g2.globalAlpha=.8;g2.beginPath();g2.arc(m.x+Math.sin(m.wob)*m.r*.6,m.y-m.r*2,2.5,0,Math.PI*2);g2.fill();g2.globalAlpha=1;}
@@ -1805,10 +1814,10 @@ function drawMob(m,p){
 function drawHero(a){
   const p=a.p,C=CHARS[a.char],size=heroSizes[a.char],bob=p.hp>0?Math.sin(G.t*4.5)*1.2:0;
   g2.fillStyle='#030b1599';g2.beginPath();g2.ellipse(p.x,p.y+p.r*.55,p.r*1.15,p.r*.4,0,0,Math.PI*2);g2.fill();
-  g2.strokeStyle=C.col;g2.globalAlpha=p.hp>0?.3+p.pulse*.3:.15;g2.lineWidth=2;
-  g2.beginPath();g2.ellipse(p.x,p.y+p.r*.55,p.r+4+p.pulse*3,(p.r+4)*.4,0,0,Math.PI*2);g2.stroke();g2.globalAlpha=p.hp>0?1:.35;
+  g2.strokeStyle=C.col;g2.globalAlpha=p.hp>0?Math.min(1,.3+p.pulse*.3+BK*.3):.15;g2.lineWidth=2+BK*1.5;
+  g2.beginPath();g2.ellipse(p.x,p.y+p.r*.55,p.r+4+p.pulse*3+BK*5,(p.r+4+BK*5)*.4,0,0,Math.PI*2);g2.stroke();g2.globalAlpha=p.hp>0?1:.35;
   const hf=heroFrame(a);
-  if(!drawSprite(hf.sheet,hf.row,hf.frame,p.x,p.y+bob,size,p.fx<0,p.hurt)){
+  if(!drawSprite(hf.sheet,hf.row,hf.frame,p.x,p.y+bob,size*(1+.05*BK),p.fx<0,p.hurt)){
     g2.fillStyle=C.col;g2.beginPath();g2.arc(p.x,p.y,p.r,0,Math.PI*2);g2.fill();
     g2.fillStyle='#13202a';g2.font='600 18px Rubik, sans-serif';g2.textAlign='center';g2.fillText(C.glyph,p.x,p.y+5);
   }
@@ -1821,6 +1830,8 @@ function drawHero(a){
 }
 function draw(){
   renderStats.spriteFX=0;renderStats.hpBars=0;renderStats.mobSprites=0;renderStats.effectMode=imageReady('fx_guitar')?'sprites':'fallback';
+  // Удар доли: сильніший на першій долі такту. На паузі й між забігами пульсу немає.
+  BP=running&&!paused&&!choosing&&G?beatPos():null;BK=BP?Math.pow(1-BP.ph,3)*(BP.beat===0?1:.55):0;
   g2.setTransform(DPR,0,0,DPR,0,0);g2.fillStyle='#101d2b';g2.fillRect(0,0,W,H);
   const p=G?G.p:{x:100,y:100},t=G?G.t:performance.now()/1000,seed=G?G.seed:417;
   const cx=W/2-p.x*zoom,cy=H/2-p.y*zoom;
@@ -1858,7 +1869,21 @@ function draw(){
     g2.strokeStyle='#d9e8d54d';g2.lineWidth=2;g2.fillStyle='#101f2a55';g2.beginPath();g2.arc(joy.x0,joy.y0,55,0,Math.PI*2);g2.fill();g2.stroke();
     const dx=joy.x-joy.x0,dy=joy.y-joy.y0,l=Math.hypot(dx,dy),k=l>55?55/l:1;g2.fillStyle='#c3dcc559';g2.beginPath();g2.arc(joy.x0+dx*k,joy.y0+dy*k,20,0,Math.PI*2);g2.fill();
   }
+  drawBeatHud();
   drawBandFinder(p);drawBossHud(p);
+}
+// Рамка екрана й чотири точки долей унизу: перша доля такту — золота й більша. Видно ритм, який звучить.
+function drawBeatHud(){
+  if(!BP)return;
+  const col=CHARS[charKey]?CHARS[charKey].col:'#ffd28b';
+  if(BK>.03){g2.globalAlpha=Math.min(.45,BK*.4);g2.strokeStyle=col;g2.lineWidth=8;g2.strokeRect(4,4,W-8,H-8);}
+  const y=H-26,gap=22;
+  for(let i=0;i<4;i++){
+    const on=i===BP.beat,k=on?Math.pow(1-BP.ph,2):0;
+    g2.globalAlpha=on?.55+.45*k:.28;g2.fillStyle=i===0?'#ffd28b':'#d9e8d5';
+    g2.beginPath();g2.arc(W/2+(i-1.5)*gap,y,(i===0?4.5:3.5)+k*(i===0?5:3.5),0,Math.PI*2);g2.fill();
+  }
+  g2.globalAlpha=1;
 }
 function drawBossHud(p){
   const b=G&&bossAlive();if(!b)return;const M=MOBS[b.type];
@@ -2381,7 +2406,7 @@ window.addEventListener('error',e=>{$('#load').textContent=TF('Помилка: {
 buildCards();
 
 // для тестів і налагодження
-window.__game={get sampled(){return Object.keys(SF);},get cache(){return [...bufCache.keys()];},get G(){return G;},get SONG(){return SONG;},
+window.__game={get beatState(){return {BK,BP,ok:beat.ok};},get sampled(){return Object.keys(SF);},get cache(){return [...bufCache.keys()];},get G(){return G;},get SONG(){return SONG;},
   get ctx(){return ctx;},get audioOK(){return audioOK;},tileAt,pick,setPause,levelUp,addMob,spawnMob,hurtMob,MOBS,ICON,makeSong,voicing,LAYERS,layerNotes,strum,chordAt,
   GENRES,synergy,hitsPerSec,balanceK,balanceTable,mkChord,chordCard,PEDALS,GEAR,availableGear,pedalEffects,levelOptions,applyUpgrade,withPlayer,driveCurve,
   get buses(){return buses;},get renderStats(){return {...renderStats};},FX_PROFILES,VISUAL_ASSETS,draw,setChar(k){charKey=k;},setGenre(k){chosenGenre=k;},
