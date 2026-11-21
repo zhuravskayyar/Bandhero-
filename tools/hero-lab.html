@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="uk"><head><meta charset="utf-8"><title>Hero Lab</title>
+<style>
+body{margin:0;background:#0b1620;color:#cfe;font:12px sans-serif;padding:12px}
+h2{margin:14px 0 4px;font-size:14px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+canvas{image-rendering:pixelated;background:#13242b}
+.cell{display:flex;flex-direction:column;align-items:center;gap:2px}
+</style></head><body>
+<div id="live"></div>
+<h2>Усі кадри (×3)</h2><div id="strips"></div>
+<script src="/pixel-heroes.js"></script>
+<script>
+const PH=window.PixelHeroes,live=document.getElementById('live'),strips=document.getElementById('strips');
+const STATES=[['idle',8],['walk',8],['atk',6],['hurt',2],['fall',6],['down',4],['rise',5]];
+const cells=[];
+for(const ch of PH.chars){
+  const h=document.createElement('h2');h.textContent=ch;live.appendChild(h);
+  const row=document.createElement('div');row.className='row';live.appendChild(row);
+  for(const [s] of STATES.concat([['cycle']])){
+    const c=document.createElement('div');c.className='cell';const cv=document.createElement('canvas');cv.width=cv.height=s==='cycle'?160:120;
+    c.appendChild(cv);c.appendChild(document.createTextNode(s));row.appendChild(c);cells.push({ch,s,cv});
+  }
+  const st=document.createElement('div');st.className='row';strips.appendChild(st);
+  for(const [s,n] of STATES)for(let f=0;f<n;f++){
+    const ls=s==='atk'?[0,1,2,3]:[0];for(const L of ls){if(s==='atk'&&L&&f!==2)continue;
+    const cv=document.createElement('canvas');cv.width=cv.height=120;const g=cv.getContext('2d');
+    PH.draw(g,ch,{s,f,L},60,110,120,false);st.appendChild(cv);}
+  }
+}
+const N={idle:8,walk:8,atk:6,hurt:2,fall:6,down:4,rise:5};
+function tick(t){
+  const sec=t/1000;
+  for(const c of cells){
+    const g=c.cv.getContext('2d');g.clearRect(0,0,c.cv.width,c.cv.height);
+    g.fillStyle='#030b1599';g.beginPath();g.ellipse(c.cv.width/2,c.cv.height-12,30,9,0,0,7);g.fill();
+    let po;
+    if(c.s==='cycle'){ // повний цикл: стоїть, йде, б'є, отримує, падає, лежить, встає
+      const T=sec%7;
+      po=T<1.5?PH.pose({t:sec}):T<3?PH.pose({t:sec,moving:true,dist:T*140}):T<4?PH.pose({t:sec,atkSince:(T-3)%.5,atkL:Math.floor(T*2)%5}):T<4.3?PH.pose({t:sec,hurt:.15-(T-4)*.5}):T<6.2?PH.pose({t:sec,dead:true,deadFor:T-4.3}):PH.pose({t:sec,riseFor:T-6.2});
+      if(po.s==='hurt')po.flash=T<4.08;
+    }else if(c.s==='idle')po={s:'idle',f:Math.floor(sec*6)%8,blink:Math.floor(sec*6)%16===0,beat:(sec*1.4)%1<.12};
+    else{const fps=c.s==='walk'?12:c.s==='down'?4:c.s==='hurt'?8:16;const n=N[c.s];let f=Math.floor(sec*fps)%(n+(c.s==='atk'||c.s==='fall'||c.s==='rise'?4:0));if(f>=n)f=c.s==='fall'?n-1:c.s==='rise'?n-1:0;
+      po={s:c.s,f,L:Math.floor(sec/1.2)%5,flash:c.s==='hurt'&&f===0};}
+    const sz=c.cv.width;PH.draw(g,c.ch,po,sz/2,sz-12,sz,false);
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script></body></html>

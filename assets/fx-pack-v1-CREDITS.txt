@@ -24,3 +24,7 @@ Row  Source sheet  Colour row  Frames  Used for
 26-29 579          gold/red/blue/purple  14      hero projectile beam and drum lightning
 30-33 427          gold/red/blue/purple  8       hero projectile orb
 34   71            1 purple    10      reverb pedal burst
+35-38 529          gold/red/blue/purple  13      cone spike (narrow cones, up to 32 deg)
+39-42 665          gold/red/blue/purple  16      cone pyramid (cones up to 50 deg)
+43-46 69           gold/red/blue/purple  10      cone flame (wide cones)
+Rows 10-17 (crescent swings) are no longer used by the game.

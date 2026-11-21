@@ -1,0 +1,173 @@
+/* Band Hero: інтерфейс у стилі піксельної аркади. Бойові ефекти малюються покадрово зі спрайтових атласів у Canvas.
+   Рамки — піксельні «сходинки» на кутах (clip-path) + внутрішнє тло в ::before; колір рамки — --edge, тло — --fill. */
+@font-face{font-family:Rubik;src:url('assets/Rubik.ttf') format('truetype');font-weight:300 900;font-style:normal;font-display:swap}
+@font-face{font-family:'Russo One';src:url('assets/RussoOne.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+/* BH Pixel — Pixelify Sans (SIL OFL); див. assets/bh-pixel-OFL.txt. Лише логотип: кирилиця в ньому «болгарська» (д≈a, ь≈b, ґ≈Y),
+   а дрібна латиниця плутається (E≈Є, D≈O), тож решта тексту — Russo One (--px). */
+@font-face{font-family:'BH Pixel';src:url('assets/bh-pixel.ttf') format('truetype');font-weight:400 700;font-style:normal;font-display:swap;unicode-range:U+0041-005A,U+0061-007A} /* лише літери: цифри поруч із кирилицею виглядали чужими */
+:root{
+  --night:#0f1b26;--deep:#09121a;--panel:#162a37;--panel-hi:#1e3646;--ink:#05090e;
+  --paper:#f3e4c7;--muted:#9fb5b1;--dim:#6f8a8a;--gold:#ffd18b;--gold-deep:#b9772f;--teal:#80d9cd;--edge:#3e5a5f;--fill:var(--panel);
+  --px:'Russo One',Rubik,sans-serif; /* піксельний BH Pixel — лише в логотипі: дрібним «E» читається як «Є», «D» як «O» */
+  --notch:polygon(0 6px,3px 6px,3px 3px,6px 3px,6px 0,calc(100% - 6px) 0,calc(100% - 6px) 3px,calc(100% - 3px) 3px,calc(100% - 3px) 6px,100% 6px,100% calc(100% - 6px),calc(100% - 3px) calc(100% - 6px),calc(100% - 3px) calc(100% - 3px),calc(100% - 6px) calc(100% - 3px),calc(100% - 6px) 100%,6px 100%,6px calc(100% - 3px),3px calc(100% - 3px),3px calc(100% - 6px),0 calc(100% - 6px));
+  --notch-in:polygon(0 3px,3px 3px,3px 0,calc(100% - 3px) 0,calc(100% - 3px) 3px,100% 3px,100% calc(100% - 3px),calc(100% - 3px) calc(100% - 3px),calc(100% - 3px) 100%,3px 100%,3px calc(100% - 3px),0 calc(100% - 3px));
+}
+html,body{font-family:Rubik,system-ui,sans-serif;background:var(--night);color:var(--paper)}
+button,input{font-family:inherit}button{touch-action:manipulation}
+button:focus-visible{outline:3px dashed var(--gold);outline-offset:5px}
+#world-vignette{position:fixed;inset:0;pointer-events:none;z-index:1;background:radial-gradient(ellipse at 50% 45%,transparent 42%,#07101c66 100%)}
+
+/* ---------- піксельна рамка ---------- */
+.card,.btn,.chips button,#pause,.player-panel,.run-counters,.member,#load,kbd{
+  position:relative;isolation:isolate;border:0!important;border-radius:0!important;background:var(--edge)!important;clip-path:var(--notch);box-shadow:none}
+/* !important: старі правила у <style> гри (.card:hover, .chips button.on) інакше перефарбовують рамку; тло картки — у ::before */
+.card::before,.btn::before,.chips button::before,#pause::before,.player-panel::before,.run-counters::before,.member::before,#load::before,kbd::before{
+  content:'';position:absolute;inset:3px;z-index:-1;clip-path:var(--notch-in);
+  background:linear-gradient(var(--fill),var(--fill)) top/100% calc(100% - 4px) no-repeat,var(--shade,#0a141c)}
+/* фокус з клавіатури: обвідку зовні обрізає clip-path, тож підсвічуємо саму рамку */
+.card:focus-visible,.btn:focus-visible,.chips button:focus-visible,#pause:focus-visible{--edge:#fff3c4!important;outline:none}
+
+/* ---------- екрани поверх гри ---------- */
+.ov{background:var(--deep);gap:14px;padding:26px 22px;scrollbar-width:thin;scrollbar-color:#3e5a5f #0c161f;touch-action:pan-y;
+  background:repeating-conic-gradient(#ffffff05 0 25%,#0000 0 50%) 0 0/4px 4px,#08111ae6}
+.ov h1{font-family:var(--px);font-weight:400;font-size:34px;letter-spacing:.01em;color:var(--gold);text-shadow:3px 3px 0 var(--ink)}
+.ov p{font-size:14px;line-height:1.6;color:var(--muted);max-width:560px}
+.section-label{font-family:var(--px);font-weight:400;font-size:17px;color:var(--paper);margin:10px 0 0;width:100%;max-width:880px;text-align:left;text-shadow:2px 2px 0 var(--ink)}
+
+/* ---------- головне меню ---------- */
+#menu,#lobby{justify-content:flex-start;padding-top:max(30px,env(safe-area-inset-top));padding-bottom:max(30px,env(safe-area-inset-bottom));
+  background:repeating-conic-gradient(#ffffff05 0 25%,#0000 0 50%) 0 0/4px 4px,linear-gradient(180deg,#07111aef,#0f1d29e6 45%,#08131cef)}
+#menu h1.logo{font-family:'BH Pixel','Russo One',sans-serif;font-weight:700;font-size:76px;line-height:1;letter-spacing:.04em;margin:4px 0 0;color:var(--gold);
+  text-shadow:4px 4px 0 var(--gold-deep),8px 8px 0 var(--ink)}
+#menu h1.logo span{color:var(--teal);text-shadow:4px 4px 0 #2f7d75,8px 8px 0 var(--ink)}
+#menu .menu-copy{max-width:520px;font-size:15px;color:#c3d1cb;margin-bottom:2px}
+#menu-notice:empty{display:none}
+
+/* жанри: плитки з піксельними емблемами */
+.chips{max-width:880px;gap:8px;justify-content:flex-start;width:100%}
+.chips button{--fill:#122230;--edge:#2f474e;color:var(--muted);font-size:12px;font-weight:500;padding:8px 13px;cursor:pointer}
+.chips button:hover{--edge:#5d7f80;color:var(--paper)}
+.chips button.on{--edge:var(--gold);--fill:#2a2a24;color:var(--paper)}
+.chips.genres{display:grid;grid-template-columns:repeat(11,minmax(0,1fr));gap:8px}
+.chips.genres button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 4px 9px;min-width:0}
+.gi{display:block;width:48px;height:48px;background:url('assets/genre-icons-v1.png?v=1') no-repeat;background-size:528px 48px;
+  background-position:calc(var(--i) * -48px) 0;image-rendering:pixelated;filter:drop-shadow(2px 2px 0 #05090e99)}
+.gn{font-family:var(--px);font-size:12px;line-height:1.15;text-align:center;overflow-wrap:anywhere}
+.chips.genres button.on .gi{transform:translateY(-3px)}
+.chips.genres button:disabled{opacity:.5;cursor:default}
+
+/* герої: вибір як у файтингу */
+.cards{max-width:880px;gap:12px;flex-shrink:0}
+#cards,#lobby-cards{grid-template-columns:repeat(4,minmax(0,1fr))}
+.card{--fill:var(--panel);--edge:#355055;color:var(--paper);font-family:Rubik,system-ui,sans-serif;padding:16px 16px 14px;cursor:pointer;text-align:left}
+.card:not(:disabled):hover,.card.sel{--edge:var(--c,var(--gold))}
+.card b{font-family:var(--px);font-weight:400;font-size:19px;line-height:1.2;color:var(--c,var(--gold))}
+.card small{font-size:12px;line-height:1.5;color:#b2c4bf}
+.card .st{font-family:var(--px);font-size:12px;line-height:1.4;color:var(--dim)}
+.card.musician{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:12px 14px 14px;
+  --fill:color-mix(in srgb,var(--c) 9%,var(--panel));--edge:color-mix(in srgb,var(--c) 38%,#253a40)}
+.card.musician:not(:disabled):hover{--fill:color-mix(in srgb,var(--c) 16%,var(--panel))}
+.musician .st{margin-top:auto;color:color-mix(in srgb,var(--c) 55%,#b9c4b4)}
+.portrait,.hud-portrait{display:block;background-image:var(--sheet,url('assets/hero-guitar-v3.png'));background-repeat:no-repeat;background-size:600% 600%;background-position:0 0}
+.portrait{width:128px;height:128px;margin:-4px 0 -2px;filter:drop-shadow(4px 4px 0 #05090e88)}
+.portrait-drums{--sheet:url('assets/hero-drums-v3.png')}.portrait-bass{--sheet:url('assets/hero-bass-v3.png')}.portrait-piano{--sheet:url('assets/hero-piano-v3.png')}
+.musician:not(:disabled):hover .portrait{background-position:20% 20%} /* кадр ходи: у «підсилення» частина героїв вистрибує за клітинку */
+
+/* клавіші-підказки: лише там, де є клавіатура */
+.keys{display:flex;flex-wrap:wrap;gap:18px;justify-content:center;font-family:var(--px);font-size:13px;color:var(--muted)}
+.keys span{display:flex;align-items:center;gap:5px}
+kbd{--fill:#203845;--edge:#4f6f72;--shade:#0b161e;display:inline-block;min-width:28px;padding:5px 8px 8px;font:400 13px var(--px);color:var(--paper);text-align:center}
+@media (hover:none),(pointer:coarse){.keys{display:none}}
+
+.btn{--fill:#e0a95c;--edge:#ffe0a6;--shade:#8d5e31;font-family:var(--px);font-weight:400;color:#241a10;padding:12px 26px 15px;font-size:17px;cursor:pointer;transition:transform .08s}
+.btn:hover{--fill:#eab76c}.btn:active{transform:translateY(2px)}
+.btn.s{--fill:#1b3240;--edge:#4c6b6e;--shade:#0b161e;color:#cfe0d7;font-size:14px;font-weight:600}
+.btn.s:hover{--fill:#24404f}
+.btn:disabled,.card:disabled{opacity:.45;cursor:default}
+.menu-foot{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:center;margin-top:6px}
+.menu-foot #lang-switch{width:auto}
+#multiplayer{color:#bfe6d8}
+.controls-note{font-size:12px!important;max-width:640px!important;color:var(--dim)!important;margin:0!important}
+@media (hover:hover) and (pointer:fine){.controls-note{display:none}} /* на ПК видно клавіші; текст — для телефона */
+.credits{font-size:11px;max-width:640px;color:var(--dim);line-height:1.5}
+.credits summary{cursor:pointer;color:#86a19f}.credits p{font-size:11px;line-height:1.6;margin-top:8px}
+
+/* ---------- покращення: три картки в ряд ---------- */
+#lvl h1{font-size:40px}
+#gear-hint{font-size:13px;color:#93b3ad}
+#opts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));max-width:900px;gap:16px;align-items:stretch}
+#opts .card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:20px 16px 18px;min-height:250px;
+  --edge:color-mix(in srgb,var(--c,#b6d1b8) 40%,#2b4148);transition:transform .1s}
+#opts .card .ic{flex:0 0 auto;width:84px;height:84px;filter:drop-shadow(3px 3px 0 #05090e99)}
+#opts .card .tx{align-items:center;gap:8px;flex:1}
+#opts .card b{font-size:19px}
+#opts .card small{font-size:13px}
+#opts .card .st{margin-top:auto}
+#opts .card.sel{--edge:var(--gold);--fill:color-mix(in srgb,var(--c,#b6d1b8) 14%,var(--panel-hi));transform:translateY(-8px)}
+#opts .card.sel::after{content:'';position:absolute;left:50%;top:9px;width:12px;height:6px;transform:translateX(-50%);background:var(--gold);
+  clip-path:polygon(0 0,100% 0,100% 2px,calc(100% - 3px) 2px,calc(100% - 3px) 4px,calc(100% - 6px + 3px) 4px,50% 100%,3px 4px,3px 2px,0 2px)}
+#lvl .keys{margin-top:6px}
+
+#paused h1,#over h1{font-size:40px;margin-bottom:4px}
+#paused .btn,#over .btn{min-width:230px}
+.sync{font-family:var(--px);color:var(--paper)}
+
+/* ---------- гурт ---------- */
+#lobby{gap:12px}#lobby h1{font-size:30px}#lobby>p{font-size:13px;max-width:680px}
+#roster{max-width:880px;gap:8px}
+.member{--fill:#172e35;--edge:#496662;color:#d6e4d8;font-size:12px;padding:9px 14px}
+#invite{max-width:580px;width:100%;padding:11px 14px;background:#0b1a26;border:0;border-radius:0;box-shadow:inset 0 0 0 3px #4f6f72;color:#b9e3db;font-size:13px;user-select:text}
+#net-status{font-size:13px;min-height:18px;max-width:620px;color:#a5c6b5;line-height:1.5}
+#ready,#start-band{min-width:240px}#leave-band{font-size:13px}
+
+#load{position:fixed;--fill:#10212b;--edge:#536252;font-family:var(--px);font-size:13px;bottom:20px;color:#ffe0a3;padding:9px 18px;width:max-content;max-width:calc(100% - 32px);left:50%;right:auto;transform:translateX(-50%)}
+#load:empty{display:none}
+#audio-resume{font-size:13px;bottom:max(20px,env(safe-area-inset-bottom));white-space:nowrap}
+
+/* ---------- HUD ---------- */
+#hud{z-index:3;padding:max(11px,env(safe-area-inset-top)) 14px 9px;gap:7px;font-family:Rubik,system-ui,sans-serif;max-width:1200px;margin:0 auto}
+.hud-top{display:grid;grid-template-columns:minmax(0,1fr) 74px 46px;gap:10px;align-items:center}
+.player-panel{--fill:#0d1c28;--edge:#3f5d61;display:flex;align-items:center;gap:6px;max-width:440px;min-width:0;height:70px;padding:3px 14px 3px 5px}
+.hud-portrait{width:64px;height:64px;flex-shrink:0}
+.player-info{flex:1;min-width:0}.player-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+#player-name{font-family:var(--px);font-size:15px;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#f0e4c8}
+#lv{font-family:var(--px);font-size:13px;white-space:nowrap;color:var(--gold)}
+.health-row{display:flex;align-items:center;gap:6px;font-size:11px;color:#ec8c7a}
+.health-row .bar{flex:1;height:10px;background:var(--ink);border:0;border-radius:0;box-shadow:0 0 0 2px #2b3d44}
+#hp{background:linear-gradient(#ef8a78 0 40%,#d25f55 40%);transition:width .12s linear}
+#hp-value{font-family:var(--px);font-size:12px;min-width:48px;text-align:right;color:#d2dccf;font-variant-numeric:tabular-nums}
+.run-counters{--fill:#0d1c28;--edge:#3a5358;text-align:center;color:#eff2db;padding:7px 4px 9px}
+#time{display:block;font:400 18px var(--px);font-variant-numeric:tabular-nums;color:#f1e7cc}
+#kills{display:block;font-family:var(--px);font-size:12px;color:#91c3ba;margin-top:2px;font-variant-numeric:tabular-nums}
+#pause{--fill:#15293a;--edge:#4c6b6e;height:46px;width:46px;padding:0 0 3px;pointer-events:auto;font-family:var(--px);font-weight:400;font-size:20px;color:#e2e6d2;cursor:pointer}
+.xp-row{display:flex;align-items:center;gap:9px;padding:0 3px}
+#xpw{height:6px;background:var(--ink);border:0;border-radius:0;flex:1;box-shadow:0 0 0 2px #1d3038}
+#xp{background:linear-gradient(#a9e8dd 0 50%,#6cbcbc 50%);transition:width .18s linear}
+#xp-label{font-family:var(--px);font-size:11px;color:#a2c7bb;white-space:nowrap;text-shadow:1px 1px 0 var(--ink)}
+.song-row{display:flex;gap:9px;align-items:center;min-width:0;padding:0 3px}
+.stage-label{font-family:var(--px);font-size:11px;color:#cfe0c4;background:#142a2bd9;padding:3px 7px;white-space:nowrap;box-shadow:0 0 0 2px #2d4a43}
+#song{font-family:var(--px);font-size:12px;color:#b4d3cf;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:1px 1px 0 var(--ink)}
+#layers{font-size:10px;color:#b7bca8;padding:0 3px;text-shadow:0 2px 3px #050910;line-height:1.5}
+#team{font-family:var(--px);font-size:12px;color:#d0d3c1;line-height:1.7;padding-left:3px;text-shadow:1px 1px 0 var(--ink)}
+#hud.danger .player-panel{--edge:#e78273}#hud.danger #hp-value{color:#ffac8d}
+
+/* ---------- адаптивність ---------- */
+@media(max-width:900px){.chips.genres{grid-template-columns:repeat(6,minmax(0,1fr))}#cards,#lobby-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){
+  .ov{padding:22px 16px;gap:11px}#menu,#lobby{padding-top:max(22px,env(safe-area-inset-top))}
+  #menu h1.logo{font-size:50px;text-shadow:3px 3px 0 var(--gold-deep),6px 6px 0 var(--ink)}#menu h1.logo span{text-shadow:3px 3px 0 #2f7d75,6px 6px 0 var(--ink)}
+  #menu .menu-copy{font-size:13px;max-width:360px}.section-label{font-size:15px;margin-top:6px}
+  .chips.genres{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.gi{width:40px;height:40px;background-size:440px 40px;background-position:calc(var(--i) * -40px) 0}.gn{font-size:11px}
+  .cards{gap:10px}.card.musician{padding:10px 10px 12px}.portrait{width:96px;height:96px}.musician b{font-size:16px}.musician small{font-size:11px;line-height:1.45}.musician .st{font-size:11px}
+  /* телефон у портреті: три картки в ряд не влазять — стовпчиком, іконка ліворуч */
+  #opts{grid-template-columns:1fr;max-width:420px;gap:10px}
+  #opts .card{flex-direction:row;text-align:left;min-height:0;padding:14px 16px;gap:12px}#opts .card .ic{width:56px;height:56px}#opts .card .tx{align-items:flex-start;gap:5px}
+  #opts .card.sel{transform:none}#opts .card.sel::after{display:none}#opts .card b{font-size:16px}#opts .card small{font-size:12px}
+  #lvl h1,#paused h1,#over h1{font-size:32px}
+  #hud{padding-left:10px;padding-right:10px;gap:6px}.hud-top{grid-template-columns:minmax(0,1fr) 60px 42px;gap:7px}
+  .player-panel{height:62px;padding-right:9px;gap:3px}.hud-portrait{width:54px;height:56px}.player-heading{gap:3px;margin-bottom:5px}
+  #player-name{font-size:13px}#lv{font-size:11px}.health-row{gap:4px}#hp-value{font-size:10px;min-width:38px}.health-row .bar{height:8px}
+  #time{font-size:15px}#kills{font-size:10px}.run-counters{padding:6px 2px 8px}#pause{width:42px;height:42px;font-size:18px}
+  #song{font-size:10px}#layers{font-size:9px}.stage-label{font-size:9px}#xp-label{font-size:10px}#lobby h1{font-size:24px}#team{font-size:10px}
+}
+@media(prefers-reduced-motion:reduce){.card,.btn,#hp,#xp,#opts .card{transition:none}#opts .card.sel{transform:none}}

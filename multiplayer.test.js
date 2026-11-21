@@ -433,10 +433,29 @@ test('chords are collected one by one; each instrument has a pool of 10 parts an
   for (let i = 0; i < 200; i++) assert.ok(g.levelOptions().every(o => !o.l || g.G.layers[o.l.id]), 'no sixth part is offered');
   g.applyUpgrade({ l: g.LAYERS.guitar[9], isNew: true });
   assert.equal(Object.keys(g.G.layers).length, 5, 'a sixth part cannot be added');
-  // drums can still collect chords even though they never swap them
+  // drums play no chords: instead of chord cards the drummer collects figures for a 4-bar rhythm phrase
   await g.pick('drums'); s.game.setPause(true);
-  let drumCard = null; for (let i = 0; i < 400 && !drumCard; i++) drumCard = g.levelOptions().find(o => o.chord);
-  assert.ok(drumCard && drumCard.add, 'drummer can collect chords');
+  let drumCard = null; for (let i = 0; i < 400 && !drumCard; i++) drumCard = g.levelOptions().find(o => o.rhythm);
+  for (let i = 0; i < 400; i++) assert.ok(!g.levelOptions().some(o => o.chord), 'drummer is never offered chords');
+  assert.ok(drumCard && drumCard.add && drumCard.slot === 0, 'drummer collects rhythm figures, first slot first');
+  const syn = g.G.syn, kicks = () => { const k = g.LAYERS.drums[0], out = []; for (let s = 0; s < 16; s++) out.push(k.steps(g.SONG.prog[0], s, 0, 1).map(e => e.drum).join('+')); return out.join(','); };
+  const before = kicks(); g.applyUpgrade({ rhythm: true, add: true, slot: 0, fig: 'crash' });
+  assert.equal(g.SONG.dfig[0], 'crash'); assert.notEqual(kicks(), before, 'the figure is heard in the base part right away');
+  assert.ok(g.G.syn > syn, 'a figure on its home bar adds synergy');
+  for (const [slot, fig] of [[1, 'push'], [2, 'bomb'], [3, 'fill']]) g.applyUpgrade({ rhythm: true, add: true, slot, fig });
+  assert.ok(Math.abs(g.G.syn - syn * 1.54) < 1e-9, 'four home figures + classic phrase = +24% +30% (crown)');
+  for (let i = 0; i < 100; i++) assert.ok(!g.levelOptions().some(o => o.rhythm), 'no cards that could only break the crown');
+  // стоп-такт глушить тих, хто тримає час, але не куплений «Брейк» (він грає саме в 4-му такті)
+  g.applyUpgrade({ rhythm: true, add: false, slot: 3, fig: 'stop' }); g.G.layers.fill = 1; g.G.layers.snare = 1;
+  const fill = g.LAYERS.drums.find(l => l.id === 'fill'); let fillHits = 0;
+  for (let bar = 0; bar < 8; bar++) for (let s = 0; s < 16; s++) if (fill.steps(g.SONG.prog[0], s, bar, 1).length) fillHits++;
+  assert.ok(fillHits > 0 && g.hitsPerSec(g.SONG.genre, g.SONG.bpm, fill, 1) > 0, 'the fill part still plays on a stop bar');
+  // бій шансону: густіша шістка/вісімка б'є частіше, але кожен удар слабший — шкода за такт однакова
+  const strum = g.LAYERS.guitar[0], perBar = [];
+  await g.pick('guitar'); g.setPause(true);
+  for (const boi of [1, 2, 3]) { const S = { ...g.SONG, genre: 'chanson', boi }; g.setSong(S);
+    const hps = g.hitsPerSec('chanson', S.bpm, strum, 1); perBar.push(hps); }
+  assert.ok(perBar[1] > perBar[0] && perBar[2] > perBar[1], 'denser boi = more strokes, so balanceK lowers damage per stroke on its own');
   assert.deepEqual(s.errors, []);
 });
 
@@ -570,4 +589,117 @@ test('pixel FX pack: instrument-coloured hit sparks, level-up star, revive lotus
   await until(() => (guest.G.pfx || []).some(f => f.k === 'lotus') && guest.G.pfx.filter(f => f.k === 'star').length === 2, 'guest sees both stars and the lotus');
   guest.draw(); host.draw();
   assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+test('music answers the game: quiet without a fight, opens in combat and motion, dips on hits, events get cues; notes for attacks stay untouched', async t => {
+  const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
+  s.game.setGenre('pop'); await s.game.pick('piano');
+  const g = s.game, G = g.G, p = G.p, M = g.MUSIC_REACT, bus = g.buses.piano;
+  await delay(300);
+  assert.ok(g.reactState('solo').eng < .05, 'no enemies: the part is idle');
+  await until(() => bus.react.frequency.value < 3000, 'idle part is darkened');
+  const evs = [{ midi: 72, vel: .8, dur: 1 }], quiet = g.reactNotes(evs, 4, 0);
+  assert.notEqual(quiet, evs); assert.equal(evs[0].vel, .8, 'attack notes are not modified');
+  assert.ok(quiet[0].vel < .8 * .6, 'idle notes play softer');
+  for (let i = 0; i < 6; i++) { const m = g.addMob('glush', p.x + 60 + i * 10, p.y + 40); m.spd = 0; m.hp = m.max = 1e6; m.r = 4; }
+  await until(() => { p.hp = p.max; return g.reactState('solo').eng > .9; }, 'combat engages the part');
+  await until(() => bus.react.frequency.value > 12000, 'combat opens the part');
+  assert.ok(g.reactNotes(evs, 4, 0)[0].vel > .75, 'combat notes play at full strength');
+  // удар по героєві — провал фільтра; мало HP — музика глухне
+  const lp = g.masterReact.lp; p.hurt = .15;
+  await until(() => lp.frequency.events.some(e => e[0] === 'set' && e[1] === M.hurtCut), 'a hit dips the whole mix');
+  p.hp = p.max * .2; await until(() => g.masterReact.mood.gain.value === M.lowGain && lp.frequency.value === M.lowCut, 'low HP muffles the music');
+  p.hp = p.max; G.mobs = [];
+  // рух угору на пів секунди — мелодія переходить на октаву вище з першої долі такту
+  const t0 = Date.now(); while (Date.now() - t0 < 900) { p.y -= 3; p.hp = p.max; await delay(16); }
+  assert.equal(g.reactState('solo').want, 1, 'moving up asks for the upper octave');
+  g.reactNotes(evs, 0, 1); await delay(200);
+  await until(() => g.reactNotes(evs, 4, 1)[0].midi === 84, 'single melody notes follow the movement an octave up');
+  assert.equal(evs[0].midi, 72);
+  // бос: гул, поки живий; рівень: сигнал після вибору
+  const boss = g.addMob('boss1', p.x + 200, p.y); boss.spd = 0;
+  await until(() => g.bossDrone, 'boss drone starts'); boss.hp = 0; await until(() => !g.bossDrone, 'boss drone stops when the boss dies');
+  G.gems = []; G.mobs = []; const lvl = G.level; G.xp = 99; g.levelUp(); await delay(100);
+  assert.equal(g.reactWorld.level, lvl, 'no level cue while the choice screen is open');
+  G.xp = 0; await s.elements.get('#opts').children[0].onclick();
+  await until(() => g.reactWorld.level === G.level && !g.reactWorld.pendingLevel, 'level cue plays after the choice', 8000);
+  assert.deepEqual(s.errors, []);
+  // гурт: гість рахує ту саму реакцію для партії хоста
+  const srv = await startServer(t); const [a, b] = await bandOfTwo(t, srv.origin);
+  const H = a.game.G, hostId = a.game.net.id, hp = H.players.find(x => x.id === hostId).p;
+  for (let i = 0; i < 6; i++) { const m = a.game.addMob('glush', hp.x + 50 + i * 8, hp.y + 30); m.spd = 0; m.hp = m.max = 1e6; m.r = 4; }
+  await until(() => { for (const x of H.players) x.p.hp = x.p.max; return a.game.reactState(hostId).eng > .9 && b.game.reactState(hostId).eng > .9; }, 'host and guest both hear the host part engaged');
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+test('level-up choice works from the keyboard: Q/E move the highlight, Space takes it, not instantly after the screen opens', async t => {
+  const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
+  s.game.setGenre('pop'); await s.game.pick('guitar');
+  const g = s.game, G = g.G; G.gems = []; G.xp = 99; g.levelUp();
+  const opts = s.elements.get('#opts').children, sel = () => opts.findIndex(b => b.classList.contains('sel'));
+  assert.ok(opts.length >= 2); assert.equal(sel(), 0, 'first card is highlighted');
+  s.key('keydown', 'KeyE'); assert.equal(sel(), 1, 'E moves right');
+  s.key('keydown', 'KeyQ'); s.key('keydown', 'KeyQ'); assert.equal(sel(), opts.length - 1, 'Q moves left and wraps around');
+  const level = G.level, state = () => JSON.stringify([G.layers, G.pedals, g.SONG.have, g.SONG.prog.map(c => c.name), Math.round(G.p.hp)]);
+  G.p.hp = G.p.max * .5; const before = state();
+  s.key('keydown', 'Space'); await delay(50); assert.equal(g.choosing, true, 'a held Space right as the screen opens does not pick');
+  await delay(400); G.xp = 0; s.key('keydown', 'Space');
+  await until(() => !g.choosing, 'Space takes the highlighted card');
+  assert.notEqual(state(), before, 'the highlighted upgrade was applied');
+  assert.equal(G.level, level); assert.deepEqual(s.errors, []);
+});
+
+test('lo-fi, reggae and jazz grooves: real genre figures, phrase variation, same notes for every player of the same song', async t => {
+  const grid = (g, inst, id, bars = 4) => { const S = g.SONG, n = S.prog.length, have = S.have || n, ch = b => S.prog[(b % n) % Math.max(1, Math.min(n, have))];
+    const Ly = g.LAYERS[inst].find(l => l.id === id), out = [];
+    for (let bar = 0; bar < bars; bar++) for (let s = 0; s < 16; s++) { const e = Ly.steps(ch(bar), s, bar, 1); if (e.length) out.push([bar, s, e.map(x => [x.midi, x.drum, x.dir, x.vel])]); }
+    return out; };
+  const steps = (gr, bar) => gr.filter(x => x[0] === bar).map(x => x[1]);
+  for (const genre of ['lofi', 'reggae', 'jazz']) {
+    const a = session('http://127.0.0.1:8080'), b = session('http://127.0.0.1:8080'); t.after(() => { a.close(); b.close(); });
+    a.game.setGenre(genre); await a.game.pick('guitar'); b.game.setGenre(genre); await b.game.pick('guitar');
+    b.game.setSong(JSON.parse(JSON.stringify(a.game.SONG)));
+    for (const [inst, id] of [['guitar', 'strum'], ['drums', 'kick'], ['drums', 'snare'], ['drums', 'hat'], ['bass', 'root'], ['piano', 'chords']])
+      assert.equal(JSON.stringify(grid(a.game, inst, id, 8)), JSON.stringify(grid(b.game, inst, id, 8)), genre + '/' + id + ': same song, same notes for every player');
+    const g = a.game;
+    if (genre === 'reggae') {
+      assert.deepEqual(steps(grid(g, 'drums', 'kick'), 0), [4, 12], 'one drop on 2 and 4 at a reggae count');
+      assert.deepEqual(steps(grid(g, 'guitar', 'strum'), 0), [2, 6, 10, 14], 'skank on every off-beat eighth');
+      assert.ok(!steps(grid(g, 'bass', 'root'), 0).includes(0) && !steps(grid(g, 'bass', 'root'), 1).includes(0), 'the riddim leaves beat one empty');
+    }
+    if (genre === 'jazz') {
+      assert.deepEqual(steps(grid(g, 'bass', 'root'), 0), [0, 4, 8, 12], 'walking bass in quarter notes');
+      const gr = grid(g, 'guitar', 'strum'); assert.ok(gr.every(x => x[1] % 2 === 0), 'swung comping stays on the eighth grid');
+      assert.notDeepEqual(steps(gr, 0), steps(gr, 1), 'comping changes from bar to bar');
+    }
+    if (genre === 'lofi') {
+      assert.notDeepEqual(steps(grid(g, 'guitar', 'strum'), 0), [0, 4, 8, 12], 'no flat quarter-note strumming');
+      assert.notDeepEqual(steps(grid(g, 'drums', 'kick'), 3), steps(grid(g, 'drums', 'kick'), 0), 'the 4th bar of a phrase varies the beat');
+      assert.ok(g.SONG.prog[0].ext, 'lo-fi keys get ninth chords');
+    }
+    assert.deepEqual(a.errors, []);
+  }
+});
+
+test('bosses play their own parts and attack on their notes: tape-replay bursts, auto-tune spiral, conductor fermata', async t => {
+  const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
+  s.game.setGenre('pop'); await s.game.pick('guitar');
+  const g = s.game, G = g.G, p = G.p, keep = () => { p.hp = p.max; G.xp = 0; };
+  const fight = async (type, ms) => { G.mobs = []; G.eshots = []; const b = g.addMob(type, p.x + 260, p.y); b.spd = 0; b.hp = b.max = 1e7;
+    const end = Date.now() + ms, shots = []; let casts = 0;
+    while (Date.now() < end) { keep(); if (b.castK && b.castAt !== undefined) casts++; shots.push(G.eshots.length); await delay(30); }
+    return { b, shots, casts }; };
+  // Фонограма: залпи по 12 нот на сильні долі, не за таймером
+  let r = await fight('boss1', 3200);
+  assert.ok(G.eshots.length >= 12, 'tape boss fires bursts on its beats');
+  assert.ok(r.casts > 0, 'the boss winds up before a queued attack');
+  // Автотюн: кожна його нота — виток спіралі з 3 рукавів
+  r = await fight('boss2', 2600);
+  assert.ok(Math.max(...r.shots) >= 3, 'auto-tune spiral turns come on its notes');
+  // Диригент Тиші: у 4-му такті фрази фермата — уся музика гурту притихає
+  const m = g.masterReact.master.gain;
+  r = await fight('boss3', 9000);
+  assert.ok(m.events.some(e => e[0] === 'set' && e[1] === .04), 'fermata silences the band');
+  assert.ok(G.eshots.length > 0, 'conductor attacks on its stabs');
+  assert.deepEqual(s.errors, []);
 });

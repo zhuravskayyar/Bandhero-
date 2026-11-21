@@ -14,6 +14,8 @@ const GAME = path.join(__dirname, 'game.html');
 const ASSETS = new Map([
   ['/game-effects.css', ['game-effects.css', 'text/css; charset=utf-8']],
   ['/i18n.js', ['i18n.js', 'text/javascript; charset=utf-8']],
+  ['/pixel-heroes.js', ['pixel-heroes.js', 'text/javascript; charset=utf-8']],
+  ['/tools/hero-lab.html', ['tools/hero-lab.html', 'text/html; charset=utf-8']],
   ['/assets/band-heroes-v1.png', ['assets/band-heroes-v1.png', 'image/png']],
   ['/assets/band-mobs-v1.png', ['assets/band-mobs-v1.png', 'image/png']],
   ['/assets/band-creatures-v2.png', ['assets/band-creatures-v2.png', 'image/png']],
@@ -32,6 +34,8 @@ const ASSETS = new Map([
   ['/assets/night-grove-floor-v2.png', ['assets/night-grove-floor-v2.png', 'image/png']],
   ['/assets/night-grove-props-v2.png', ['assets/night-grove-props-v2.png', 'image/png']],
   ['/assets/fx-pack-v1.png', ['assets/fx-pack-v1.png', 'image/png']],
+  ['/assets/bh-pixel.ttf', ['assets/bh-pixel.ttf', 'font/ttf']],
+  ['/assets/genre-icons-v1.png', ['assets/genre-icons-v1.png', 'image/png']],
   ['/assets/Rubik.ttf', ['assets/Rubik.ttf', 'font/ttf']],
   ['/assets/guitar-harmonics.js', ['assets/guitar-harmonics.js', 'text/javascript; charset=utf-8']],
   ['/assets/RussoOne.ttf', ['assets/RussoOne.ttf', 'font/ttf']]
