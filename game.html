@@ -1105,7 +1105,7 @@ function paintEffect(sheet,row,frame,x,y,width,height=width,angle=0,alpha=1){
 function drawAttack(o,kind){
   if(renderStats.spriteFX>=120)return;
   const inst=o.inst||'guitar',profile=FX_PROFILES[inst+'-'+(o.layer||'strum')]||{row:5};
-  const age=o.age||0,duration=kind==='cone'?.38:kind==='ring'?.4:kind==='zap'?.12:.4;
+  const age=o.age||0,duration=kind==='cone'?.27:kind==='ring'?.28:kind==='zap'?.12:.4; // пік спрайта має припадати на удар, а не після нього
   const frame=kind==='shot'?1+Math.floor(age*14)%4:Math.min(5,Math.floor(age/duration*6));
   const alpha=o.ghost?.43:kind==='shot'?1:Math.max(0,Math.min(1,(duration-age)/.06));
   if(kind==='zap'){
@@ -1131,9 +1131,11 @@ const seq={step:0,nextTime:0};
 /* Годинник ритму: остання заплановано 16-а доля секвенсера. Усе, що малюється «в біт» (пульс героя, ворогів, рамки, лічильник долей),
    рахується з нього, тож картинка завжди збігається зі звуком і атаками. */
 const beat={step:0,t:0,ok:false};let BK=0,BP=null;
+// Звук виходить із буфера пристрою пізніше, ніж його заплановано. Картинку (атаки, пульс) зсуваємо на цю затримку, щоб вона збігалась зі звуком, який чує гравець.
+const outLat=()=>audioOK&&ctx?Math.min(.25,(ctx.outputLatency||0)+(ctx.baseLatency||0)):0;
 function beatPos(){
   if(!beat.ok||!SONG)return null;
-  const s=beat.step+(now()-beat.t)/stepDur(),b=s/4,bi=Math.floor(b);
+  const s=beat.step+(now()-outLat()-beat.t)/stepDur(),b=s/4,bi=Math.floor(b);
   return {beat:((bi%4)+4)%4,ph:b-bi};
 }
 let atkQ=[];
@@ -1238,7 +1240,7 @@ function homing(n,dmg,r=6){
   for(let i=0;i<n;i++){const t=ts[i]||ts[0];shoot(aim(t)+(Math.random()-.5)*1.2,{spd:360,r,dmg,life:1.7,pierce:0,col:'#c7b3ff',kind:'note',target:t,homing:true});}
 }
 function processQueues(){
-  const tn=now();
+  const tn=now()-outLat();
   while(atkQ.length&&atkQ[0].t<=tn){
     const a=atkQ.shift();if(a.run!==runId||tn-a.t>.35)continue; // після зависання кадру не вивалюємо старі ноти одним залпом
     const actor=owner(a.owner);if(net.active&&(!actor||actor.p.hp<=0))continue;
@@ -2320,6 +2322,8 @@ async function receiveHost(d){
   SONG=d.song;G=d.state;
   for(const a of G.players){const prev=oldPlayers.get(a.id);a.bal=prev?prev.bal:{};a.dmg=prev?prev.dmg:1;smoothPosition(a.p,prev&&prev.p);}
   for(const key of ['mobs','shots','gems']){const prev=new Map(old[key].map(o=>[o.netId,o]));for(const o of G[key])smoothPosition(o,prev.get(o.netId));}
+  // Знімок іде по мережі: хвилі й конуси вже «старші» на половину пінгу, інакше гість бачить удар із запізненням до звуку.
+  const lag=Math.min(.15,net.rtt/2000);if(lag>0)for(const key of ['rings','cones','zaps'])for(const o of G[key]||[])o.age+=lag;
   bindLocalPlayer();loading=false;running=!d.ended;paused=d.paused;choosing=d.choosing;
   const remoteTime=now()+d.until-net.rtt/2000,localStep=seq.step+(now()-seq.nextTime)/stepDur(),remoteStep=d.step+(now()-remoteTime)/stepDur();
   if(paused||Math.abs(localStep-remoteStep)>.8||!Number.isFinite(localStep)){seq.step=d.step;seq.nextTime=remoteTime;}
