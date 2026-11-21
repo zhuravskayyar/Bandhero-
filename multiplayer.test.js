@@ -37,7 +37,7 @@ class Element {
   setPointerCapture() {}
   select() {}
 }
-function session(origin, audio = false) {
+function session(origin, audio = false, audioFixture = {}) {
   const elements = new Map(), events = new Map(), timers = new Set(), errors = [];
   let framesHeld = false, pendingFrame = null;
   const get = s => { if (!elements.has(s)) elements.set(s, new Element()); return elements.get(s); };
@@ -48,7 +48,8 @@ function session(origin, audio = false) {
   const param = () => ({ value: 0, events: [], setValueAtTime(v, t) { assert.ok(Number.isFinite(v) && Number.isFinite(t)); this.events.push(['set',v,t]); this.value = v; },
     setTargetAtTime(v, t) { assert.ok(Number.isFinite(v) && Number.isFinite(t)); this.events.push(['target',v,t]); this.value = v; },
     linearRampToValueAtTime(v, t) { assert.ok(Number.isFinite(v) && Number.isFinite(t)); this.events.push(['linear',v,t]); },
-    exponentialRampToValueAtTime(v, t) { assert.ok(Number.isFinite(v) && Number.isFinite(t)); this.events.push(['exp',v,t]); } });
+    exponentialRampToValueAtTime(v, t) { assert.ok(Number.isFinite(v) && Number.isFinite(t)); this.events.push(['exp',v,t]); },
+    cancelScheduledValues(t){assert.ok(Number.isFinite(t));this.events.push(['cancel',t]);} });
   const audioNode = () => {
     const n = { connect() {}, disconnect() {}, start(t = 0) { assert.ok(Number.isFinite(t) && t >= 0); this.startedAt=t; }, stop(t = 0) { assert.ok(Number.isFinite(t)); this.stoppedAt=t; } };
     for (const k of ['gain', 'frequency', 'Q', 'playbackRate', 'detune', 'delayTime', 'threshold', 'knee', 'ratio', 'attack', 'release']) n[k] = param();
@@ -60,7 +61,7 @@ function session(origin, audio = false) {
     async resume() { if (this.state !== 'running') { this.started = performance.now(); this.state = 'running'; if (this.onstatechange) this.onstatechange(); } }
     async suspend() { this.elapsed = this.currentTime; this.state = 'suspended'; if (this.onstatechange) this.onstatechange(); }
     createBuffer(channels, length, sampleRate) { const data = Array.from({ length: channels }, () => new Float32Array(length)); return { sampleRate, length, duration:length/sampleRate, getChannelData: c => data[c] }; }
-    async decodeAudioData() { return this.createBuffer(1, 12516, this.sampleRate); }
+    async decodeAudioData() { if(audioFixture.failDecode)throw new Error('invalid test MP3');const b=this.createBuffer(1,12516,this.sampleRate);if(audioFixture.sampleLevel)for(let n=0;n<b.length;n++)b.getChannelData(0)[n]=audioFixture.sampleLevel*Math.sin(2*Math.PI*440*n/this.sampleRate);return b; }
   }
   for (const k of ['Gain', 'DynamicsCompressor', 'BiquadFilter', 'WaveShaper', 'Convolver', 'Delay', 'BufferSource', 'Oscillator']) TestAudioContext.prototype['create' + k] = audioNode;
   class TestWorker {
@@ -72,12 +73,13 @@ function session(origin, audio = false) {
     innerWidth: 390, innerHeight: 844, devicePixelRatio: 1, performance, URL, URLSearchParams, Blob, atob,
     WebSocket, location: new URL(origin), setTimeout: later, clearTimeout, setInterval: interval,
     Image: class { constructor() { this.complete = true; this.naturalWidth = 1254; this.naturalHeight = 1254; } },
-    fetch: (url, opts) => { const u = new URL(url, origin); return u.origin === origin ? fetch(u, opts) : Promise.resolve({ ok: false }); },
+    fetch: (url, opts) => { const u = new URL(url, origin); return u.origin === origin ? fetch(u, opts) : Promise.resolve(audioFixture.soundfontText?{ok:true,text:async()=>audioFixture.soundfontText}:{ok:false}); },
     ...(audio ? { AudioContext: TestAudioContext, Worker: TestWorker } : {}),
     requestAnimationFrame: fn => later(() => { if (framesHeld) pendingFrame = fn; else fn(performance.now()); }, 16),
     addEventListener: (name, fn) => { if (!events.has(name)) events.set(name, []); events.get(name).push(fn); },
   });
   context.window = context;
+  for(const file of ['assets/expansion-audio.js','assets/expansion-genres.js','assets/expansion-instruments.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,file),'utf8'),context,{filename:file});
   vm.runInContext(source, context, { filename: 'game.html' });
   return {
     get game() { return context.__game; }, elements, errors,
@@ -213,7 +215,7 @@ test('Wi-Fi band: lobby, four actors, shared combat, upgrades, pause and host ha
 test('each instrument receives only its own gear and incompatible bonuses stay inactive', async t => {
   const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
   for (const [inst, layers] of Object.entries(s.game.LAYERS)) for (const layer of layers) assert.ok(s.game.FX_PROFILES[inst + '-' + layer.id], 'sprite visual for ' + inst + '/' + layer.id);
-  const ids = s.game.PEDALS.map(p => p.id); assert.equal(new Set(ids).size, 25);
+  const ids = s.game.PEDALS.map(p => p.id); assert.equal(new Set(ids).size, 41);
   for (const inst of ['guitar', 'drums', 'bass', 'piano']) {
     await s.game.pick(inst); s.game.G.level = 10;
     const allowed = s.game.availableGear(inst); assert.ok(allowed.length >= 6);
@@ -426,7 +428,8 @@ test('chords are collected one by one; each instrument has a pool of 10 parts an
     g.applyUpgrade(card); assert.equal(g.SONG.have, k);
   }
   assert.equal(new Set([0, 1, 2, 3].map(b => g.chordAt(b).name)).size >= 2, true, 'collected chords now move');
-  for (const k of Object.keys(g.LAYERS)) assert.equal(g.LAYERS[k].length, 10, k + ' has 10 parts');
+  for (const k of ['guitar','drums','bass','piano']) assert.equal(g.LAYERS[k].length, 10, k + ' keeps 10 parts');
+  for (const k of ['flute','violin','sax','accordion']) assert.equal(g.LAYERS[k].length, 4, k + ' has four distinct parts');
   for (const l of g.LAYERS.guitar.slice(1, 4)) g.applyUpgrade({ l, isNew: true });
   g.applyUpgrade({ l: g.LAYERS.guitar[5], isNew: true });
   assert.equal(Object.keys(g.G.layers).length, 5);
@@ -702,4 +705,156 @@ test('bosses play their own parts and attack on their notes: tape-replay bursts,
   assert.ok(m.events.some(e => e[0] === 'set' && e[1] === .04), 'fermata silences the band');
   assert.ok(G.eshots.length > 0, 'conductor attacks on its stabs');
   assert.deepEqual(s.errors, []);
+});
+
+test('new genres have distinct primary parts and blues follows twelve bars with collected chords', t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  const signatures=new Set();
+  for(const genre of ['funk','synthwave','folkrock','blues','dnb']){
+    const song=g.makeSong(null,genre);song.have=4;g.setSong(song);
+    const out=[];for(let bar=0;bar<4;bar++)for(let step=0;step<16;step++)out.push(g.LAYERS.guitar[0].steps(g.chordAt(bar),step,bar,1));
+    signatures.add(JSON.stringify(out));
+    for(const inst of ['flute','violin','sax','accordion'])assert.ok(g.GENRES[genre].sf[inst],genre+' includes '+inst);
+  }
+  assert.equal(signatures.size,5,'each genre has its own guitar part');
+  const blues=g.makeSong(null,'blues');blues.have=4;g.setSong(blues);
+  assert.deepEqual(Array.from({length:12},(_,bar)=>g.chordAt(bar).off),[0,0,0,0,5,5,0,0,7,5,0,7]);
+  assert.ok(blues.prog.every(ch=>ch.q==='7'));
+  blues.have=1;assert.ok(Array.from({length:12},(_,bar)=>g.chordAt(bar).off).every(off=>off===0));
+  assert.deepEqual(s.errors,[]);
+});
+
+test('four new instruments join a real Wi-Fi band, sound on each device and share their combat effects', async t=>{
+  const server=await startServer(t),sessions=[];t.after(()=>sessions.forEach(s=>s.close()));
+  const instruments=['flute','violin','sax','accordion'];
+  for(const inst of instruments){
+    const s=session(server.origin,true);sessions.push(s);await s.click('#multiplayer');await until(()=>s.game.net.id,'new player welcome');await s.pick(inst);
+  }
+  const host=sessions[0];await until(()=>host.game.net.roster.every(p=>p.char),'new band picks');
+  for(const genre of ['funk','synthwave','folkrock','blues','dnb']){
+    host.game.net.ws.send(JSON.stringify({t:'genre',genre}));
+    await until(()=>sessions[1].elements.get('#lobby-genres').children.some(b=>b.dataset.g===genre&&b.classList.contains('on')),'relay accepts '+genre);
+  }
+  for(const s of sessions){s.game.logNotes(true);await s.click('#ready');}
+  await until(()=>host.game.net.roster.every(p=>p.ready),'new band ready');await host.click('#start-band');
+  await until(()=>sessions.every(s=>s.game.running),'new band plays');
+  const owners=new Set();await until(()=>{
+    for(const f of host.game.G.instrumentFX||[])owners.add(f.owner);
+    return owners.size===4;
+  },'all four signature attacks');
+  await until(()=>sessions.every(s=>new Set(s.game.notes.map(n=>n.inst)).size===4),'all devices play all instruments');
+  await until(()=>sessions[1].game.G.instrumentFX?.some(f=>f.owner===host.game.net.id),'guest receives new attack geometry');
+  await host.click('#pause');await until(()=>sessions.every(s=>s.game.paused),'shared pause');
+  for(const s of sessions){
+    assert.equal(s.game.SONG.genre,'dnb');assert.equal(s.game.G.players.length,4);
+    assert.ok(s.game.notes.every(n=>Number.isFinite(n.t)&&Number.isFinite(n.duration)));
+    assert.doesNotThrow(()=>JSON.stringify(s.game.cleanState()));s.game.draw();assert.deepEqual(s.errors,[]);
+  }
+});
+
+test('offline electronic voices use separate caches and new instrument envelopes stay finite', async t=>{
+  const s=session('http://127.0.0.1:8080',true);t.after(()=>s.close());const g=s.game;
+  g.setGenre('synthwave');await g.pick('bass');g.setPause(true);
+  assert.ok(g.cache.some(k=>k.startsWith('syn-bass-synthbass:')));
+  await g.pick('piano');g.setPause(true);assert.ok(g.cache.some(k=>k.startsWith('syn-piano-synthkeys:')));
+  for(const inst of ['flute','violin','sax','accordion']){
+    g.setGenre('folkrock');await g.pick(inst);g.setPause(true);g.logNotes(true);
+    await g.reqBuf(inst,72);g.playBuffered(g.ctx.currentTime+.05,{midi:72,vel:.5,seconds:.6});
+    assert.ok(g.notes.some(n=>n.inst===inst&&n.duration>0&&n.duration<=.6));
+    assert.equal(g.availableGear(inst).length,4);
+    const foreign=g.PEDALS.find(p=>p.inst!==inst);g.applyUpgrade({pd:foreign});assert.equal(Object.keys(g.G.pedals).length,0);
+    for(const layer of g.LAYERS[inst])assert.ok(g.ICON.has(inst,layer.id));
+  }
+  assert.deepEqual(s.errors,[]);
+});
+
+function testSoundfont(){
+  const names=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+  return JSON.stringify(Object.fromEntries(Array.from({length:57},(_,i)=>{const midi=i+40;return[names[midi%12]+(Math.floor(midi/12)-1),'data:audio/mp3;base64,AAAA'];})));
+}
+test('new decoded instruments are level-matched and violin pizzicato uses its own warmed bank',async t=>{
+  const s=session('http://127.0.0.1:8080',true,{soundfontText:testSoundfont(),sampleLevel:.05});t.after(()=>s.close());const g=s.game;
+  g.setGenre('folkrock');
+  for(const inst of ['flute','violin','sax','accordion']){
+    await g.pick(inst);g.setPause(true);await g.reqBuf(inst,69);g.logNotes(true);
+    g.playBuffered(g.ctx.currentTime+.05,{midi:69,vel:.55,seconds:.85});
+    const note=g.notes.at(-1);assert.ok(note.trim>3&&note.trim<5,inst+' raises a quiet decoded sample to the body target');
+    assert.ok(g.buses[inst].out.gain.value>=.9,inst+' is no longer attenuated twice');
+    if(inst==='violin'){
+      const layer=g.LAYERS.violin.find(l=>l.id==='pizz');await g.warmLayer(layer);
+      assert.ok(g.cache.some(k=>k.startsWith('pizzicato_strings:')),'pizzicato is warmed under its articulation bank');
+      await g.reqBuf(inst,69,'pizzicato');g.playBuffered(g.ctx.currentTime+.1,{midi:69,vel:.5,seconds:.2,art:'pizzicato'});
+      assert.equal(g.notes.at(-1).source,'pizzicato_strings');assert.ok(g.notes.at(-1).duration>3,'a plucked note rings to its own sample end');
+    }
+  }
+  assert.deepEqual(s.errors,[]);
+});
+test('failed MP3 decoding renders a playable new-instrument synth instead of silence',async t=>{
+  const s=session('http://127.0.0.1:8080',true,{soundfontText:testSoundfont(),failDecode:true});t.after(()=>s.close());const g=s.game;
+  g.setGenre('folkrock');await g.pick('flute');g.setPause(true);await g.reqBuf('flute',69);g.logNotes(true);
+  g.playBuffered(g.ctx.currentTime+.05,{midi:69,vel:.55,seconds:.85});
+  assert.equal(g.notes.at(-1).source,'syn-flute-decode-fallback');assert.ok(g.voices.at(-1).source.buffer.length>1);
+  assert.deepEqual(s.errors,[]);
+});
+
+test('new starter instruments keep the sole unlocked chord until a chord card is taken',async t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  await g.pick('flute');g.setPause(true);
+  for(const genre of Object.keys(g.GENRES)){
+    const song=g.makeSong(null,genre);g.setSong(song);assert.equal(song.have,1);
+    const starterNotes=inst=>Array.from({length:12},(_,bar)=>{
+      const notes=[];for(let step=0;step<16;step++)notes.push(...g.LAYERS[inst][0].steps(g.chordAt(bar),step,bar,1).map(e=>e.midi));return notes;
+    });
+    for(const inst of ['flute','violin','sax','accordion']){
+      const bars=starterNotes(inst),root=song.prog[0].root;
+      for(const notes of bars){const allowed=inst==='accordion'?Array.from(song.prog[0].pcs):[root];assert.ok(notes.every(m=>allowed.includes(m%12)),genre+'/'+inst+' holds the unlocked chord');assert.deepEqual(notes,bars[0],genre+'/'+inst+' cannot rotate notes automatically');}
+    }
+    assert.equal(song.have,1,'playing bars never unlocks chords');
+    const card=g.chordCard();assert.ok(card?.add);g.applyUpgrade(card);assert.equal(song.have,2);
+    const allowed=new Set(Array.from(song.prog.slice(0,2),ch=>ch.root));
+    for(const inst of ['flute','violin','sax','accordion']){
+      const roots=new Set(starterNotes(inst).flat().map(m=>m%12));
+      if(inst==='accordion'){
+        const pcs=new Set(Array.from(song.prog.slice(0,2)).flatMap(ch=>Array.from(ch.pcs)));assert.ok(roots.size>3);
+        for(const root of roots)assert.ok(pcs.has(root),genre+'/'+inst+' never plays a locked chord');
+      }else{assert.equal(roots.size,2,genre+'/'+inst+' follows the second chord only after the card');for(const root of roots)assert.ok(allowed.has(root),genre+'/'+inst+' never plays a locked chord');}
+    }
+  }
+  assert.deepEqual(s.errors,[]);
+});
+
+test('each instrument owns its song caption and icon silhouette on the same song',t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game,shapes=new Set(),icons=new Set();
+  const song=g.makeSong(null,'chanson');song.boi=2;g.setSong(song);const original=JSON.stringify(song),labels=new Set();
+  for(const inst of Object.keys(g.CHARS)){
+    g.setChar(inst);const label=g.songLabel(),part=g.songPartLabel();labels.add(part);
+    assert.ok(label.includes(part));
+    if(inst==='guitar')assert.match(label,/Бій «шістка»/);
+    else{assert.ok(!label.includes('шістка')&&!label.includes('Бій «'),'guitar strum cannot leak to '+inst);assert.equal(part,g.LAYERS[inst][0].name);}
+    const first=g.ICON.part(inst,g.LAYERS[inst][0].id),symbol=first.match(/<g class="instrument-symbol"[^>]*>([\s\S]*?)<\/g>/);
+    assert.ok(symbol,inst+' has a real instrument silhouette');shapes.add(symbol[1].replace(/#[0-9a-f]{3,8}/gi,'#color'));
+    for(const layer of g.LAYERS[inst])icons.add(g.ICON.part(inst,layer.id).replace(/#[0-9a-f]{3,8}/gi,'#color'));
+  }
+  assert.equal(labels.size,8);assert.equal(shapes.size,8,'silhouettes differ even with every icon in one color');
+  assert.equal(icons.size,Object.values(g.LAYERS).reduce((n,layers)=>n+layers.length,0),'each skill remains distinct');
+  assert.equal(JSON.stringify(song),original,'personal captions never change the shared song');assert.deepEqual(s.errors,[]);
+});
+
+test('accordion holds and extends real reed voices, then changes harmony only with the unlocked chord',async t=>{
+  const s=session('http://127.0.0.1:8080',true,{soundfontText:testSoundfont(),sampleLevel:.05});t.after(()=>s.close());const g=s.game;
+  g.setGenre('chanson');await g.pick('accordion');g.setPause(true);s.holdFrames(true);
+  const song=g.SONG;song.key=0;song.bpm=60;song.prog=[0,5,7,0].map(off=>g.mkChord(song,off));song.have=1;
+  const part=g.LAYERS.accordion[0],first=part.steps(g.chordAt(0),0,0,1);for(const e of first)await g.reqBuf('accordion',e.midi);
+  g.logNotes(true);const at=g.ctx.currentTime+.1;g.fire(at,first);const original=g.voices.slice(-3);
+  assert.equal(original.length,3);assert.ok(original.every(v=>v.source.loop&&v.source.loopStart>0&&v.source.loopEnd>v.source.loopStart));
+  assert.ok(original.every(v=>v.source.stoppedAt-v.source.startedAt>3),'a held note outlasts the original one-shot sample');
+  g.fire(at+3,part.steps(g.chordAt(0),12,0,1));assert.equal(g.voices.length,original.length,'bellows pulse reuses the same voices without a new attack');
+  assert.ok(g.notes.slice(-3).every(n=>n.continued&&n.source==='accordion'));
+  assert.ok(original.every(v=>v.source.stoppedAt>at+4));
+  g.applyUpgrade({chord:true,add:true,slot:1,off:5});assert.equal(song.have,2);
+  const next=part.steps(g.chordAt(1),0,1,1);for(const e of next)await g.reqBuf('accordion',e.midi);g.fire(at+4,next);
+  assert.ok(original.every(v=>v.source.stoppedAt<=at+4.121),'previous harmony fades when the newly unlocked chord begins');
+  assert.ok(g.notes.slice(-3).every(n=>!n.continued&&n.harmony.startsWith('5:')));
+  g.endNoteTails();g.fire(at+5,next);assert.ok(g.notes.slice(-3).every(n=>!n.continued),'stopping the run clears held voices');
+  assert.deepEqual(s.errors,[]);
 });

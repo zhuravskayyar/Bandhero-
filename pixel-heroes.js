@@ -231,11 +231,104 @@ function drawPiano(b,q){
   if(q.step===0||q.step===7)P(b,4,36,'#a874f2'); // крапля-слід на кроці
 }
 
+// ---------- СОПІЛКА-ПТАШКА: дерев'яний свисток, листя-крила й отвори на грудях ----------
+function drawFlute(b,q){
+  const y=q.bob+1,hit=q.phase==='hit',wing=q.step>=0?Math.sin(q.step*Math.PI/4)*3:Math.sin(q.tw)*1.2,spread=hit?3:wing;
+  // Листя росте прямо з корпусу, а не з людських рук.
+  tri(b,17,20+y,5,15+y-spread,8,26+y,'#267849');tri(b,17,20+y,7,18+y-spread,9,23+y,'#84d76d');
+  line(b,8,20+y-spread/2,16,22+y,'#b8ed8a');
+  tri(b,25,20+y,32,12+y-spread,34,23+y,'#2b8c59');tri(b,25,20+y,31,15+y-spread,31,22+y,'#9be88a');
+  tri(b,18,29+y,7,29+y,11,33+y,'#36a3a4');line(b,10,30+y,18,28+y,'#97edce');
+  const step=q.step<0?0:Math.round(Math.sin(q.step*Math.PI/4)*2);
+  for(const [x,d] of [[18,step],[24,-step]]){line(b,x,29+y,x+d,35,'#97612f');line(b,x+d,35,x+d+3,35,'#d6a05a');P(b,x+d-1,35,'#d6a05a');}
+  rect(b,17,11+y,10,20-q.sq,'#a76730');rect(b,18,11+y,8,20-q.sq,'#e6b86b');rect(b,18,11+y,2,19-q.sq,'#ffe3a0');
+  for(const yy of [17,21,25,29]){rect(b,21+(q.L===1&&hit?1:0),yy+y,3,2,'#75421f');P(b,21,yy+y,'#3b3024');}
+  rect(b,18,30+y-q.sq,8,2,'#b96c32');rect(b,19,30+y-q.sq,6,1,'#ffe8a0');
+  blob(b,22,10+y,7.6,6.7,['#ffe7a2','#dfae59','#a56c2f']);
+  // Великий дзьоб-свисток і одне око з видимою далекою зіницею.
+  const E=q.eyes,closed=E==='blink'||E==='half'||E==='happy';
+  if(E==='x'){line(b,20,7+y,23,10+y,'#2c241c');line(b,23,7+y,20,10+y,'#2c241c');}
+  else if(E==='hurt'){line(b,20,7+y,23,9+y,'#2c241c');line(b,23,9+y,20,11+y,'#2c241c');}
+  else if(closed){line(b,19,9+y,21,7+y,'#2c241c');line(b,21,7+y,24,9+y,'#2c241c');}
+  else{blob(b,21.5,8.5+y,3.4,3.6,['#ffffff','#fff8d9','#d8bd88']);rect(b,22,7+y,2,4,'#1c3b34');P(b,22,7+y,'#ffffff');}
+  tri(b,27,9+y,34+(hit?1:0),7+y,29,13+y,'#f1a63b');line(b,29,11+y,33,9+y,'#704526');
+  if(hit){rect(b,29,10+y,4,q.L===2?3:2,'#352b25');if(q.L===0||q.L===3)note8(b,31,15+y-(q.f-2)*2,'#c9ffae');if(q.L===3){note8(b,7,7+y,'#eaffb5');P(b,12,6+y,'#ffffff');}}
+  P(b,18,3+y,'#9ee3b0');P(b,19,2+y,'#5da991');P(b,20,2+y,'#5da991');
+}
+
+// ---------- СКРИПАВУК: скрипковий корпус, вісім лап і смичок-хвіст ----------
+function drawViolin(b,q){
+  const y=q.bob,hit=q.phase==='hit',step=q.step<0?0:q.step;
+  const leg=(side,k,front)=>{const x=20+side*(7+k%2),yy=24+k*2+y,sw=q.step<0?0:Math.round(Math.sin(step*Math.PI/4+k+side)*2);
+    line(b,x,yy,x+side*6,yy-1+sw,front?'#a8769c':'#4d3d61');line(b,x+side*6,yy-1+sw,x+side*(8+k%2),34+(k%2)+sw/2,front?'#6d527d':'#302a43');P(b,x+side*(8+k%2),35+(k%2)+sw/2,'#ac9abb');};
+  for(const side of [-1,1])for(let k=0;k<2;k++)leg(side,k,false);
+  // Шийка і завиток скрипки.
+  rect(b,18,6+y,5,13,'#7e341d');rect(b,19,5+y,3,14,'#e0a455');blob(b,20,4+y,3.2,2.8,['#f4bc65','#b45c27','#69301e']);
+  for(const xx of [16,24])for(const yy of [7,10])rect(b,xx,yy+y,2,1,'#d9b3a0');
+  blob(b,20,18+y,7.7,6.3,['#f3a54e','#bf5e2b','#79371f']);blob(b,20,26+y+q.sq/2,10,8-q.sq/2,['#f7b65c','#cb632d','#813720']);
+  // Скрипкові вирізи і резонаторні f-отвори.
+  for(const s of [-1,1]){rect(b,20+s*8,20+y,2,3,'#362237');line(b,20+s*5,21+y,20+s*6,25+y,'#58291e');P(b,20+s*5,20+y,'#58291e');P(b,20+s*7,26+y,'#58291e');}
+  rect(b,17,30+y,7,2,'#783b27');
+  for(let k=0;k<3;k++)line(b,19+k,8+y,19+k+(hit&&q.L===3&&k===1?1:0),31+y,k===1?'#fff2bb':'#d9b884');
+  eyes(b,12,23,23+y,q.eyes,{R:'#392031',W:'#f5ffe8',I:'#70d5a4',K:'#1d302c',H:'#ffffff'});
+  for(const side of [-1,1])for(let k=2;k<4;k++)leg(side,k,true);
+  // На кожній партії смичок рухається інакше: довга нота, подвійна струна, павутина, піцикато.
+  const bowY=q.phase==='ant'?10:hit?18+(q.f-2)*5:18,bx=hit&&q.L===1?1:0;
+  line(b,27+bx,31+y,35+bx,bowY+y,'#62412d');line(b,28+bx,31+y,36+bx,bowY+y,'#e6d5af');
+  if(hit&&q.L!==3){line(b,12,20+y+(q.f-2)*4,34,14+y+(q.f-2)*4,'#f4ead1');line(b,12,21+y+(q.f-2)*4,34,15+y+(q.f-2)*4,'#795b3a');}
+  if(hit&&q.L===2)for(const [x,yy] of [[8,11],[31,6],[35,24]])star4(b,x,yy+y,'#e6e6ff','#ac92d6',1);
+  if(hit&&q.L===3){P(b,22,17+y,'#ffffff');P(b,23,16+y,'#ffffff');note8(b,29,4+y,'#f8cfa5');}
+}
+
+// ---------- САКСОДРАКОНЧИК: латунна труба-тіло, розтруб-паща і малі крила ----------
+function drawSax(b,q){
+  const y=q.bob+2,hit=q.phase==='hit',wing=q.step<0?Math.sin(q.tw):Math.sin(q.step*Math.PI/4)*2;
+  tri(b,13,22+y,3,11+y-wing,3,24+y,'#218f9c');tri(b,13,22+y,5,14+y-wing,8,24+y,'#79dbe0');line(b,4,14+y-wing,12,23+y,'#bbfff0');
+  // Кабель тут не потрібен: хвіст — вигнута латунна трубка.
+  for(const [dx,c] of [[0,'#8b531e'],[1,'#e7a83e'],[2,'#ffe08a']]){line(b,13+dx,29+y,5+dx,28+y,c);line(b,5+dx,28+y,3+dx,24+y,c);line(b,3+dx,24+y,5+dx,21+y,c);}
+  blob(b,17,27+y,9.5,7,['#ffe193','#d6952f','#8c551b']);
+  const st=q.step<0?0:Math.round(Math.sin(q.step*Math.PI/4)*2);
+  for(const [x,d] of [[12,st],[22,-st]]){rect(b,x+d,31+y,3,5-y,'#be7d24');line(b,x+d-1,35,x+d+4,35,'#ffe09a');P(b,x+d+4,34,'#ffe09a');}
+  rect(b,16,12+y,7,15,'#dca03d');rect(b,17,12+y,2,14,'#ffe3a1');rect(b,22,13+y,2,12,'#90571d');
+  blob(b,20,10+y,8,6.5,['#ffe093','#e2a338','#9c5f21']);
+  tri(b,14,7+y,10,2+y,18,6+y,'#b48036');P(b,11,2+y,'#ffe8aa');tri(b,22,5+y,24,1+y,27,7+y,'#b48036');
+  eyes(b,13,22,7+y,q.eyes,{R:'#49321e',W:'#fff9d8',I:'#72bdda',K:'#213843',H:'#ffffff'});
+  // Розтруб перед корпусом; видимий отвір лишається темним навіть на сильній атаці.
+  const open=hit&&q.L===0?1:0;blob(b,30,20+y,7+open,8+open,['#ffe7a5','#e9b24e','#9b621f']);
+  blob(b,31,20+y,5+open,6+open,['#9f6829','#5c3d20','#352b24']);line(b,27,14+y,32,12+y,'#fff2bb');line(b,34,15+y,36,19+y,'#ffe99d');
+  for(let k=0;k<4;k++){const yy=16+k*3;blob(b,18,yy+y,1.8,1.5,['#f3f0db','#b9c8d3','#698898']);}
+  if(hit){if(q.L===1){for(const xx of [4,8])line(b,xx,12+y,xx+4,8+y,'#c9fff2');}else if(q.L===2){star4(b,32,8+y,'#ffffff','#ffe6a1',2);}else if(q.L===3){note8(b,30,1+y,'#fff5bf');}}
+}
+
+// ---------- АКОРДЕОН-ЖАБКА: міхи замість тулуба, клавіші й перламутрові кнопки ----------
+function drawAccordion(b,q){
+  const y=q.bob,hit=q.phase==='hit',pump=q.phase==='ant'?1:hit?-2:Math.round(Math.sin(q.tw)*.8),left=8-pump,right=31+pump;
+  const jump=q.step<0?0:Math.round(Math.sin(q.step*Math.PI/4)*2);
+  for(const [x,sw] of [[10,jump],[28,-jump]]){blob(b,x+sw,33+y,5,2.7,['#a3e0a2','#5da771','#2f6a52']);for(let k=0;k<3;k++)P(b,x-3+k*3+sw,36+y,'#b8e8b2');}
+  // Задні лапи обіймають міхи, а не тримають окремий інструмент.
+  blob(b,left-2,27+y,3.5,5,['#a5e4ab','#62b783','#2f7259']);blob(b,right+2,27+y,3.5,5,['#9edda0','#50a375','#2b6650']);
+  rect(b,left+3,20+y,right-left-5,12-q.sq,'#6f2c57');
+  for(let k=0;k<6;k++){const xx=Math.round(left+5+(right-left-10)*k/5);line(b,xx,20+y,xx-1,31+y-q.sq,'#e484a1');line(b,xx+1,21+y,xx,30+y-q.sq,'#b24870');}
+  rect(b,left,18+y,6,16,'#604350');rect(b,left,19+y,2,14,'#a7767a');rect(b,right-4,18+y,6,16,'#8d365f');rect(b,right,19+y,2,13,'#bd6380');
+  for(let k=0;k<6;k++){const yy=20+k*2;rect(b,left+1,yy+y,4,1,'#fff6d7');if([0,1,3,4].includes(k))rect(b,left+3,yy+y,2,1,'#332a38');}
+  for(let k=0;k<6;k++)P(b,right-2+k%2*2,21+Math.floor(k/2)*4+y,'#ffe0c9');
+  // Жаб'яча голова з двома опуклими очима.
+  blob(b,20,17+y,10,5,['#b0e8a8','#70b97e','#397958']);blob(b,13,13+y,5,5,['#c5f0b1','#75bd81','#3c7c5b']);blob(b,27,13+y,5,5,['#c5f0b1','#75bd81','#3c7c5b']);
+  eyes(b,10,24,10+y,q.eyes,{R:'#244d41',W:'#efffe1',I:'#6ed2c0',K:'#173c37',H:'#ffffff'});
+  line(b,16,19+y,24,19+y,'#356b50');P(b,16,18+y,'#356b50');P(b,24,18+y,'#356b50');
+  if(hit&&q.L===2){rect(b,18,18+y,5,3,'#28453d');rect(b,19,20+y,3,1,'#e49eaa');}
+  if(hit&&q.L===3)for(const [xx,yy] of [[5,12],[34,13],[19,3]])note8(b,xx,yy+y,'#cfffb5');
+}
+
 const HEROES={
   guitar:{draw:drawGuitar,death:'side',walk:{bob:[0,-1,-1,0,0,-1,-1,0]}},
   drums:{draw:drawDrums,death:'side',walk:{bob:[0,-2,-4,-5,-4,-2,0,0],sq:[1,-1,-1,0,0,-1,0,1]}},
   bass:{draw:drawBass,death:'flip',walk:{bob:[0,0,-1,0,0,0,-1,0]}},
-  piano:{draw:drawPiano,death:'puddle',walk:{bob:[0,0,-2,-4,-4,-2,0,0],sq:[2,1,-1,-2,-1,0,1,2]}}
+  piano:{draw:drawPiano,death:'puddle',walk:{bob:[0,0,-2,-4,-4,-2,0,0],sq:[2,1,-1,-2,-1,0,1,2]}},
+  flute:{draw:drawFlute,death:'side',walk:{bob:[0,-1,-2,-1,0,-1,-2,-1]}},
+  violin:{draw:drawViolin,death:'flip',walk:{bob:[0,0,-1,-1,0,0,-1,-1]}},
+  sax:{draw:drawSax,death:'side',walk:{bob:[0,-1,-2,-1,0,-1,-2,-1]}},
+  accordion:{draw:drawAccordion,death:'side',walk:{bob:[0,-1,-3,-4,-3,-1,0,0],sq:[1,0,-1,-1,0,1,1,0]}}
 };
 
 // Поза → параметри малювання.
@@ -871,7 +964,11 @@ const INSTC={ // [біле ядро, світлий, основний, темн�
   guitar:['#fff6d8','#ffd27a','#ffa640','#a8401a'],
   drums:['#fff0ea','#ff9a7a','#e0503a','#7a1c1a'],
   bass:['#eaf8ff','#a9d3f5','#4aa3df','#1d4a7a'],
-  piano:['#fbf0ff','#d8c0ff','#9b7fe0','#4a2a8a']};
+  piano:['#fbf0ff','#d8c0ff','#9b7fe0','#4a2a8a'],
+  flute:['#f3ffd8','#c2ef9a','#69bd77','#2b7154'],
+  violin:['#fff2e1','#efb4b5','#c178a4','#693d70'],
+  sax:['#fff9d8','#ffe18c','#dfa83c','#8a5820'],
+  accordion:['#f2ffe2','#a8e0b6','#62b99a','#2c715f']};
 const GOLD=['#fffbe0','#ffe2b0','#e0b050','#8a6020'];
 // Ліміт клітинок на кадр (fxFrame() скидає на початку кадру): при масових вибухах решта просто не домальовується.
 let cellBudget=9000;
@@ -942,7 +1039,17 @@ function shotSprite(style,C,f){
   const b=mk(20,20),cx=10,cy=10;
   const cres=(rs,cols,th=1)=>{for(let y=0;y<20;y++)for(let x=0;x<20;x++){const d=Math.hypot(x+.5-3,y+.5-cy);
     for(let i=0;i<rs.length;i++)if(d>=rs[i]-th&&d<rs[i]&&x+.5>3+rs[i]*.35&&Math.abs(y+.5-cy)<rs[i]*.92)P(b,x,y,cols[i]);}};
-  if(style==='toms'){ell(b,cx,cy+1,6,4.5,C[3]);ell(b,cx,cy,6,4.5,C[2]);ell(b,cx,cy-2,6,3,'#f6eedb');ring(b,cx,cy-2,6,3,'#cfd6e0',30);P(b,cx-3+f*2,cy-3,'#ffffff');
+  if(style==='flute-leaf'){
+    // Листок-бумеранг: дві пелюстки, прожилка й хвостик-нотка.
+    tri(b,4,14,9,3,13,9,C[1]);tri(b,5,14,17,9,12,16,C[2]);line(b,4,15,13,7,C[0]);line(b,7,12,13,12,C[3]);
+    P(b,2,8+f%2,C[1]);P(b,1,10+f%2,C[2]);
+  }else if(style==='violin-bow'){
+    line(b,3,16,15,3,C[3]);line(b,4,16,16,3,C[0]);line(b,5,16,17,4,C[1]);rect(b,3,14,3,3,C[2]);star4(b,14,5,C[0],C[1],1+f%2);
+  }else if(style==='sax-note'){
+    note8(b,8,5,C[0]);for(const r of [6,9])for(let k=-4;k<=4;k++){const a=k*.15;P(b,3+Math.cos(a)*r,10+Math.sin(a)*r,C[r===6?1:2]);}P(b,2,10,C[1]);
+  }else if(style==='accordion-button'){
+    ell(b,10,10,6,5,C[3]);ell(b,10,9,5,4,C[1]);ell(b,9,8,3,2,C[0]);rect(b,8,9,4,1,C[2]);rect(b,10,7,1,5,C[2]);
+  }else if(style==='toms'){ell(b,cx,cy+1,6,4.5,C[3]);ell(b,cx,cy,6,4.5,C[2]);ell(b,cx,cy-2,6,3,'#f6eedb');ring(b,cx,cy-2,6,3,'#cfd6e0',30);P(b,cx-3+f*2,cy-3,'#ffffff');
     for(let k=0;k<3;k++)P(b,1+k,cy+(k%2),C[1]);}
   else if(style==='ghost'){cres([7,10,13],[C[1],C[2],C[2]],2);for(let y=0;y<20;y++)for(let x=0;x<20;x++)if((x+y+f)%2&&b[y*20+x])b[y*20+x]=0;}
   else if(style==='thumb'){cres([8,12,16],[C[0],C[1],C[2]],2);for(let x=2;x<14;x++){P(b,x,cy-1,(x+f)%3?C[3]:0);P(b,x,cy+1,(x+f+1)%3?C[3]:0);}}
@@ -964,6 +1071,10 @@ function sparkSprite(inst,f){const b=mk(17,17),C=INSTC[inst]||INSTC.guitar,c=8;
   else if(inst==='drums'){const R=[2,4,6,7,8,8][f];for(let k=0;k<8;k++){const a=k/8*Math.PI*2+.2;for(let s=Math.max(1,R-3);s<=R;s++)P(b,c+Math.cos(a)*s,c+Math.sin(a)*s,s===R?C[0]:C[2]);}
     if(f<3)ell(b,c+.5,c+.5,2-f*.5+1,2-f*.5+1,C[0]);}
   else if(inst==='bass'){const R=[1.5,3,4.5,6,7,7.6][f];ring(b,c+.5,c+.5,R,R,f<3?C[0]:C[1],28);if(f<4)ring(b,c+.5,c+.5,R*.55,R*.55,C[2],16);if(f<2)rect(b,c-1,c-1,3,3,'#ffffff');}
+  else if(inst==='flute'){const R=2+f;for(let k=0;k<4;k++){const a=k*Math.PI/2+f*.2;const x=c+Math.cos(a)*R,y=c+Math.sin(a)*R;tri(b,x,y,x-2,y-2,x+2,y-1,C[1]);P(b,x,y,C[0]);}}
+  else if(inst==='violin'){for(let k=0;k<6;k++){const a=k*Math.PI/3,d=2+f;line(b,c,c,c+Math.cos(a)*d,c+Math.sin(a)*d,k%2?C[1]:C[0]);}if(f>1)ring(b,c,c,2+f,2+f,C[2],24);}
+  else if(inst==='sax'){for(let k=0;k<3;k++)ring(b,c,c,1+f+k*2,1+f+k,C[k===0?0:1+k%2],20);if(f<2)rect(b,c-1,c-1,3,3,C[0]);}
+  else if(inst==='accordion'){const r=2+f;for(const s of [-1,1]){line(b,c+s*r,c-r,c+s*r,c+r,C[1]);line(b,c-r,c+s*r,c+r,c+s*r,C[0]);}P(b,c,c,C[0]);}
   else{for(let k=0;k<5;k++){const a=k/5*Math.PI*2+f*.3,d=1+f*1.3;const x=c+Math.cos(a)*d,y=c+Math.sin(a)*d;P(b,x,y,C[0]);if(f<4){P(b,x+1,y,C[1]);P(b,x,y+1,C[1]);}}
     if(f<2){P(b,c,c,'#ffffff');P(b,c+1,c,C[0]);P(b,c-1,c,C[0]);P(b,c,c+1,C[0]);P(b,c,c-1,C[0]);}}
   return b;}
@@ -987,8 +1098,82 @@ Object.assign(CONES,{slap:{W:68,draw:cSlap},stab:{W:76,draw:cStab},trill:{W:116,
 // ---------- ГОЛОВНИЙ ВХІД: малює удар власним піксель-артом або повертає false (тоді — старий пакет) ----------
 const ZAP_STYLE={hat:'hat',rim:'rim',trem:'trem',sync:'sync',bell:'bell'};
 const SHOT_STYLE={toms:'toms',ghost:'ghost',thumb:'thumb',loct:'loct',drone:'drone'};
+const EXPANSION_SHOTS={flute:'flute-leaf',violin:'violin-bow',sax:'sax-note',accordion:'accordion-button'};
+// Нові інструменти малюють ефекти тим самим піксельним пером, без PNG і CSS.
+// Візуальний контур повторює форму атаки: нитка, сектор дихання, кільце міхів, листок.
+function drawExpansionFx(ctx,kind,o,inst,age,dur,alpha,px){
+  if(!EXPANSION_SHOTS[inst])return false;
+  const C=INSTC[inst],t=Math.max(0,Math.min(1,age/dur)),pn=pen(ctx,px),f=Math.floor(age*12)%4;
+  ctx.save();ctx.globalAlpha=alpha;
+  if(kind==='shot'){
+    const ang=Math.atan2(o.vy||0,o.vx||0),s=Math.max(25,(o.r||7)*3.2),cv=shotFx(EXPANSION_SHOTS[inst],inst,f);
+    for(let k=1;k<=4;k++)if((k+f)%2)pn.p(o.x-Math.cos(ang)*k*6,o.y-Math.sin(ang)*k*6,k<3?C[1]:C[2]);pn.flush();
+    ctx.translate(o.x,o.y);ctx.rotate(inst==='flute'?age*5:ang);ctx.imageSmoothingEnabled=false;ctx.drawImage(cv,-s/2,-s/2,s,s);
+  }else if(kind==='zap'){
+    const x1=o.x1,y1=o.y1,x2=o.x2,y2=o.y2,L=Math.hypot(x2-x1,y2-y1)||1,nx=-(y2-y1)/L,ny=(x2-x1)/L;
+    const count=inst==='violin'?3:inst==='sax'?2:1;
+    for(let k=0;k<count;k++){const off=(k-(count-1)/2)*px*2;pline(pn,x1+nx*off,y1+ny*off,x2+nx*off,y2+ny*off,C[k?1:0]);}
+    for(let d=8;d<L;d+=inst==='violin'?20:27){const u=d/L,x=x1+(x2-x1)*u,y=y1+(y2-y1)*u;pn.p(x+nx*px*2,y+ny*px*2,C[2]);if(inst==='violin')pstar(pn,x,y,C[0],C[1],1);}
+    pstar(pn,x2,y2,C[0],C[1],2);pn.flush();
+  }else if(kind==='ring'){
+    const inward=inst==='accordion'&&/pull|inhale|draw|breath/.test(o.layer||''),max=o.maxR||70,r=inward?max*(1-t*.8):8+(max-8)*Math.min(1,age/.22);
+    circ(pn,o.x,o.y,r,[C[0],C[1]],{th:2,gap:(a,i)=>inst==='violin'&&i%4===0});
+    circ(pn,o.x,o.y,r*.75,C[2],{gap:(a,i)=>i%3===0});
+    for(let k=0;k<8;k++){const a=k*Math.PI/4+(inst==='flute'?t:0),ca=Math.cos(a),sa=Math.sin(a),x=o.x+ca*r,y=o.y+sa*r;
+      if(inst==='accordion'){const d=inward?-1:1;pline(pn,x-ca*px*3*d-sa*px*2,y-sa*px*3*d+ca*px*2,x,y,C[1]);pline(pn,x-ca*px*3*d+sa*px*2,y-sa*px*3*d-ca*px*2,x,y,C[1]);}
+      else if(inst==='violin')pline(pn,o.x+ca*r*.2,o.y+sa*r*.2,x,y,C[2]);
+      else pnote(pn,x-px*2,y-px*2,k%2?C[1]:C[0]);}
+    pn.flush();
+  }else if(kind==='cone'){
+    const a=o.dir||0,max=o.maxR||100,front=8+(max-8)*Math.min(1,age/.24),half=(o.w||.52)/2;
+    for(let k=0;k<3;k++){const r=front*(1-k*.23);if(r<5)continue;const n=Math.max(8,Math.ceil(r*half*2/px));
+      for(let j=0;j<=n;j++){const off=-half+j/n*half*2,ang=a+off;pn.p(o.x+Math.cos(ang)*r,o.y+Math.sin(ang)*r,C[k===0?0:k]);}
+      if(inst==='sax')for(const off of [-half*.65,0,half*.65]){const ang=a+off;pnote(pn,o.x+Math.cos(ang)*r-px*2,o.y+Math.sin(ang)*r-px*2,C[k?2:1]);}}
+    if(inst==='violin')for(const off of [-half*.6,0,half*.6]){const ang=a+off;pline(pn,o.x,o.y,o.x+Math.cos(ang)*front,o.y+Math.sin(ang)*front,C[1]);}
+    pn.flush();
+  }else{ctx.restore();return false;}
+  ctx.restore();return true;
+}
+// Тривалі бойові вміння expansion-instruments.js. Поля f — та сама геометрія,
+// яку перевіряють колізії; час іде з симуляції, тому ефекти завмирають на паузі.
+// Листок має лише чотири запечені кадри; довільні довжини ниток/променів не кешуються.
+function drawInstrumentFx(ctx,f,px=2.1){
+  if(typeof document==='undefined'||!['boomerang','thread','beam','bellows'].includes(f.kind))return false;
+  const inst={boomerang:'flute',thread:'violin',beam:'sax',bellows:'accordion'}[f.kind],C=INSTC[inst],age=Math.max(0,f.age||0),alpha=Math.max(0,Math.min(1,((f.life||1)-age)*5)),pn=pen(ctx,px);
+  if(!alpha)return true;
+  ctx.save();ctx.globalAlpha=alpha;
+  if(f.kind==='boomerang'){
+    const frame=Math.floor(age*12)%4,cv=shotFx('flute-leaf','flute',frame),size=Math.max(28,(f.r||11)*3);
+    const angle=(f.dir||0)+age*9;
+    for(let k=1;k<=3;k++)pn.p(f.x-Math.cos(angle)*k*5,f.y-Math.sin(angle)*k*5,k<2?C[1]:C[2]);pn.flush();
+    ctx.translate(f.x,f.y);ctx.rotate(angle);ctx.imageSmoothingEnabled=false;ctx.drawImage(cv,-size/2,-size/2,size,size);
+  }else if(f.kind==='thread'){
+    const L=Math.hypot(f.x2-f.x,f.y2-f.y)||1,nx=-(f.y2-f.y)/L,ny=(f.x2-f.x)/L,n=Math.max(1,Math.ceil(L/px));
+    // Нерухомі кінці, мала вібрація в межах бойової товщини струни.
+    for(let k=0;k<=n;k++){const u=k/n,sw=Math.sin(u*Math.PI)*Math.sin(u*25-age*30)*px,x=f.x+(f.x2-f.x)*u+nx*sw,y=f.y+(f.y2-f.y)*u+ny*sw;
+      pn.p(x,y,C[0]);pn.p(x+nx*px,y+ny*px,C[2]);}
+    for(let k=0;k<=4;k++){const u=k/4;pstar(pn,f.x+(f.x2-f.x)*u,f.y+(f.y2-f.y)*u,C[0],C[1],k===0||k===4?2:1);}
+    pn.flush();
+  }else if(f.kind==='beam'){
+    const dir=f.dir||0,half=(f.w||.34)/2,len=f.range||285;
+    // Чотири вигнуті звукові фронти; середина лишається прозорою для читабельності ворогів.
+    for(let k=0;k<4;k++){const r=(age*240+k*len/4)%len;if(r<px*2)continue;const n=Math.max(5,Math.ceil(2*r*half/px));
+      for(let j=0;j<=n;j++){const a=dir-half+j/n*half*2;pn.p(f.x+Math.cos(a)*r,f.y+Math.sin(a)*r,C[k%2?1:0]);pn.p(f.x+Math.cos(a)*(r-px),f.y+Math.sin(a)*(r-px),C[2]);}
+      if(k%2===0){const a=dir+Math.sin(age*7+k)*half*.6;pnote(pn,f.x+Math.cos(a)*r-px*2,f.y+Math.sin(a)*r-px*3,C[1]);}}
+    for(const side of [-1,1]){const a=dir+side*half;for(let d=px*4;d<len;d+=px*6)pn.p(f.x+Math.cos(a)*d,f.y+Math.sin(a)*d,C[3]);}
+    pn.flush();
+  }else{
+    const r=Math.max(0,f.r||0),inward=age<(f.delay||0),sgn=inward?-1:1;
+    circ(pn,f.x,f.y,r,[C[0],C[1]],{th:2});circ(pn,f.x,f.y,Math.max(0,r-px*3),C[2],{gap:(a,i)=>i%3});
+    for(let k=0;k<8;k++){const a=k*Math.PI/4,ca=Math.cos(a),sa=Math.sin(a),tip=r+sgn*px*4,x=f.x+ca*tip,y=f.y+sa*tip;
+      pline(pn,f.x+ca*r-sa*px*2,f.y+sa*r+ca*px*2,x,y,C[0]);pline(pn,f.x+ca*r+sa*px*2,f.y+sa*r-ca*px*2,x,y,C[1]);}
+    pn.flush();
+  }
+  ctx.restore();return true;
+}
 function drawFx(ctx,kind,o,inst,age,dur,alpha,px){
   if(typeof document==='undefined')return false;
+  if(drawExpansionFx(ctx,kind,o,inst,age,dur,alpha,px))return true;
   const C=INSTC[inst]||INSTC.guitar,t=Math.max(0,Math.min(1,age/dur)),f=Math.min(5,Math.floor(t*6));
   if(kind==='cone'){if(!CONES[o.layer])return false;const w=(o.w||.52)*180/Math.PI;return drawCone(ctx,o.layer,w,f,o.x,o.y,o.dir,o.maxR,alpha);}
   ctx.save();ctx.globalAlpha=alpha;
@@ -1003,7 +1188,7 @@ function drawFx(ctx,kind,o,inst,age,dur,alpha,px){
 }
 
 root.PixelHeroes={draw,frame,pose,portrait,build,GW,GH,FOOT,chars:Object.keys(HEROES),
-  drawFx,drawSpark,fxFrame,
+  drawFx,drawSpark,fxFrame,drawInstrumentFx,
   drawCone,coneFrame,coneParts:Object.keys(CONES),
   mobPose,mobFrame,drawMob,drawShot,drawCharge,mobTypes:Object.keys(MOBGFX),mobGrid:t=>MOBGFX[t]&&MOBGFX[t].g};
 })(typeof window!=='undefined'?window:globalThis);

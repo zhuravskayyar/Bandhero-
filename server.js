@@ -15,6 +15,9 @@ const ASSETS = new Map([
   ['/game-effects.css', ['game-effects.css', 'text/css; charset=utf-8']],
   ['/i18n.js', ['i18n.js', 'text/javascript; charset=utf-8']],
   ['/pixel-heroes.js', ['pixel-heroes.js', 'text/javascript; charset=utf-8']],
+  ['/assets/expansion-audio.js', ['assets/expansion-audio.js', 'text/javascript; charset=utf-8']],
+  ['/assets/expansion-genres.js', ['assets/expansion-genres.js', 'text/javascript; charset=utf-8']],
+  ['/assets/expansion-instruments.js', ['assets/expansion-instruments.js', 'text/javascript; charset=utf-8']],
   ['/tools/hero-lab.html', ['tools/hero-lab.html', 'text/html; charset=utf-8']],
   ['/assets/band-heroes-v1.png', ['assets/band-heroes-v1.png', 'image/png']],
   ['/assets/band-mobs-v1.png', ['assets/band-mobs-v1.png', 'image/png']],
@@ -42,7 +45,7 @@ const ASSETS = new Map([
 ]);
 const MAX_PLAYERS = 4;
 const MAX_MSG = 512 * 1024; // захист від завеликих повідомлень
-const CHARS = ['guitar', 'drums', 'bass', 'piano'];
+const CHARS = ['guitar', 'drums', 'bass', 'piano', 'flute', 'violin', 'sax', 'accordion'];
 let phase = 'lobby';
 let genre = 'rand';
 
@@ -255,7 +258,7 @@ function onMessage(c, text) {
   }
   if (m.t === 'ready' && phase === 'lobby') { c.ready = !!m.ready && !!c.char; pushRoster(); return; }
   if (m.t === 'genre' && c.id === hostId && phase === 'lobby' && typeof m.genre === 'string') {
-    if (!['rand', 'lofi', 'pop', 'rock', 'newwave', 'metal', 'jazz', 'chanson', 'chanson_ua', 'reggae', 'industrial'].includes(m.genre)) return;
+    if (!['rand', 'lofi', 'pop', 'rock', 'newwave', 'metal', 'jazz', 'chanson', 'chanson_ua', 'reggae', 'industrial', 'funk', 'synthwave', 'folkrock', 'blues', 'dnb'].includes(m.genre)) return;
     genre = m.genre; pushRoster(); return;
   }
   if (m.t === 'begin' && c.id === hostId && phase === 'lobby') {

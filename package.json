@@ -5,7 +5,8 @@
   "description": "Band Hero — co-op music roguelike (solo + 2-4 players over WebSocket)",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test multiplayer.test.js expansion-instruments.test.js pixel-heroes.test.js"
   },
   "engines": {
     "node": ">=18"

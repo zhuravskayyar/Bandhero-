@@ -8,12 +8,16 @@ canvas{image-rendering:pixelated;background:#13242b}
 .cell{display:flex;flex-direction:column;align-items:center;gap:2px}
 </style></head><body>
 <div id="live"></div>
+<h2>Нові бойові вміння — піксельна геометрія</h2><div id="skills" class="row"></div>
 <h2>Усі кадри (×3)</h2><div id="strips"></div>
 <script src="/pixel-heroes.js"></script>
 <script>
 const PH=window.PixelHeroes,live=document.getElementById('live'),strips=document.getElementById('strips');
 const STATES=[['idle',8],['walk',8],['atk',6],['hurt',2],['fall',6],['down',4],['rise',5]];
 const cells=[];
+const demos=[['flute','boomerang','Сопілка: листок-бумеранг'],['violin','thread','Скрипка: звукова нитка'],['sax','beam','Саксофон: тривалий видих'],['accordion','bellows','Акордеон: вдих і видих']].map(([ch,kind,label])=>{
+  const wrap=document.createElement('div');wrap.className='cell';const cv=document.createElement('canvas');cv.width=320;cv.height=220;wrap.appendChild(cv);wrap.appendChild(document.createTextNode(label));document.getElementById('skills').appendChild(wrap);return {ch,kind,cv};
+});
 for(const ch of PH.chars){
   const h=document.createElement('h2');h.textContent=ch;live.appendChild(h);
   const row=document.createElement('div');row.className='row';live.appendChild(row);
@@ -43,6 +47,14 @@ function tick(t){
     else{const fps=c.s==='walk'?12:c.s==='down'?4:c.s==='hurt'?8:16;const n=N[c.s];let f=Math.floor(sec*fps)%(n+(c.s==='atk'||c.s==='fall'||c.s==='rise'?4:0));if(f>=n)f=c.s==='fall'?n-1:c.s==='rise'?n-1:0;
       po={s:c.s,f,L:Math.floor(sec/1.2)%5,flash:c.s==='hurt'&&f===0};}
     const sz=c.cv.width;PH.draw(g,c.ch,po,sz/2,sz-12,sz,false);
+  }
+  for(const {ch,kind,cv} of demos){
+    const g=cv.getContext('2d'),age=sec%1.1;g.clearRect(0,0,cv.width,cv.height);PH.fxFrame(2000);
+    const f={kind,age,life:1.1,x:55,y:125,dir:-.1,r:12,range:235,w:.55};
+    if(kind==='boomerang'){const u=age/1.1;f.x=55+Math.sin(u*Math.PI)*220;f.y=125+Math.sin(u*Math.PI*2)*35;}
+    if(kind==='thread'){f.x=70;f.y=80;f.x2=290;f.y2=145;}
+    if(kind==='bellows'){f.x=160;f.y=110;f.delay=.55;f.r=100*((age%.55)/.55);}
+    PH.drawInstrumentFx(g,f,2);PH.draw(g,ch,{s:age<.2?'atk':'idle',f:age<.2?2:Math.floor(sec*6)%8,L:0},kind==='bellows'?160:45,150,80,false);
   }
   requestAnimationFrame(tick);
 }
