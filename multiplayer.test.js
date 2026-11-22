@@ -279,7 +279,7 @@ test('distortion clips the waveform and compensates output; chorus and bass comp
   assert.deepEqual(s.errors, []);
 });
 
-test('genre arrangements keep their rhythm and pitch articulation through every upgrade rank', t => {
+test('genre arrangements keep a stable rhythm inside each pattern band and a clean articulation at every upgrade rank', t => {
   const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const game=s.game,signatures={};
   for(const genre of Object.keys(game.GENRES)){
     const song=game.makeSong(null,genre);game.setSong(song);const original=JSON.stringify(song);
@@ -293,7 +293,10 @@ test('genre arrangements keep their rhythm and pitch articulation through every 
       }}return JSON.stringify(out);};
     for(const layers of Object.values(game.LAYERS))for(const layer of layers){
       const base=events(layer,1);assert.notEqual(base,'[]',genre+'/'+layer.id+' has a playable part');
-      for(let rank=2;rank<=5;rank++)assert.equal(events(layer,rank),base,'rhythm never accelerates: '+genre+'/'+layer.id+'/'+rank);
+      // рівень → рисунок ритму: L1–2 один рисунок, L3–4 інший, L5 третій (де в партії є рисунки); усередині пари нічого не міняється
+      assert.equal(events(layer,2),base,'ranks 1 and 2 share a pattern: '+genre+'/'+layer.id);
+      assert.equal(events(layer,4),events(layer,3),'ranks 3 and 4 share a pattern: '+genre+'/'+layer.id);
+      assert.notEqual(events(layer,5),'[]',genre+'/'+layer.id+' still plays at rank 5');
     }
     signatures[genre]=events(game.LAYERS.guitar.find(l=>l.id==='strum'),1); // стартовий удар униз однаковий у всіх жанрах навмисно
     assert.equal(JSON.stringify(song),original,'arrangement generation does not change genre, tempo or phrase');
@@ -345,9 +348,11 @@ test('every genre has its own fixed backing beat, bass, chords and hook without 
     assert.deepEqual([...parts].sort(),['bass','chord','drum','hook'],genre+' has the whole band');
     for(let i=0;i<32;i++)for(const e of events[i]){
       assert.ok(!e.atk&&!e.damage,genre+' backing has no attack');
-      if(e.midi!==undefined)assert.ok(g.chordAt(i>>4).pcs.includes(e.midi%12),genre+' backing stays in the chord');
+      // фон йде за ПОВНОЮ прогресією (навіть коли зібрано лише 1 акорд); мелодія фону — за акордом гравця
+      if(e.midi!==undefined){const ch=e.kind==='hook'?g.chordAt(i>>4):g.genreExpansion.chordAt(song,i>>4,true)||song.prog[(i>>4)%4];assert.ok(ch.pcs.includes(e.midi%12),genre+' backing stays in the chord ('+e.kind+')');}
     }
-    const signature=events.map(a=>a.filter(e=>e.kind==='drum').map(e=>e.drum).join('+')).join('|');
+    // основа біта жанру — куплет (такти 4–5); вступ навмисно рідший
+    const verse=Array.from({length:32},(_,i)=>g.backingEvents(4+(i>>4),i&15)),signature=verse.map(a=>a.filter(e=>e.kind==='drum').map(e=>e.drum).join('+')).join('|');
     beats.add(signature);
     assert.equal(JSON.stringify(events),JSON.stringify(Array.from({length:32},(_,i)=>g.backingEvents(i>>4,i&15))),genre+' keeps the same arrangement');
   }
@@ -946,7 +951,7 @@ test('level-up choice works from the keyboard: Q/E move the highlight, Space tak
   assert.ok(opts.length >= 2); assert.equal(sel(), 0, 'first card is highlighted');
   s.key('keydown', 'KeyE'); assert.equal(sel(), 1, 'E moves right');
   s.key('keydown', 'KeyQ'); s.key('keydown', 'KeyQ'); assert.equal(sel(), opts.length - 1, 'Q moves left and wraps around');
-  const level = G.level, state = () => JSON.stringify([G.layers, G.pedals, g.SONG.have, g.SONG.prog.map(c => c.name), Math.round(G.p.hp)]);
+  const level = G.level, state = () => JSON.stringify([G.layers, G.pedals, g.SONG.have, g.SONG.prog.map(c => c.name), Math.round(G.p.hp), g.SONG.notes, g.SONG.dfig]); // + ноти акорда й ритм-фігури: картка могла змінити лише їх (давало рідкісний збій)
   G.p.hp = G.p.max * .5; const before = state();
   s.key('keydown', 'Space'); await delay(50); assert.equal(g.choosing, true, 'a held Space right as the screen opens does not pick');
   await delay(400); G.xp = 0; s.key('keydown', 'Space');
@@ -1278,8 +1283,11 @@ test('accordion bellows are played in strokes of varying length, identical for t
     assert.deepEqual(JSON.stringify(g.bellowsStrokes(ph)),JSON.stringify(list),'same phrase, same strokes');
     list.forEach((x,i)=>{lens.add(x.len);if(i)assert.notEqual(x.dir,list[i-1].dir,'pull and push alternate');});}
   assert.ok([...lens].some(l=>l<=8)&&[...lens].some(l=>l>=16),'both short and long strokes occur');
-  const ev=g.buses.accordion.bellows.gain.events;g.bellowsBar(g.ctx.currentTime+.05,0);
-  const sets=ev.filter(x=>x[0]==='set'||x[0]==='linear').map(x=>x[1]);assert.ok(sets.every(Number.isFinite)&&Math.min(...sets)<.45,'bar gain swells and dips');
+  /* Міх детермінований, але ключ і темп пісні випадкові (makeSong): у такті 0 перший хід може тривати 2–8 тактів без розвороту, і «провалу» там немає.
+     Тому береться такт, де хід гарантовано розвертається (початок 2-го ходу фрази 0) — і перевіряється саме він. */
+  const turn=g.bellowsStrokes(0).find(x=>x.start>0),turnBar=turn.start>>4;
+  const ev=g.buses.accordion.bellows.gain.events,from=ev.length;g.bellowsBar(g.ctx.currentTime+.05,turnBar);
+  const sets=ev.slice(from).filter(x=>x[0]==='set'||x[0]==='linear').map(x=>x[1]);assert.ok(sets.length>3&&sets.every(Number.isFinite)&&Math.min(...sets)<.45,'bar gain swells and dips at a stroke turnaround');
   assert.deepEqual(s.errors,[]);
 });
 
@@ -1717,4 +1725,227 @@ test('co-op: guests see hearts and heal from them, and their note cards complete
   assert.ok(got, 'the guest was offered a note card');
   assert.equal(H.players.find(p => p.char === 'bass').p.max, 120, 'levels do not change max HP');
   assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+/* ================= ГЕНЕРАТОР ХУКІВ, СЕКЦІЇ ПІСНІ, ФОН, РІВНІ → РИТМ, ДРАЙВОВИЙ РОК ================= */
+const pcOf=(m,key)=>((m-key)%12+12)%12;
+const hookSig=song=>JSON.stringify({hook:song.hook,phrases:song.phrases,lead:song.lead,mel:song.mel,hk:song.hk});
+
+test('hook engine: the same seed gives the same phrases, different seeds give different ones',t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  for(const genre of Object.keys(g.GENRES)){
+    const a=g.makeSong(null,genre,{seed:777,key:2}),b=g.makeSong(null,genre,{seed:777,key:2});
+    assert.equal(hookSig(a),hookSig(b),genre+': same seed and key — the same hook');
+    assert.equal(a.seed,777);
+  }
+  const sigs=new Set(),rhythms=new Set();
+  for(let seed=1;seed<=24;seed++){const song=g.makeSong(null,'pop',{seed,key:0});sigs.add(hookSig(song));rhythms.add(JSON.stringify(song.phrases.mel));}
+  assert.ok(sigs.size>=22,'different seeds give different hooks ('+sigs.size+'/24)');
+  assert.ok(rhythms.size>=8,'rhythm is generated, not picked from two templates ('+rhythms.size+' variants)');
+  const k1=g.makeSong(null,'pop',{seed:5,key:0}),k2=g.makeSong(null,'pop',{seed:5,key:5});
+  assert.notEqual(JSON.stringify(k1.mel),JSON.stringify(k2.mel),'the key transposes the hook');
+  assert.deepEqual(s.errors,[]);
+});
+
+test('hook engine: phrases A, A′, B, A″ have the same density, stable endings, a contrasting answer and a higher return',t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  const mean=ph=>Object.values(ph.mot).reduce((a,b)=>a+b,0)/Object.keys(ph.mot).length;
+  for(const genre of Object.keys(g.GENRES))for(const seed of [3,11,29]){
+    const song=g.makeSong(null,genre,{seed,key:4});
+    for(const role of ['lead','mel']){
+      const A={pos:song.phrases[role],mot:song[role]},{Ap,B,App}=song.hk[role],name=genre+'/'+role+'/'+seed;
+      assert.ok(A.pos.length>=4&&A.pos.length<=12,name+' a motif of 4–12 notes');
+      for(const ph of [A,Ap,B,App]){
+        assert.equal(ph.pos.length,A.pos.length,name+' every phrase has the same note count (damage per second does not depend on the phrase)');
+        assert.equal(JSON.stringify(ph.pos),JSON.stringify([...new Set(ph.pos)].sort((x,y)=>x-y)),name+' sorted unique positions');
+        assert.ok(ph.pos.every(p=>p>=0&&p<32&&ph.mot[p]!==undefined),name+' every onset has a pitch');
+        assert.equal(Object.keys(ph.mot).length,ph.pos.length);
+      }
+      const weigh=pos=>{let acc=0,gap=0;pos.forEach((p,i)=>{if(p%4===2)acc++;if((pos[i+1]??pos[0]+32)-p>=6)gap++;});return acc+','+gap;};
+      for(const ph of [Ap,B,App])assert.equal(weigh(ph.pos),weigh(A.pos),name+' accents on the off-beat and long gaps are as many as in A (the same damage per bar)');
+      const last=p=>p.mot[p.pos[p.pos.length-1]];
+      assert.equal(pcOf(last(Ap),4),0,name+' A′ closes on the tonic');
+      assert.equal(pcOf(last(App),4),0,name+' A″ closes on the tonic');
+      assert.equal(pcOf(last(B),4),7,name+' B ends on an open tone (the fifth)');
+      assert.notEqual(JSON.stringify(Ap),JSON.stringify(A),name+' A′ is a variation of A');
+      const n=A.pos.length;
+      for(let i=0;i<n-2;i++)assert.equal(Ap.mot[Ap.pos[i]],A.mot[A.pos[i]],name+' A′ keeps the motif and changes only the ending');
+      assert.ok(JSON.stringify(B.pos)!==JSON.stringify(A.pos)||JSON.stringify(B.mot)!==JSON.stringify(A.mot),name+' B contrasts with A');
+      assert.ok(mean(App)>=mean(A),name+' the return is in a higher register');
+      if(genre!=='blues'&&genre!=='folkrock')for(const p of A.pos)if(p%8===0)assert.ok([0,song.mode==='minor'?3:4,7].includes(pcOf(A.mot[p],4)),name+' downbeats are chord tones of the tonic');
+    }
+  }
+  assert.deepEqual(s.errors,[]);
+});
+
+test('hook engine: leaps are answered by a step back, and the phrase played follows the song section',t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  let leaps=0,answered=0;
+  for(const genre of ['pop','rock','lofi','chanson','metal','jazz'])for(let seed=1;seed<=20;seed++){
+    const song=g.makeSong(null,genre,{seed,key:0}),pos=song.phrases.mel,n1=Math.ceil(pos.length/2),pitch=pos.map(p=>song.mel[p]);
+    for(let i=1;i<n1-1;i++){const d=pitch[i]-pitch[i-1];if(Math.abs(d)>=6){leaps++;const back=pitch[i+1]-pitch[i];if(back*d<0||back===0)answered++;}}
+  }
+  assert.ok(leaps===0||answered/leaps>=.7,'leaps are compensated ('+answered+'/'+leaps+')');
+  const song=g.makeSong(null,'pop',{seed:9,key:0});g.setSong(song);
+  const expect=(bar,name)=>assert.equal(JSON.stringify(g.hookPhrase('mel',bar)),JSON.stringify(name==='A'?{pos:song.phrases.mel,mot:song.mel}:song.hk.mel[name]),'bar '+bar+' plays '+name);
+  [[0,'A'],[3,'A'],[4,'A'],[6,'Ap'],[8,'A'],[10,'Ap'],[12,'B'],[14,'B'],[16,'App'],[20,'B'],[22,'App'],[24,'B'],[26,'Ap']].forEach(([bar,name])=>expect(bar,name));
+  g.setSong({...song,form:null,climax:null});
+  for(let bar=0;bar<8;bar++)assert.equal(g.phraseName(bar),['A','Ap','B','App'][bar>>1],'without a form the phrases cycle A·A′·B·A″');
+  for(let bar=0;bar<48;bar++)for(let st=0;st<16;st++)g.backingEvents(bar,st); // пісня без форми (тест, стара пісня) не ламає фон
+  assert.ok(Array.from({length:16},(_,st)=>g.backingEvents(5,st)).flat().some(e=>e.kind==='drum'));
+  assert.deepEqual(s.errors,[]);
+});
+
+test('guitar lead, piano melody, backing hook, flute and sax all play the same phrase of the moment',async t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  for(const inst of ['guitar','piano','flute','sax']){
+    g.setGenre('pop');await g.pick(inst);g.setPause(true);g.SONG.have=4;
+    const id={guitar:'lead',piano:'mel',flute:'melody',sax:'riff'}[inst],Ly=g.LAYERS[inst].find(l=>l.id===id),role=inst==='guitar'?'lead':'mel';
+    for(const bar of [0,2,4,6,12,16,22]){
+      const ph=g.hookPhrase(role,bar),half=(bar%2)*16,want=ph.pos.filter(p=>p>=half&&p<half+16).map(p=>p-half);
+      const heard=[];for(let st=0;st<16;st++)if(Ly.steps(g.chordAt(bar),st,bar,1).some(e=>!e.orn))heard.push(st);
+      assert.equal(JSON.stringify(heard),JSON.stringify(want),inst+' bar '+bar+' sounds exactly at the positions of '+g.phraseName(bar));
+    }
+  }
+  g.setGenre('pop');await g.pick('guitar');g.setPause(true);g.SONG.have=4;
+  for(const bar of [0,6,12,16]){const ph=g.hookPhrase('mel',bar),half=(bar%2)*16;
+    const hooks=[];for(let st=0;st<16;st++)if(g.backingEvents(bar,st).some(e=>e.kind==='hook'))hooks.push(st);
+    assert.equal(JSON.stringify(hooks),JSON.stringify(ph.pos.filter(p=>p>=half&&p<half+16).map(p=>p-half)),'the backing hook plays the phrase of bar '+bar);}
+  assert.deepEqual(s.errors,[]);
+});
+
+test('song form: intro 4, verse 8, build-up 4, chorus 8, break 4, chorus 8, then a loop with a second verse; sections change on 4-bar boundaries',t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  const song=g.makeSong(null,'rock');g.setSong(song);
+  const want=[['intro',4],['verse',8],['pre',4],['chorus',8],['break',4],['chorus',8],['verse',8],['pre',4],['chorus',8],['break',4],['chorus',8],['verse',8]];
+  let bar=0;for(const [id,len] of want){assert.equal(bar%4,0,id+' starts on a 4-bar boundary');
+    for(let i=0;i<len;i++){const sec=g.sectionAt(bar+i);assert.equal(sec.id,id,'bar '+(bar+i)+' is '+id);assert.equal(sec.i,i);}bar+=len;}
+  assert.equal(g.sectionAt(4).round,0);assert.equal(g.sectionAt(36).round,1,'the loop restarts with verse 2');assert.equal(g.sectionAt(68).round,2);
+  for(const id of Object.keys(g.SEC_NAME))for(const lang of ['en','de','ru'])assert.ok(s.dictionary[lang][g.SEC_NAME[id]],lang+' name of the section '+id);
+  const blues=g.makeSong(null,'blues');g.setSong(blues);assert.equal(g.sectionAt(5).id,'verse');assert.equal(blues.chordForm,'twelve-bar');
+  assert.deepEqual(s.errors,[]);
+});
+
+test('boss climax starts and ends on 4-bar boundaries, is the same on every client, and leaves the player parts alone',async t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  g.setGenre('pop');await g.pick('guitar');g.setPause(true);
+  const song=g.SONG;song.have=4;
+  const parts=()=>JSON.stringify(['strum','pick'].map(id=>Array.from({length:16*16},(_,i)=>g.LAYERS.guitar.find(l=>l.id===id).steps(g.chordAt(i>>4),i&15,i>>4,1).map(e=>[e.midi,e.dir]))));
+  const before=parts();
+  g.directorStep(5*16);assert.equal(JSON.stringify(song.climax),JSON.stringify([]),'no boss, no climax');
+  const boss=g.addMob('boss1',0,0);
+  g.directorStep(5*16+1);assert.equal(JSON.stringify(song.climax),JSON.stringify([]),'decisions are made on the first step of a bar');
+  g.directorStep(5*16);assert.equal(JSON.stringify(song.climax),JSON.stringify([[8,null]]),'a boss in bar 5 → climax from the next 4-bar boundary (bar 8)');
+  g.directorStep(6*16);assert.equal(JSON.stringify(song.climax),JSON.stringify([[8,null]]),'no duplicate');
+  assert.notEqual(g.sectionAt(7).id,'climax');for(const b of [8,9,15,20])assert.equal(g.sectionAt(b).id,'climax','bar '+b);
+  boss.hp=0;g.G.mobs=g.G.mobs.filter(m=>m!==boss);
+  g.directorStep(10*16);assert.equal(JSON.stringify(song.climax),JSON.stringify([[8,12]]),'boss down in bar 10 → back to the form from bar 12');
+  assert.equal(g.sectionAt(11).id,'climax');assert.notEqual(g.sectionAt(12).id,'climax');
+  const guest=JSON.parse(JSON.stringify(song));
+  for(let b=0;b<40;b++)assert.equal(JSON.stringify(g.sectionAt(b,guest)),JSON.stringify(g.sectionAt(b)),'a guest copy of the song agrees on bar '+b);
+  assert.equal(parts(),before,'the climax never changes which notes the player parts play');
+  const b2=g.addMob('boss1',0,0);g.directorStep(13*16);assert.equal(JSON.stringify(song.climax),JSON.stringify([[8,12],[16,null]]));
+  b2.hp=0;g.G.mobs=g.G.mobs.filter(m=>m!==b2);g.directorStep(14*16);assert.equal(JSON.stringify(song.climax),JSON.stringify([[8,12]]),'withdrawn before it started');
+  // арранжування: кульмінація більша за куплет; перед приспівом — брейк барабанів; брейк — стоп-тайм; крэш на початку приспіву
+  const count=(bar,drum)=>Array.from({length:16},(_,st)=>g.backingEvents(bar,st).filter(e=>e.drum===drum).length).reduce((a,b)=>a+b,0);
+  assert.ok(count(8,'kick')>count(5,'kick'),'climax kicks more than a verse');
+  assert.ok(count(15,'snare')>=5,'the bar before the chorus is a snare fill');
+  const stop=Array.from({length:16},(_,st)=>g.backingEvents(24,st).length);assert.ok(stop[0]>0&&stop.slice(1).every(n=>n===0),'break: stop-time, only the downbeat sounds');
+  assert.ok(g.backingEvents(16,0).some(e=>e.drum==='crash'),'crash on the first beat of a chorus');
+  assert.deepEqual(s.errors,[]);
+});
+
+test('backing plays the whole progression from the start; the player part follows only the collected chords, and clashes are quieter',t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  for(const genre of ['pop','rock','jazz','blues','funk']){
+    const song=g.makeSong(null,genre);song.have=1;g.setSong(song);
+    const full=bar=>g.genreExpansion.chordAt(song,bar,true)||song.prog[bar%4];
+    const bars=genre==='blues'?[4,5,8,10]:[4,5,6,7],all=bar=>Array.from({length:16},(_,st)=>g.backingEvents(bar,st)).flat();
+    assert.equal(g.chordAt(5),g.chordAt(4),genre+': the player still has a single chord');
+    let moved=0;
+    for(const bar of bars){
+      const evs=all(bar);
+      for(const e of evs.filter(e=>e.kind==='bass'||e.kind==='chord'))assert.ok(full(bar).pcs.includes(e.midi%12),genre+' bar '+bar+' '+e.kind+' follows the full progression');
+      if(full(bar).root!==g.chordAt(bar).root&&evs.some(e=>e.kind==='bass'&&e.midi%12===full(bar).root))moved++;
+      for(const e of evs.filter(e=>e.kind==='hook'))assert.ok(g.chordAt(bar).pcs.includes(e.midi%12),genre+' the backing melody stays in the player chord');
+    }
+    assert.ok(moved>=1,genre+' the backing bass moves with the full progression while the player holds one chord');
+    const top=(bar,kind)=>Math.max(0,...all(bar).filter(e=>e.kind===kind).map(e=>e.vel)),compat=b=>g.chordAt(b).pcs.every(x=>full(b).pcs.includes(x)),diff=bars.find(b=>!compat(b)),same=bars.find(compat);
+    // «розбіжність» — коли акорд гравця не міститься в акорді фону (I і vi мають спільні ноти й не б'ються)
+    if(diff!==undefined&&same!==undefined&&top(same,'chord')>0&&top(diff,'chord')>0){
+      assert.ok(top(diff,'chord')<top(same,'chord')*.7,genre+' chords are quieter when they differ from the player harmony');
+      assert.ok(top(diff,'bass')<top(same,'bass')||top(same,'bass')===0,genre+' bass is a little quieter when it differs');
+    }
+    song.have=4;for(const b of bars)assert.equal(g.chordAt(b),full(b),genre+' collected: the player joins the full progression');
+  }
+  assert.deepEqual(s.errors,[]);
+});
+
+test('the phrase that sounds changes pitch and placement, but flute and sax parts stay within 25% of the same damage per two bars',t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  for(const genre of Object.keys(g.GENRES))for(let seed=1;seed<=4;seed++){
+    const song=g.makeSong(null,genre,{seed,key:seed});song.have=4;g.setSong(song);
+    for(const [inst,id] of [['flute','melody'],['sax','riff'],['flute','pulse'],['sax','pulse']]){
+      const Ly=g.LAYERS[inst].find(l=>l.id===id),weigh=b0=>{let tot=0;for(let b=b0;b<b0+2;b++)for(let st=0;st<16;st++)for(const e of Ly.steps(g.chordAt(b),st,b,1))tot+=g.instrumentExpansion.noteWeight(e);return tot;};
+      const ws=[0,6,12,16].map(weigh); // A, A′, B, A″ (за секціями: вступ, куплет, наростання, приспів)
+      assert.ok(Math.max(...ws)/Math.min(...ws)<1.25,genre+' '+inst+'/'+id+' weight per phrase '+ws.join('/'));
+    }
+  }
+  assert.deepEqual(s.errors,[]);
+});
+
+test('level → rhythm: L1–2 pattern 1, L3–4 pattern 2, L5 pattern 3; normalized damage per second follows only lv(L)',t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  assert.equal(JSON.stringify([1,2,3,4,5].map(g.patOf)),'[1,1,2,2,3]');
+  let differs=0,checked=0;
+  for(const genre of Object.keys(g.GENRES)){
+    const song=g.makeSong(null,genre);g.setSong(song);
+    for(const inst of Object.keys(g.LAYERS)){
+      g.setChar(inst);const bal=g.balanceTable();
+      for(const Ly of g.LAYERS[inst]){
+        const hps=[1,2,3].map(p=>g.hitsPerSec(genre,song.bpm,Ly,p)),dps=hps.map((h,i)=>h*bal[Ly.id][i]);
+        if(hps.every(h=>h>0)){for(let i=1;i<3;i++)assert.ok(Math.abs(dps[i]-dps[0])<dps[0]*1e-6,genre+'/'+inst+'/'+Ly.id+' normalized DPS is the same at every pattern');checked++;}
+        const bars=genre==='blues'?12:8,play=L=>JSON.stringify(Array.from({length:bars*16},(_,i)=>Ly.steps(g.chordAt(i>>4),i&15,i>>4,L).map(e=>[e.midi,e.drum,e.dir])));
+        assert.equal(play(1),play(2),genre+'/'+Ly.id+' L1=L2');assert.equal(play(3),play(4),genre+'/'+Ly.id+' L3=L4');
+        if(play(1)!==play(3)||play(3)!==play(5))differs++;
+      }
+    }
+  }
+  assert.ok(checked>800,'checked '+checked+' layers');assert.ok(differs>100,'many parts really change rhythm with the level ('+differs+')');
+  // реальний підрахунок ударів «вагою 1» на кожному рівні × коефіцієнт балансу рисунка, який діє на цьому рівні (P(L)) — не алгебра таблиці
+  for(const genre of ['pop','rock','metal','lofi','reggae']){
+    const song=g.makeSong(null,genre);g.setSong(song);const bars=8,sec=bars*16*60/song.bpm/4;
+    for(const [inst,id] of [['bass','walk'],['bass','octave'],['bass','groove'],['piano','left'],['piano','stab'],['drums','rim'],['drums','kick'],['drums','crash']]){
+      g.setChar(inst);const bal=g.balanceTable(),Ly=g.LAYERS[inst].find(l=>l.id===id);
+      const dps=L=>{let n=0;for(let b=0;b<bars;b++)for(let st=0;st<16;st++)n+=Ly.steps(g.chordAt(b),st,b,L).length>0?1:0;return n/sec*bal[id][g.P(L)-1];};
+      for(let L=2;L<=5;L++)assert.ok(Math.abs(dps(L)-dps(1))<dps(1)*1e-6,genre+'/'+id+' damage per second at L'+L+' is the same before the lv(L) multiplier');
+    }
+  }
+  for(const genre of ['pop','rock','metal']){
+    const song=g.makeSong(null,genre);g.setSong(song);g.setChar('guitar');const strum=g.LAYERS.guitar.find(l=>l.id==='strum');
+    const hits=L=>Array.from({length:16},(_,st)=>strum.steps(g.chordAt(0),st,0,L).length>0?1:0).reduce((a,b)=>a+b,0);
+    assert.ok(hits(1)<hits(3)&&hits(3)<=hits(5),genre+' strum gets denser with the level: '+[1,3,5].map(hits));
+  }
+  assert.deepEqual(s.errors,[]);
+});
+
+test('Driving Rock: a fast major genre with eighth-note drive, snare on 2 and 4 with fills, and a beat in every part',t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  const G=g.GENRES.rockfast;assert.ok(G,'rockfast exists');assert.equal(G.mode,'major');assert.ok(G.bpm[0]>=135&&G.bpm[1]<=150);
+  for(const lang of ['en','de','ru'])assert.ok(s.dictionary[lang]['Драйвовий рок'],lang+' name');
+  const song=g.makeSong(null,'rockfast');song.have=4;g.setSong(song);
+  assert.ok(song.bpm>=135&&song.bpm<=150);assert.equal(song.mode,'major');assert.equal(song.prog.length,4);
+  const at=(inst,id,bar,st,L=1)=>g.LAYERS[inst].find(l=>l.id===id).steps(g.chordAt(bar),st,bar,L),steps=(inst,id,bar)=>[...Array(16).keys()].filter(st=>at(inst,id,bar,st).length);
+  for(let bar=0;bar<4;bar++){
+    assert.deepEqual(steps('bass','root',bar),[0,2,4,6,8,10,12,14],'bass drives in eighths');
+    assert.deepEqual(steps('drums','hat',bar),[0,2,4,6,8,10,12,14],'eighth hats');
+    const sn=steps('drums','snare',bar);assert.ok(sn.includes(4)&&sn.includes(12),'snare on 2 and 4');
+    if(bar===3)assert.ok(sn.length>2,'the snare fills the last bar of the phrase');else assert.deepEqual(sn,[4,12]);
+  }
+  for(const inst of ['guitar','drums','bass','piano','flute','violin','sax','accordion'])for(const Ly of g.LAYERS[inst]){
+    let n=0;for(let bar=0;bar<8;bar++)for(let st=0;st<16;st++)n+=Ly.steps(g.chordAt(bar),st,bar,1).length;assert.ok(n>0,inst+'/'+Ly.id+' has a beat in rockfast (never a drone)');
+  }
+  const be=Array.from({length:64},(_,i)=>g.backingEvents(i>>4,i&15)).flat();
+  assert.deepEqual([...new Set(be.map(e=>e.kind))].sort(),['bass','chord','drum','hook'],'the backing has the whole band');
+  assert.deepEqual(s.errors,[]);
 });

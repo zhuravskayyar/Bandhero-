@@ -8,7 +8,7 @@ function buildInstrumentExpansion(api) {
   const ranks=(a,b,c)=>[T(a),T(b),T(c)];
   const strength=ranks('Та сама фраза; базова сила','Та сама фраза; сильніша атака','Та сама фраза; ще більше сили');
   const songNote=(ch,s,b,low=67)=>{
-    const melody=api.SONG?.mel||{},positions=Object.keys(melody).map(Number),p=((b%2)*16+s+32)%32;
+    const S0=api.SONG||{},H0=api.hookPhrase&&S0.phrases&&S0.mel?api.hookPhrase('mel',b):null,melody=H0?H0.mot:S0.mel||{},positions=Object.keys(melody).map(Number),p=((b%2)*16+s+32)%32;
     let nearest=positions[0],distance=99;for(const at of positions){const gap=Math.abs(at-p),d=Math.min(gap,32-gap);if(d<distance){nearest=at;distance=d;}}
     const target=nearest===undefined?up(ch.root,low):melody[nearest],candidates=tones(ch,low-12,12);
     return candidates.reduce((a,m)=>Math.abs(m-target)<Math.abs(a-target)?m:a,candidates[0]);
@@ -64,12 +64,12 @@ function buildInstrumentExpansion(api) {
   const snapTo=(m,ch)=>{if(!ch.pcs)return m;let best=m,bd=99;for(let d=-3;d<=3;d++){if(ch.pcs.includes((((m+d)%12)+12)%12)&&Math.abs(d)<bd){bd=Math.abs(d);best=m+d;}}return best;};
   const fold=(m,lo,hi)=>{while(m<lo)m+=12;while(m>hi)m-=12;return m;};
   function melodyAt(ch,s,b,lo,hi){
-    const S=api.SONG||{},real=Array.isArray(S.phrases?.mel)&&S.phrases.mel.length&&S.mel;
-    const sorted=(real?S.phrases.mel.filter(p=>p<32):FALLBACK_POS).slice().sort((a,c)=>a-c),p=(b%2)*16+s;
+    const S=api.SONG||{},H=api.hookPhrase&&S.phrases&&S.mel?api.hookPhrase('mel',b):null,pos=H?H.pos:S.phrases?.mel,mot=H?H.mot:S.mel,real=Array.isArray(pos)&&pos.length&&mot; /* фраза A, A′, B чи A″ — за секцією пісні */
+    const sorted=(real?pos.filter(p=>p<32):FALLBACK_POS).slice().sort((a,c)=>a-c),p=(b%2)*16+s;
     const i=sorted.indexOf(p);if(i<0)return null;
     const next=sorted[i+1]??sorted[0]+32,prev=sorted[i-1]??sorted[sorted.length-1];
-    const m=real?fold(snapTo(S.mel[p],ch),lo,hi):cn(ch,FALLBACK_DEG[i%FALLBACK_DEG.length],lo+(hi-lo>14?5:0));
-    const leap=real?Math.abs(S.mel[p]-S.mel[prev])>=7:false;
+    const m=real?fold(snapTo(mot[p],ch),lo,hi):cn(ch,FALLBACK_DEG[i%FALLBACK_DEG.length],lo+(hi-lo>14?5:0));
+    const leap=real?Math.abs(mot[p]-mot[prev])>=7:false;
     return {m,gap:next-p,last:i===sorted.length-1,leap};
   }
   /* Картки акордів гравця (ch.fluteThird, saxBlue, close…) — через personalPitch, але з поправкою на регістр: ноти лишаються поруч зі своєю мелодією */

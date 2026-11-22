@@ -8,6 +8,8 @@
       synthwave:{name:T('Синтвейв'),bpm:[100,120],swing:[0,0],mode:'minor',st:'tri',kit:'electro',keys:T('аналоговий синтезатор'),sf:{guitar:'electric_guitar_clean',bass:'synth_bass_1',piano:'lead_2_sawtooth',...extra},famous:[[0,8,10,5],[0,3,8,10],[0,10,8,7]]},
       folkrock:{name:T('Український фолк-рок'),bpm:[108,132],swing:[0,.02],mode:'minor',st:'tri',kit:'acoustic',keys:T('струнний ансамбль'),sf:{guitar:'acoustic_guitar_steel',bass:'electric_bass_finger',piano:'string_ensemble_1',...extra},famous:[[0,5,10,3],[0,10,5,7],[0,3,10,7]]},
       blues:{name:T('Блюз'),bpm:[76,96],swing:[.60,.67],mode:'major',st:'sev',palette:[0,5,7],kit:'acoustic',keys:T('блюзовий рояль'),sf:{guitar:'electric_guitar_jazz',bass:'acoustic_bass',piano:'acoustic_grand_piano',...extra},famous:[[0,5,7,0]]},
+      // Драйвовий рок: швидкий (135–150), мажорний, квінтакорди; безперервний восьмий бас і хет, малий на 2 і 4 із брейком у 4-му такті фрази
+      rockfast:{name:T('Драйвовий рок'),bpm:[135,150],swing:[0,0],mode:'major',st:'power',kit:'acoustic',keys:T('рояль'),sf:{guitar:'distortion_guitar',bass:'electric_bass_pick',piano:'acoustic_grand_piano',...extra},famous:[[0,7,9,5],[0,5,7,5],[9,5,0,7],[0,7,5,0]]},
       dnb:{name:T('Драм-н-бейс'),bpm:[166,178],swing:[0,0],mode:'minor',st:'sev',kit:'electro',keys:T('електропіано й синтезатор'),sf:{guitar:'electric_guitar_clean',bass:'synth_bass_2',piano:'electric_piano_2',...extra},famous:[[0,8,3,10],[0,5,3,10],[0,10,8,5]]}
     };
     const plans={
@@ -15,9 +17,10 @@
       synthwave:{pattern:1,pick:[2,6,10,14],lead:[[0,6,12,18,24,30],[0,4,10,16,22,28]],mel:[[0,8,14,20,24,30],[0,6,12,18,24,28]],arp:[0,2,4,6,8,10,12,14],range:[60,79]},
       folkrock:{pattern:1,pick:[2,6,10,14],lead:[[0,2,4,6,8,12,16,18,20,22,26,30],[0,4,6,8,10,14,16,20,22,24,28,30]],mel:[[0,4,6,10,12,16,20,22,26,28],[0,2,6,8,12,16,18,22,24,28]],arp:[0,4,6,8,12,14],range:[62,81]},
       blues:{pattern:1,pick:[2,6,10,14],lead:[[0,6,8,14,18,22,28],[2,4,10,14,16,22,26]],mel:[[0,6,12,18,24,28],[2,8,14,20,26,30]],arp:[0,4,8,12],range:[57,76]},
+      rockfast:{pattern:1,pick:[2,6,10,14],lead:[[0,6,8,14,16,22,24,30],[0,4,8,14,16,20,24,30]],mel:[[0,4,8,12,16,20,24,28],[0,6,8,14,16,22,24,30]],arp:[0,2,4,6,8,10,12,14],range:[59,78]},
       dnb:{pattern:1,pick:[6,14],lead:[[0,10,18,28],[4,14,20,30]],mel:[[0,6,10,16,22,28],[2,8,14,18,24,30]],arp:[0,6,8,14],range:[60,79]}
     };
-    const grooves={funk:[3,6,10,15],synthwave:[2,6,10,14],folkrock:[2,6,10,14],blues:[2,6,10,14],dnb:[0,6,10,14]};
+    const grooves={funk:[3,6,10,15],synthwave:[2,6,10,14],folkrock:[2,6,10,14],blues:[2,6,10,14],rockfast:[2,6,10,14],dnb:[0,6,10,14]};
     const bluesForm=[0,0,0,0,1,1,0,0,2,1,3,2];
     const majorBlues=[0,3,5,6,7,10],minorScale=[0,2,3,5,7,8,10];
     const midi=(pc,low)=>low+((pc-low)%12+12)%12;
@@ -27,16 +30,16 @@
     const eq=(s,arr)=>arr.includes(s);
 
     function chordQuality(gk,off){return gk==='blues'&&[0,5,7].includes(off)?'7':null;}
-    function chordAt(song,bar){
+    function chordAt(song,bar,full){ // full — вся 12-тактова форма з усіма акордами прогресії (для фону)
       if(song.genre!=='blues')return null;
-      const count=Math.max(1,Math.min(song.prog.length,song.have||song.prog.length));
+      const count=full?song.prog.length:Math.max(1,Math.min(song.prog.length,song.have||song.prog.length));
       return song.prog[bluesForm[((bar%12)+12)%12]%count];
     }
     function decorateSong(song){
       if(!genres[song.genre])return song;
       // Form is deterministic and survives copying a song to the other devices.
       if(song.genre==='blues'){
-        song.form='twelve-bar';
+        song.chordForm='twelve-bar'; // (song.form — секції пісні, див. game.html: sectionAt)
         const seq=[0,2,3,4,2,1,0,5],make=(positions,low)=>Object.fromEntries(positions.map((p,i)=>[p,midi(song.key,low)+majorBlues[seq[i%seq.length]]]));
         song.lead=make(song.phrases.lead,57);song.mel=make(song.phrases.mel,60);
       }
@@ -56,7 +59,8 @@
           const patterns={
             funk:[{0:'K',3:'K',6:'K',10:'K',14:'K'},{0:'K',6:'K',7:'K',11:'K',14:'K'},{0:'K',3:'K',6:'K',10:'K',14:'K'},{0:'K',6:'K',10:'K',13:'K'}],
             synthwave:[{0:'D',8:'U'}],folkrock:[{0:'D',4:'D',6:'U',8:'D',12:'D',14:'U'},{0:'D',4:'D',6:'U',10:'U',12:'D',14:'U'}],
-            blues:[{0:'C',6:'C',8:'C',14:'C'},{0:'C',2:'C',8:'C',10:'C'}],dnb:[{0:'K',10:'K'},{6:'K',14:'K'}]
+            blues:[{0:'C',6:'C',8:'C',14:'C'},{0:'C',2:'C',8:'C',10:'C'}],dnb:[{0:'K',10:'K'},{6:'K',14:'K'}],
+            rockfast:[{0:'D',2:'M',4:'D',6:'M',8:'D',10:'M',12:'D',14:'M'},{0:'D',2:'M',4:'D',6:'M',8:'D',10:'M',12:'D',14:'D'}]
           };
           const patternsFor=patterns[g],dir=patternsFor[bar%patternsFor.length][s];
           if(!dir)return[];
@@ -66,7 +70,7 @@
           return ev;
         }
         if(id==='chuck'){
-          const use={funk:[1,5,9,13],synthwave:[12],folkrock:[4,12],blues:[4,12],dnb:[12]}[g];
+          const use={funk:[1,5,9,13],synthwave:[12],folkrock:[4,12],blues:[4,12],rockfast:[2,6,10,14],dnb:[12]}[g];
           return eq(s,use)?one(ch.vo[0].midi,g==='funk'?.35:.25,.5,{dir:'X',art:'dead'}):[];
         }
         if(id==='pick'){
@@ -78,12 +82,13 @@
       if(inst==='drums'){
         if(id==='kick'){
           const fe=api.figEvents&&api.figEvents(bar,s);if(fe==='mute')return[];if(fe)return fe;
-          const use={funk:phase===3?[0,3,8,10,15]:[0,3,8,10],synthwave:[0,4,8,12],folkrock:bar%2?[0,6,8,14]:[0,8,10],blues:[0,8],dnb:bar%2?[0,7,10,15]:[0,6,10]}[g];
+          const use={funk:phase===3?[0,3,8,10,15]:[0,3,8,10],synthwave:[0,4,8,12],folkrock:bar%2?[0,6,8,14]:[0,8,10],blues:[0,8],rockfast:phase===3?[0,6,8,10,14]:bar%2?[0,6,8,10]:[0,8,10],dnb:bar%2?[0,7,10,15]:[0,6,10]}[g];
           return eq(s,use)?[api.D('kick',s===0?.95:g==='blues'?.55:.8)]:[];
         }
         if(id==='snare'){
           if(s===4||s===12)return[api.D('snare',g==='blues'?.7:.92)];
-          const ghost={funk:[7,15],synthwave:[],folkrock:phase===3?[14]:[],blues:[],dnb:bar%2?[3,9,14]:[3,11]}[g];
+          if(g==='rockfast'&&phase===3&&s>=13)return[api.D('snare',[.5,.58,.7][s-13])]; // брейк малого в кінці 4-го такту фрази
+          const ghost={funk:[7,15],synthwave:[],folkrock:phase===3?[14]:[],blues:[],rockfast:[],dnb:bar%2?[3,9,14]:[3,11]}[g];
           return eq(s,ghost)?[api.D(g==='folkrock'?'rim':'snare',g==='dnb'?.22:.25)]:[];
         }
         if(id==='hat'){
@@ -101,8 +106,9 @@
           if(g==='folkrock')map={0:[r,.85],6:[r,.58],8:[r+7,.75],14:[r+7,.6]};
           if(g==='blues')map={0:[r,.8],4:[r+4,.65],8:[r+7,.75],12:[r+9,.65]};
           if(g==='dnb')map=bar%2?{0:[r,.75],7:[r,.6],10:[r+12,.68]}:{0:[r,.78],6:[r,.62],10:[r+7,.65]};
+          if(g==='rockfast')map=Object.fromEntries([0,2,4,6,8,10,12,14].map(p=>[p,[r,p%4===0?.85:.66]])); // безперервний восьмий «драйв» на корені
           const n=map[s];if(!n)return[];
-          return damp(n[0],n[1],g==='synthwave'?.18:g==='funk'?.18:g==='dnb'?.3:.38,{str:0});
+          return damp(n[0],n[1],g==='synthwave'?.18:g==='funk'?.18:g==='rockfast'?.2:g==='dnb'?.3:.38,{str:0});
         }
         if(id==='walk'){
           const use=g==='blues'?[2,6,10,14]:g==='funk'?[7,15]:[4,12];if(!eq(s,use))return[];
@@ -114,7 +120,7 @@
       }
       if(inst==='piano'){
         if(id==='chords'){
-          const map={funk:{3:.13,6:.15,10:.15,14:.12},synthwave:{0:1.6,8:1.2},folkrock:{0:.65,8:.65},blues:{4:.3,12:.3},dnb:bar%2?{6:.5,14:.5}:{0:.6,10:.5}}[g];
+          const map={funk:{3:.13,6:.15,10:.15,14:.12},synthwave:{0:1.6,8:1.2},folkrock:{0:.65,8:.65},blues:{4:.3,12:.3},rockfast:{0:.5,4:.25,8:.5,12:.25},dnb:bar%2?{6:.5,14:.5}:{0:.6,10:.5}}[g];
           if(map[s]===undefined)return[];
           const ns=chordNotes(ch,g==='blues'?53:55,3);
           return ns.map((n,i)=>api.E(n,g==='funk'?.4:g==='dnb'?.35:.46,8,{off:i*.006,...(g==='synthwave'||g==='folkrock'?{}:{art:'staccato',seconds:map[s]})}));
