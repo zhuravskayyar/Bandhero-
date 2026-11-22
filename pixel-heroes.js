@@ -438,9 +438,10 @@ function build(ch,po){
 
 const rgbCache=new Map();
 const rgb=h=>{let v=rgbCache.get(h);if(!v){v=[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];rgbCache.set(h,v);}return v;};
-function toCanvas(b,flash,scale=1){
-  const W=b.w||GW,H=b.h||GH,cv=document.createElement('canvas');cv.width=W;cv.height=H;const g=cv.getContext('2d'),im=g.createImageData(W,H),d=im.data;
+function toCanvas(b,flash,scale=1,tint){
+  const W=b.w||GW,H=b.h||GH,cv=document.createElement('canvas');cv.width=W;cv.height=H;const g=cv.getContext('2d'),im=g.createImageData(W,H),d=im.data,tc=tint?rgb(tint):null;
   for(let i=0;i<b.length;i++){const c=b[i];if(!c)continue;let [r,gg,bb]=rgb(c);
+    if(tc&&r+gg+bb>150){r=r*.4+tc[0]*.6;gg=gg*.4+tc[1]*.6;bb=bb*.4+tc[2]*.6;} // колір акорда: темні контури лишаються темними
     if(flash&&c!==OUT){r+=(255-r)*.72;gg+=(255-gg)*.72;bb+=(255-bb)*.72;}
     d[i*4]=r;d[i*4+1]=gg;d[i*4+2]=bb;d[i*4+3]=255;}
   g.putImageData(im,0,0);
@@ -959,8 +960,8 @@ const CONES={strum:{W:72,draw:cStrum},chuck:{W:48,draw:cChuck},pick:{W:56,draw:c
 const coneCache=new Map();
 function coneFrame(part,deg,f){
   if(typeof document==='undefined')return null;const C=CONES[part];if(!C)return null;
-  const d=Math.round(Math.max(8,Math.min(90,deg))/5)*5,k=part+'|'+d+'|'+f;let cv=coneCache.get(k);
-  if(!cv){const H=Math.max(7,Math.round(C.W*2*Math.tan(d*Math.PI/360)))|1,b=mk(C.W,H);C.draw(b,f);cv=toCanvas(b);coneCache.set(k,cv);}
+  const d=Math.round(Math.max(8,Math.min(90,deg))/5)*5,k=part+'|'+d+'|'+f+'|'+(TINT||'');let cv=coneCache.get(k);
+  if(!cv){const H=Math.max(7,Math.round(C.W*2*Math.tan(d*Math.PI/360)))|1,b=mk(C.W,H);C.draw(b,f);cv=toCanvas(b,0,1,TINT);coneCache.set(k,cv);}
   return cv;
 }
 // Вершина в (x,y), напрям dir, довжина len (зона удару), повна ширина конуса deg градусів.
@@ -988,6 +989,10 @@ const INSTC={ // [біле ядро, світлий, основний, темн�
   sax:['#fff9d8','#ffe18c','#dfa83c','#8a5820'],
   accordion:['#f2ffe2','#a8e0b6','#62b99a','#2c715f']};
 const GOLD=['#fffbe0','#ffe2b0','#e0b050','#8a6020'];
+// Колір акорда (поле cc атаки): палітра інструмента зміщується до нього на 60%, тож інструмент ще впізнати. TINT діє лише всередині drawFx/drawInstrumentFx.
+let TINT=null;const tintPals=new Map();
+function mixHex(a,b,k){const x=rgb(a),y=rgb(b);return '#'+[0,1,2].map(i=>Math.round(x[i]*(1-k)+y[i]*k).toString(16).padStart(2,'0')).join('');}
+function palOf(inst,fallback=INSTC.guitar){const C=INSTC[inst]||fallback;if(!TINT)return C;const k=inst+'|'+TINT;let t=tintPals.get(k);if(!t){t=C.map(c=>mixHex(c,TINT,.6));tintPals.set(k,t);}return t;}
 // Ліміт клітинок на кадр (fxFrame() скидає на початку кадру): при масових вибухах решта просто не домальовується.
 let cellBudget=9000;
 function fxFrame(n=9000){cellBudget=n;}
@@ -1079,8 +1084,8 @@ function shotSprite(style,C,f){
   return b;
 }
 const fxShotCache=new Map();
-function shotFx(style,inst,f){const k=style+'|'+inst+'|'+f;let cv=fxShotCache.get(k);
-  if(!cv){cv=toCanvas(outline(shotSprite(style,INSTC[inst]||INSTC.bass,f),'#0a0610'));fxShotCache.set(k,cv);}return cv;}
+function shotFx(style,inst,f){const k=style+'|'+inst+'|'+f+'|'+(TINT||'');let cv=fxShotCache.get(k);
+  if(!cv){cv=toCanvas(outline(shotSprite(style,palOf(inst,INSTC.bass),f),'#0a0610'));fxShotCache.set(k,cv);}return cv;}
 
 // ---------- ІСКРИ ВЛУЧАНЬ (по одній на інструмент, 6 кадрів) ----------
 function sparkSprite(inst,f){const b=mk(17,17),C=INSTC[inst]||INSTC.guitar,c=8;
@@ -1121,7 +1126,7 @@ const EXPANSION_SHOTS={flute:'flute-leaf',violin:'violin-bow',sax:'sax-note',acc
 // Візуальний контур повторює форму атаки: нитка, сектор дихання, кільце міхів, листок.
 function drawExpansionFx(ctx,kind,o,inst,age,dur,alpha,px){
   if(!EXPANSION_SHOTS[inst])return false;
-  const C=INSTC[inst],t=Math.max(0,Math.min(1,age/dur)),pn=pen(ctx,px),f=Math.floor(age*12)%4;
+  const C=palOf(inst),t=Math.max(0,Math.min(1,age/dur)),pn=pen(ctx,px),f=Math.floor(age*12)%4;
   ctx.save();ctx.globalAlpha=alpha;
   if(kind==='shot'){
     const ang=Math.atan2(o.vy||0,o.vx||0),s=Math.max(25,(o.r||7)*3.2),cv=shotFx(EXPANSION_SHOTS[inst],inst,f);
@@ -1172,9 +1177,10 @@ function drawBellowsAura(ctx,x,y,r,squeeze,flash,px=2.1,rot=0){
   for(let k=0;k<4;k++){const a=rot+k*Math.PI/2+Math.PI/4,ca=Math.cos(a),sa=Math.sin(a);pline(pn,x+ca*(r-amp-px),y+sa*(r-amp-px),x+ca*(r+amp+px),y+sa*(r+amp+px),C[2]);}
   pn.flush();ctx.restore();return true;
 }
-function drawInstrumentFx(ctx,f,px=2.1){
+function drawInstrumentFx(ctx,f,px=2.1){TINT=f&&f.cc||null;try{return drawInstrumentFx0(ctx,f,px);}finally{TINT=null;}}
+function drawInstrumentFx0(ctx,f,px){
   if(typeof document==='undefined'||!['boomerang','thread','beam','bellows','noteRing','orbit','feather','twister','gust','blast','fireball','smokering','bounce','puddle'].includes(f.kind))return false;
-  const inst={boomerang:'flute',thread:'violin',beam:'sax',bellows:'accordion',noteRing:'accordion',orbit:'flute',feather:'flute',twister:'flute',gust:'flute',blast:'sax',fireball:'sax',smokering:'sax',bounce:'sax',puddle:'sax'}[f.kind],C=INSTC[inst],age=Math.max(0,f.age||0),alpha=Math.max(0,Math.min(1,((f.life||1)-age)*5)),pn=pen(ctx,px);
+  const inst={boomerang:'flute',thread:'violin',beam:'sax',bellows:'accordion',noteRing:'accordion',orbit:'flute',feather:'flute',twister:'flute',gust:'flute',blast:'sax',fireball:'sax',smokering:'sax',bounce:'sax',puddle:'sax'}[f.kind],C=palOf(inst),age=Math.max(0,f.age||0),alpha=Math.max(0,Math.min(1,((f.life||1)-age)*5)),pn=pen(ctx,px);
   if(!alpha)return true;
   ctx.save();ctx.globalAlpha=alpha;
   if(f.kind==='boomerang'){
@@ -1313,10 +1319,11 @@ function drawInstrumentFx(ctx,f,px=2.1){
   }
   ctx.restore();return true;
 }
-function drawFx(ctx,kind,o,inst,age,dur,alpha,px){
+function drawFx(ctx,kind,o,inst,age,dur,alpha,px){TINT=o&&o.cc||null;try{return drawFx0(ctx,kind,o,inst,age,dur,alpha,px);}finally{TINT=null;}}
+function drawFx0(ctx,kind,o,inst,age,dur,alpha,px){
   if(typeof document==='undefined')return false;
   if(drawExpansionFx(ctx,kind,o,inst,age,dur,alpha,px))return true;
-  const C=INSTC[inst]||INSTC.guitar,t=Math.max(0,Math.min(1,age/dur)),f=Math.min(5,Math.floor(t*6));
+  const C=palOf(inst),t=Math.max(0,Math.min(1,age/dur)),f=Math.min(5,Math.floor(t*6));
   if(kind==='cone'){if(!CONES[o.layer])return false;const w=(o.w||.52)*180/Math.PI;return drawCone(ctx,o.layer,w,f,o.x,o.y,o.dir,o.maxR,alpha);}
   ctx.save();ctx.globalAlpha=alpha;
   if(kind==='ring'){const r=8+(o.maxR-8)*Math.min(1,age/.22),st=o.boom?'boom':RINGS[o.layer]?o.layer:'def',pn=pen(ctx,px);

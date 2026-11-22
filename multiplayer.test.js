@@ -78,6 +78,7 @@ function session(origin, audio = false, audioFixture = {}) {
     // SoundFont-банк (.sf2) не тягнемо з мережі: тест не має залежати від того, чи запущено сервер на 8080.
     // audioFixture.sf2 — справжній файл із диска (див. тест «A320U bank renders…»), інакше банку «немає» → запасні семпли.
     fetch: (url, opts) => { const u = new URL(url, origin);
+      if (u.pathname.startsWith('/assets/violin/')) return Promise.resolve(audioFixture.violin ? { ok: true, arrayBuffer: async () => new ArrayBuffer(8) } : { ok: false }); // семпли скрипки: лише коли тест просить
       if (u.pathname.endsWith('.sf2')) return Promise.resolve(audioFixture.sf2 ? { ok: true, arrayBuffer: async () => { const b = fs.readFileSync(path.join(__dirname, u.pathname)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.length); } } : { ok: false });
       return u.origin === origin ? fetch(u, opts) : Promise.resolve(audioFixture.soundfontText?{ok:true,text:async()=>audioFixture.soundfontText}:{ok:false}); },
     ...(audio ? { AudioContext: TestAudioContext, Worker: TestWorker } : {}),
@@ -435,12 +436,12 @@ test('new combat gear changes hits, rings and notes without changing the song', 
     }else if(inst==='drums'){
       g.applyUpgrade({pd:gear.wave});g.applyUpgrade({pd:gear.stun});
       at('kick',()=>g.LAYERS.drums.find(l=>l.id==='kick').atk([{drum:'kick',vel:1}],1));
-      assert.ok(g.G.rings[0].maxR>95,'kick wave widens ring');
+      assert.ok(g.G.rings[0].maxR>45,'kick wave widens ring beyond the base 45');
       const m=g.addMob('glush',100,0);at('snare',()=>g.hurtMob(m,10,0,0));assert.ok(m.stun>=.2,'snare stuns');
     }else if(inst==='bass'){
       g.applyUpgrade({pd:gear.heavyLow});g.applyUpgrade({pd:gear.pierce});g.applyUpgrade({pd:gear.vibration});
       const m=g.addMob('glush',100,0);at('root',()=>g.hurtMob(m,10,100,0));
-      assert.ok(m.kx>100&&m.slow>0,'bass knockback and slow');
+      assert.ok(m.kx>35&&m.slow>0,'bass knockback (boosted above the plain ×0.35 scale) and slow');
       at('root',()=>g.LAYERS.bass.find(l=>l.id==='root').atk([{midi:40}],1));
       assert.ok(g.G.shots[0].pierce>=7,'bass wave pierces more enemies');
     }else{
@@ -704,16 +705,19 @@ test('band finder: teammates show on the minimap and get an edge arrow when off-
   assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
 });
 
-test('chords are collected one by one; each instrument has a pool of 10 parts and holds at most 5', async t => {
+test('chords are collected note by note; each instrument has a pool of 10 parts and holds at most 5', async t => {
   const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
   s.game.setGenre('pop'); await s.game.pick('guitar'); s.game.setPause(true);
   const g = s.game;
   assert.equal(g.SONG.have, 1, 'run starts on one chord');
   assert.equal(new Set([0, 1, 2, 3].map(b => g.chordAt(b).name)).size, 1, 'every bar plays the single collected chord');
-  for (let k = 2; k <= 4; k++) {
-    let card = null; for (let i = 0; i < 400 && !card; i++) card = g.levelOptions().find(o => o.chord);
-    assert.ok(card && card.add, 'an add-chord card is offered while chords are missing');
-    g.applyUpgrade(card); assert.equal(g.SONG.have, k);
+  for (let k = 2; k <= 4; k++) { // картки НОТ: акорд долучається, коли зібрано всі його ноти
+    for (let guard = 0; g.SONG.have < k && guard < 5; guard++) {
+      let card = null; for (let i = 0; i < 400 && !card; i++) card = g.levelOptions().find(o => o.note && o.lvl === 1);
+      assert.ok(card && card.slot === k - 1, 'a note card of the next chord is offered while chords are missing');
+      g.applyUpgrade(card);
+    }
+    assert.equal(g.SONG.have, k);
   }
   assert.equal(new Set([0, 1, 2, 3].map(b => g.chordAt(b).name)).size >= 2, true, 'collected chords now move');
   // кожен інструмент починає зі стартової партії «у долю» (не картка); пул карток — решта: гітара 11 (+Пінч), інші 10
@@ -733,7 +737,7 @@ test('chords are collected one by one; each instrument has a pool of 10 parts an
   // drums play no chords: instead of chord cards the drummer collects figures for a 4-bar rhythm phrase
   await g.pick('drums'); s.game.setPause(true);
   let drumCard = null; for (let i = 0; i < 400 && !drumCard; i++) drumCard = g.levelOptions().find(o => o.rhythm);
-  for (let i = 0; i < 400; i++) assert.ok(!g.levelOptions().some(o => o.chord), 'drummer is never offered chords');
+  for (let i = 0; i < 400; i++) assert.ok(!g.levelOptions().some(o => o.note || o.chord), 'drummer is never offered notes or chords');
   assert.ok(drumCard && drumCard.add && drumCard.slot === 0, 'drummer collects rhythm figures, first slot first');
   const syn = g.G.syn, kicks = () => { const k = g.LAYERS.drums[0], out = []; for (let s = 0; s < 16; s++) out.push(k.steps(g.SONG.prog[0], s, 0, 1).map(e => e.drum).join('+')); return out.join(','); };
   const before = kicks(); g.applyUpgrade({ rhythm: true, add: true, slot: 0, fig: 'crash' });
@@ -828,7 +832,7 @@ test('own attacks reflect enemy notes back into enemies', async t => {
   const end = Date.now() + 6000;
   while (Date.now() < end && !(G.parried > 2 && target.hp < 1e6)) {
     p.hp = p.max; G.xp = 0;
-    if (G.eshots.length < 6) for (let i = 0; i < 4; i++) { const a = i / 4 * 6.283; G.eshots.push({ x: p.x + Math.cos(a) * 140, y: p.y + Math.sin(a) * 140, vx: -Math.cos(a) * 60, vy: -Math.sin(a) * 60, r: 6, age: 0, life: 3, dmg: 9, col: '#5fc4d9' }); }
+    if (G.eshots.length < 6) for (let i = 0; i < 4; i++) { const a = i / 4 * 6.283; G.eshots.push({ x: p.x + Math.cos(a) * 60, y: p.y + Math.sin(a) * 60, vx: -Math.cos(a) * 60, vy: -Math.sin(a) * 60, r: 6, age: 0, life: 3, dmg: 9, col: '#5fc4d9' }); }
     await delay(50);
   }
   assert.ok(G.parried > 2, 'drum hits reflect incoming notes');
@@ -837,11 +841,16 @@ test('own attacks reflect enemy notes back into enemies', async t => {
   g.draw(); assert.deepEqual(s.errors, []);
 });
 
-test('each level adds 10% of base HP to max and heals that much', async t => {
+test('a level no longer changes max HP or heals; the +10% max HP card raises both by the same amount', async t => {
   const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
   await s.game.pick('bass'); const g = s.game, base = g.G.p.max;
   g.G.p.hp = 50; g.G.xp = 99; g.levelUp();
+  assert.equal(g.G.p.max, base); assert.equal(g.G.p.hp, 50);
+  g.applyUpgrade({ hp: true });
   assert.equal(g.G.p.max, base * 1.1); assert.equal(g.G.p.hp, 50 + base * .1);
+  for (let i = 0; i < 10; i++) g.applyUpgrade({ hp: true });
+  assert.equal(g.G.layers.$hp, 5, 'the card stacks up to five times'); assert.ok(Math.abs(g.G.p.max - base * 1.5) < .1);
+  g.setPause(true); for (let i = 0; i < 100; i++) assert.ok(!g.levelOptions().some(o => o.hp || o.heal), 'no more HP cards at five, and no heal card ever');
   assert.deepEqual(s.errors, []);
 });
 
@@ -972,7 +981,8 @@ test('lo-fi, reggae and jazz grooves: real genre figures, phrase variation, same
     if (genre === 'lofi') {
       assert.notDeepEqual(steps(grid(g, 'guitar', 'strum'), 0), [0, 4, 8, 12], 'no flat quarter-note strumming');
       assert.notDeepEqual(steps(grid(g, 'drums', 'kick'), 3), steps(grid(g, 'drums', 'kick'), 0), 'the 4th bar of a phrase varies the beat');
-      assert.ok(g.SONG.prog[0].ext, 'lo-fi keys get ninth chords');
+      // нота → акорди: тоніка на старті — трізвук (рівень 1); нона з'являється на рівні 3 (раніше була в повному акорді одразу)
+      assert.equal(g.SONG.prog[0].lvl, 1); const c3 = g.mkChord(g.SONG, 0, 3); assert.ok(c3.pcs.includes((c3.root + 2) % 12), 'lo-fi chords reach the ninth at level 3');
     }
     assert.deepEqual(a.errors, []);
   }
@@ -984,14 +994,14 @@ test('bosses play their own parts and attack on their notes: tape-replay bursts,
   const g = s.game, G = g.G, p = G.p, keep = () => { p.hp = p.max; G.xp = 0; };
   const fight = async (type, ms) => { G.mobs = []; G.eshots = []; const b = g.addMob(type, p.x + 260, p.y); b.spd = 0; b.hp = b.max = 1e7;
     const end = Date.now() + ms, shots = []; let casts = 0;
-    while (Date.now() < end) { keep(); if (b.castK && b.castAt !== undefined) casts++; shots.push(G.eshots.length); await delay(30); }
+    while (Date.now() < end) { keep(); b.x = p.x + 260; b.y = p.y; /* бос лишається на відстані: після ривку він інакше стоїть упритул, і ноти гаснуть об героя; снаряди героя більше не відбивають ноти й не подовжують їм життя */ if (b.castK && b.castAt !== undefined) casts++; shots.push(G.eshots.length); await delay(30); }
     return { b, shots, casts }; };
   // Фонограма: залпи по 12 нот на сильні долі, не за таймером
   let r = await fight('boss1', 3200);
   assert.ok(G.eshots.length >= 12, 'tape boss fires bursts on its beats');
   assert.ok(r.casts > 0, 'the boss winds up before a queued attack');
   // Автотюн: кожна його нота — виток спіралі з 3 рукавів
-  r = await fight('boss2', 2600);
+  r = await fight('boss2', 4500); // довше вікно: снаряди героя більше не відбивають ноти (а відбиті жили довше), тож у вікно має влучити кілька витків
   assert.ok(Math.max(...r.shots) >= 3, 'auto-tune spiral turns come on its notes');
   // Диригент Тиші: у 4-му такті фрази фермата — уся музика гурту притихає
   const m = g.masterReact.master.gain;
@@ -1013,7 +1023,8 @@ test('new genres have distinct primary parts and blues follows twelve bars with 
   assert.equal(signatures.size,5,'each genre has its own guitar part');
   const blues=g.makeSong(null,'blues');blues.have=4;g.setSong(blues);
   assert.deepEqual(Array.from({length:12},(_,bar)=>g.chordAt(bar).off),[0,0,0,0,5,5,0,0,7,5,0,7]);
-  assert.ok(blues.prog.every(ch=>ch.q==='7'));
+  assert.ok(blues.prog.slice(1).every(ch=>ch.q==='7'),'future bars are dominant sevenths'); // тоніка в забігу — трізвук; септима приходить із карткою (рівень 2)
+  assert.equal(g.mkChord(blues,0,2).q,'7');
   blues.have=1;assert.ok(Array.from({length:12},(_,bar)=>g.chordAt(bar).off).every(off=>off===0));
   assert.deepEqual(s.errors,[]);
 });
@@ -1057,7 +1068,7 @@ test('offline electronic voices use separate caches and new instrument envelopes
   const s=session('http://127.0.0.1:8080',true);t.after(()=>s.close());const g=s.game;
   g.setGenre('synthwave');await g.pick('bass');g.setPause(true);
   assert.ok(g.cache.some(k=>k.startsWith('syn-bass-synthbass:')));
-  await g.pick('piano');g.setPause(true);assert.ok(g.cache.some(k=>k.startsWith('syn-piano-synthkeys:')));
+  await g.pick('piano');g.setPause(true);assert.ok(g.cache.some(k=>k.startsWith('syn-piano:'))&&!g.cache.some(k=>k.includes('synthkeys')||k.includes('clavinet')),'keys are never synth/clavinet — always the acoustic piano buffers');
   for(const inst of ['flute','violin','sax','accordion']){
     g.setGenre('folkrock');await g.pick(inst);g.setPause(true);g.logNotes(true);
     await g.reqBuf(inst,72);g.playBuffered(g.ctx.currentTime+.05,{midi:72,vel:.5,seconds:.6});
@@ -1160,7 +1171,7 @@ test('failed MP3 decoding renders a playable new-instrument synth instead of sil
   assert.deepEqual(s.errors,[]);
 });
 
-test('new starter instruments keep the sole unlocked chord until a chord card is taken',async t=>{
+test('new starter instruments keep the sole unlocked chord until all its notes are collected',async t=>{
   const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
   await g.pick('flute');g.setPause(true);
   for(const genre of Object.keys(g.GENRES)){
@@ -1174,7 +1185,9 @@ test('new starter instruments keep the sole unlocked chord until a chord card is
       for(const notes of bars){const allowed=melodic?Array.from(song.prog[0].pcs):[root];assert.ok(notes.every(m=>allowed.includes(m%12)),genre+'/'+inst+' holds the unlocked chord');if(!melodic)assert.deepEqual(notes,bars[0],genre+'/'+inst+' cannot rotate notes automatically');}
     }
     assert.equal(song.have,1,'playing bars never unlocks chords');
-    const card=g.chordCard();assert.ok(card?.add);g.applyUpgrade(card);assert.equal(song.have,2);
+    // раніше одна картка акорду додавала такт; тепер акорд долучається, коли зібрано всі його ноти (2–3 картки)
+    for(let n=0;n<3;n++){assert.equal(song.have,1,'the chord is not in the song before its last note');const card=g.noteCards().find(o=>o.lvl===1);assert.ok(card&&card.slot===1,genre+' offers a note of the next chord');g.applyUpgrade(card);if(song.have===2)break;}
+    assert.equal(song.have,2);
     const allowed=new Set(Array.from(song.prog.slice(0,2),ch=>ch.root));
     for(const inst of ['flute','violin','sax','accordion']){
       const roots=new Set(starterNotes(inst).flat().map(m=>m%12));
@@ -1207,22 +1220,66 @@ test('each instrument owns its song caption and icon silhouette on the same song
   assert.equal(JSON.stringify(song),original,'personal captions never change the shared song');assert.deepEqual(s.errors,[]);
 });
 
-test('accordion holds and extends real reed voices, then changes harmony only with the unlocked chord',async t=>{
+test('accordion reed notes are short staccato strikes: each re-articulates and none carries over into the next',async t=>{
   const s=session('http://127.0.0.1:8080',true,{soundfontText:testSoundfont(),sampleLevel:.05});t.after(()=>s.close());const g=s.game;
   g.setGenre('chanson');await g.pick('accordion');g.setPause(true);s.holdFrames(true);
   const song=g.SONG;song.key=0;song.bpm=60;song.prog=[0,5,7,0].map(off=>g.mkChord(song,off));song.have=1;
-  const part=g.LAYERS.accordion.find(l=>l.id==='bellows'),first=part.steps(g.chordAt(0),0,0,1);for(const e of first)await g.reqBuf('accordion',e.midi);
+  const part=g.LAYERS.accordion.find(l=>l.id==='bellows'),first=part.steps(g.chordAt(0),0,0,1);
   g.logNotes(true);const at=g.ctx.currentTime+.1;g.fire(at,first);const original=g.voices.slice(-3);
-  assert.equal(original.length,3);assert.ok(original.every(v=>v.source.loop&&v.source.loopStart>0&&v.source.loopEnd>v.source.loopStart));
-  assert.ok(original.every(v=>v.source.stoppedAt-v.source.startedAt>3),'a held note outlasts the original one-shot sample');
-  g.fire(at+3,part.steps(g.chordAt(0),12,0,1));assert.equal(g.voices.length,original.length,'bellows pulse reuses the same voices without a new attack');
-  assert.ok(g.notes.slice(-3).every(n=>n.continued&&n.source==='accordion'));
-  assert.ok(original.every(v=>v.source.stoppedAt>at+4));
-  g.applyUpgrade({chord:true,add:true,slot:1,off:5});assert.equal(song.have,2);
-  const next=part.steps(g.chordAt(1),0,1,1);for(const e of next)await g.reqBuf('accordion',e.midi);g.fire(at+4,next);
-  assert.ok(original.every(v=>v.source.stoppedAt<=at+4.121),'previous harmony fades when the newly unlocked chord begins');
-  assert.ok(g.notes.slice(-3).every(n=>!n.continued&&n.harmony.startsWith('5:')));
-  g.endNoteTails();g.fire(at+5,next);assert.ok(g.notes.slice(-3).every(n=>!n.continued),'stopping the run clears held voices');
+  assert.equal(original.length,3);assert.ok(original.every(v=>v.source.loop&&v.source.loopStart>0));
+  assert.ok(original.every(v=>v.source.stoppedAt-v.source.startedAt<.5),'a reed strike is short, not a held drone');
+  g.fire(at+.05,first);assert.ok(g.notes.slice(-3).every(n=>!n.continued&&n.source==='accordion'),'the same note struck again is a new attack');
+  assert.ok(g.voices.length>=6,'every strike has its own voices');
+  g.endNoteTails();assert.deepEqual(s.errors,[]);
+});
+
+test('violin resolves to the real VSCO sampler: spiccato by default, arco only on request, names mapped to MIDI',async t=>{
+  const s=session('http://127.0.0.1:8080',true,{violin:true,sampleLevel:.05});t.after(()=>s.close());const g=s.game;
+  g.setGenre('folkrock');await g.pick('violin');g.setPause(true);g.logNotes(true);const at=()=>g.ctx.currentTime+.05;
+  g.playBuffered(at(),{midi:69,vel:.5,seconds:.2});let n=g.notes.at(-1);
+  assert.equal(n.source,'vsco-spic');assert.match(n.sample,/^spic_A3_v2_rr[12]$/,'spic names are an octave below scientific: spic_A3 is MIDI 69');assert.ok(Math.abs(n.rate-1)<1e-9);assert.ok(n.duration<.4,'spiccato is short');
+  g.playBuffered(at(),{midi:69,vel:.2,seconds:.2});assert.match(g.notes.at(-1).sample,/^spic_A3_v1/,'soft layer for soft notes');
+  const rr=new Set();for(let i=0;i<4;i++){g.playBuffered(at(),{midi:72,vel:.5,seconds:.2});rr.add(g.notes.at(-1).sample);}assert.equal(rr.size,2,'two round robins alternate');
+  g.playBuffered(at(),{midi:70,vel:.5,seconds:.2});n=g.notes.at(-1);assert.ok(Math.abs(n.rate-Math.pow(2,1/12))<1e-9||Math.abs(n.rate-Math.pow(2,-2/12))<1e-9,'nearest sample is repitched by playbackRate');
+  g.playBuffered(at(),{midi:55,vel:.5,seconds:.2});assert.match(g.notes.at(-1).sample,/^spic_G2/,'lowest violin note G3 = MIDI 55 = spic_G2');
+  await new Promise(r=>setTimeout(r,50));
+  g.playBuffered(at(),{midi:69,vel:.5,seconds:.3,art:'arco'});n=g.notes.at(-1);assert.equal(n.source,'vsco-arco');assert.match(n.sample,/^arco_A4_f$/,'arco names are scientific: arco_A4 is MIDI 69');assert.ok(n.duration<.5,'arco is re-bowed, not held');
+  g.playBuffered(at(),{midi:69,vel:.5,seconds:.2,art:'pizzicato'});assert.equal(g.notes.at(-1).source,'vsco-pizz');assert.match(g.notes.at(-1).sample,/^pizz_A4_f/);
+  g.playBuffered(at(),{midi:69,vel:.5,seconds:.2});const v=g.voices.at(-1);assert.ok(v.source.stoppedAt-v.source.startedAt<.4);
+  assert.deepEqual(s.errors,[]);
+});
+
+test('violin and accordion in the game: no held notes, at least two attacks in every bar, any bow or pizz card',async t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  for(const inst of ['violin','accordion']){
+    await g.pick(inst);g.setPause(true);g.SONG.have=4;
+    const cards=inst==='violin'?[['$bow',Object.keys(g.VIOLIN_BOW_CARDS||{detache:1,legato:1,martele:1})],['$pizz',['quarter','eighth','bass']]]:[['$x',[undefined]]];
+    for(const [key,opts] of cards)for(const opt of opts){
+      if(key!=='$x')g.G.layers[key]=opt;
+      for(const layer of g.LAYERS[inst]){
+        if(key==='$pizz'&&layer.id!=='pizz'&&opt!=='quarter')continue;if(key==='$bow'&&layer.id!=='bow'&&opt!=='detache')continue;
+        for(let bar=0;bar<4;bar++){let attacks=0;
+          for(let st=0;st<16;st++){const evs=layer.steps(g.voiced(g.chordAt(bar),g.G.layers,st,bar),st,bar,1);
+            for(const e of evs){assert.ok(e.dur<=6&&!(e.seconds>.5)&&!(e.holdSteps>2),inst+'/'+layer.id+' note is short');}
+            attacks+=layer.perNote?evs.filter(e=>!e.noAtk&&!e.orn).length:(evs.length?1:0);}
+          assert.ok(attacks>=2,inst+'/'+layer.id+'/'+opt+' bar '+bar+' attacks '+attacks);}
+      }
+      delete g.G.layers[key];
+    }
+  }
+  assert.deepEqual(s.errors,[]);
+});
+
+test('accordion bellows are played in strokes of varying length, identical for the whole band',async t=>{
+  const s=session('http://127.0.0.1:8080',true);t.after(()=>s.close());const g=s.game;
+  g.setGenre('chanson');await g.pick('accordion');g.setPause(true);
+  const lens=new Set(),dirs=new Set();
+  for(let ph=0;ph<12;ph++){const list=g.bellowsStrokes(ph);assert.equal(list.reduce((n,x)=>n+x.len,0),128,'strokes tile the 8-bar phrase');
+    assert.deepEqual(JSON.stringify(g.bellowsStrokes(ph)),JSON.stringify(list),'same phrase, same strokes');
+    list.forEach((x,i)=>{lens.add(x.len);if(i)assert.notEqual(x.dir,list[i-1].dir,'pull and push alternate');});}
+  assert.ok([...lens].some(l=>l<=8)&&[...lens].some(l=>l>=16),'both short and long strokes occur');
+  const ev=g.buses.accordion.bellows.gain.events;g.bellowsBar(g.ctx.currentTime+.05,0);
+  const sets=ev.filter(x=>x[0]==='set'||x[0]==='linear').map(x=>x[1]);assert.ok(sets.every(Number.isFinite)&&Math.min(...sets)<.45,'bar gain swells and dips');
   assert.deepEqual(s.errors,[]);
 });
 
@@ -1440,4 +1497,224 @@ test('walk side alternates on repeated original notes, but an echo (ATK_SCALE<1)
   assert.equal(g.walkSide,-1,'echo of the same note keeps the side');
   assert.equal(g.walkLast,4,'echo does not touch walkLast');
   assert.deepEqual(s.errors,[]);
+});
+
+test('balance: a passive solo player standing still is overrun, and enemies show up right at the start', async t => {
+  // Герой стоїть і лише грає (авто-атаки йдуть кожен крок секвенсера), без руху й без вибору покращень.
+  for (const inst of ['guitar', 'drums', 'bass', 'piano']) {
+    const s = session('http://127.0.0.1:8080', false); t.after(() => s.close());
+    s.game.setGenre('pop'); await s.game.pick(inst);
+    const g = s.game, G = g.G, p = G.p;
+    const hp0 = p.max, t0 = G.t, stepLen = 60 / g.SONG.bpm / 4;
+    let firstMobAt = null, step = 0, acc = 0, diedAt = null;
+    for (let i = 0; i < 150 * 30 && G.p.hp > 0; i++) {
+      acc += 1 / 30; while (acc >= stepLen) { acc -= stepLen; g.doPlayerStep(step++, g.now()); }
+      g.update(1 / 30); G.xp = 0; // вікно вибору рівня не зупиняє симуляцію
+      if (firstMobAt === null && G.mobs.some(m => Math.hypot(m.x - p.x, m.y - p.y) < 700)) firstMobAt = G.t - t0;
+    }
+    if (G.p.hp <= 0) diedAt = G.t - t0;
+    assert.ok(firstMobAt !== null && firstMobAt < 3, inst + ': first enemies appear near the hero within seconds, got ' + firstMobAt);
+    assert.ok(diedAt !== null || p.hp < hp0 * .5, inst + ': standing still must cost at least half the HP within 150 s (hp ' + p.hp + '/' + hp0 + ')');
+  }
+});
+
+test('balance: plain shots pass through enemy notes, knockback is scaled down', async t => {
+  const s = session('http://127.0.0.1:8080', false); t.after(() => s.close());
+  s.game.setGenre('pop'); await s.game.pick('guitar');
+  const g = s.game, G = g.G, p = G.p;
+  G.mobs.length = 0; G.eshots.length = 0; G.shots.length = 0;
+  G.shots.push({ x: p.x + 100, y: p.y, vx: 0, vy: 0, spd: 1, r: 8, age: 0, life: 1, dmg: 1, pierce: 5, hit: new Set(), kind: 'note' });
+  G.eshots.push({ x: p.x + 100, y: p.y, vx: 0, vy: 0, r: 6, age: 0, life: 3, dmg: 9, col: '#5fc4d9' });
+  g.update(1 / 60);
+  assert.ok(!G.eshots[0].fr && !G.parried, 'a plain shot does not reflect an enemy note');
+  const m = g.addMob('fal', p.x + 500, p.y); m.kx = m.ky = 0;
+  g.hurtMob(m, 1, 100, 0);
+  assert.ok(m.kx > 0 && m.kx <= 40, 'knockback 100 is scaled to <=40, got ' + m.kx);
+});
+
+test('keys hero is an acoustic grand piano in every genre', () => {
+  const s=session('http://127.0.0.1:8080');const g=s.game;try{
+    for(const [id,genre] of Object.entries(g.GENRES))assert.equal(genre.sf.piano,'acoustic_grand_piano',id+' keys sample');
+    for(const [id,genre] of Object.entries(g.GENRES))if(id!=='blues')assert.equal(genre.keys,'рояль',id+' keys label');
+  }finally{s.close();}
+});
+
+test('piano never hums: a new chord damps the previous one within ~120 ms; rolls, melody and left hand are not cut', async t => {
+  const s=session('http://127.0.0.1:8080',true);t.after(()=>s.close());const g=s.game;
+  g.setGenre('pop');await g.pick('piano');g.setPause(true);g.SONG.bpm=120;g.logNotes(true);
+  for(const m of [60,64,67,72,48,55])await g.reqBuf('piano',m); // тестовий семпл ≈0,2 с — усе відбувається всередині нього
+  const t0=g.ctx.currentTime+.1,chord=(at,roll)=>[60,64,67,72].forEach((m,i)=>g.playBuffered(at,{midi:m,vel:.5,dur:16,off:i*roll,chord:true}));
+  chord(t0,.02);const first=g.voices.slice(-4),ring=first.map(v=>v.endAt);
+  assert.ok(first.every((v,k)=>Math.abs(v.endAt-t0-.02*k-.2)<1e-6),'a rolled chord (20 ms spread) does not cut its own notes: '+first.map(v=>v.endAt-t0));
+  g.playBuffered(t0+.05,{midi:72,vel:.5,dur:4});                       // мелодія
+  g.playBuffered(t0+.05,{midi:55,vel:.5,dur:6,lh:true});               // ліва рука
+  g.playBuffered(t0+.05,{midi:72,vel:.5,dur:1.5,chord:true,noDamp:true}); // луна педалі
+  assert.deepEqual(first.map(v=>v.endAt),ring,'melody, left hand and pedal echo do not damp the chord');
+  chord(t0+.05,.02);
+  assert.ok(first.every(v=>v.endAt<=t0+.05+.121),'the next chord releases the previous one within ~120 ms: '+first.map(v=>v.endAt-t0));
+  assert.deepEqual(s.errors,[]);
+});
+
+test('piano chord events are tagged for the damper in every genre and layer', () => {
+  const s=session('http://127.0.0.1:8080');const g=s.game;try{
+    for(const genre of Object.keys(g.GENRES)){g.setGenre(genre);g.setSong(g.makeSong(null,genre));
+      for(const id of ['pulse','chords','stab','pad'])for(let bar=0;bar<4;bar++)for(let st=0;st<16;st++)
+        for(const e of g.LAYERS.piano.find(l=>l.id===id).steps(g.chordAt(bar),st,bar,1))assert.ok(e.midi===undefined||e.chord,genre+'/'+id+' chord note is tagged');}
+  }finally{s.close();}
+});
+
+test('piano long holds are capped (<= 6 steps) in the game source', () => {
+  assert.match(source,/PIANO_MAX_HOLD=6/);assert.match(source,/Math\.min\(ev\.dur,s\.inst==='piano'\?PIANO_MAX_HOLD/);
+});
+
+test('piano pad and whole chords are re-struck rhythmically, never one 14-step drone', () => {
+  const s=session('http://127.0.0.1:8080');const g=s.game;try{
+    g.setGenre('pop');g.setSong(g.makeSong(null,'pop'));
+    const pad=g.LAYERS.piano.find(l=>l.id==='pad');
+    for(let bar=0;bar<4;bar++){const hits=[];for(let st=0;st<16;st++)if(pad.steps(g.chordAt(bar),st,bar,1).length)hits.push(st);
+      assert.ok(hits.length>=2,'pad has at least two attacks per bar');
+      for(let st=0;st<16;st++)for(const e of pad.steps(g.chordAt(bar),st,bar,1))assert.ok(e.dur<=8,'pad note is not a held drone');}
+  }finally{s.close();}
+});
+
+/* ===== Ноти → акорди, ефекти й колір акордів, серця ===== */
+test('note cards: every note of the next chord is needed, colour notes add the 7th and 9th, all genres can finish', async t => {
+  const s = session('http://127.0.0.1:8080'); t.after(() => s.close()); const g = s.game;
+  await g.pick('flute'); g.setPause(true);
+  for (const genre of Object.keys(g.GENRES)) {
+    const song = g.makeSong(null, genre); g.setSong(song); g.G.syn = 1;
+    assert.equal(song.have, 1); assert.equal(song.prog[0].lvl, 1, genre + ': tonic starts as a triad');
+    for (let slot = 1; slot < 4; slot++) {
+      const need = g.chordTones(slot, 1); assert.ok(need.length >= 2 && need.length <= 3, genre + ': a triad (a power chord has two notes)');
+      for (let n = 0; n < need.length; n++) {
+        assert.equal(song.have, slot, genre + ': the chord is not in the song before its last note');
+        const cards = g.noteCards().filter(o => o.lvl === 1); assert.ok(cards.length && cards.every(o => o.slot === slot && need.includes(o.pc)), genre + ': note cards belong to the next chord');
+        assert.ok(g.serializeOption(cards[0]) === cards[0] && JSON.parse(JSON.stringify(cards[0])).pc === cards[0].pc, 'note cards are plain JSON');
+        g.applyUpgrade(cards[0]);
+      }
+      assert.equal(song.have, slot + 1); assert.equal(song.prog[slot].lvl, 1);
+      assert.ok(need.every(pc => song.prog[slot].pcs.includes(pc)), 'the chord sounds exactly the collected notes');
+      assert.ok(song.ev && song.ev.slot === slot && song.ev.lvl === 1, 'a song event announces the new chord');
+    }
+    // два гравці взяли одну й ту саму ноту: друга не пропадає, а йде в іншу, тож дублікатів у слоті немає
+    const dup = g.makeSong(null, genre); g.setSong(dup); const c = g.noteCards().find(o => o.lvl === 1);
+    g.applyUpgrade(c); g.applyUpgrade(c); assert.equal(new Set(dup.notes[1]).size, dup.notes[1].length, genre + ': no duplicate notes');
+    g.setSong(song);
+    g.applyUpgrade({ hp: true }); g.G.layers = { ...g.G.layers }; // (лічильник HP-карток не впливає на пісню)
+    g.G.syn = 1; g.applyUpgrade({ note: true, slot: 3, pc: 0, lvl: 2 });
+    assert.ok(Math.abs(g.G.syn - g.synergy(song.prog.map(c => c.off), genre).bonus) < 1e-9, genre + ': synergy follows the collected chords (fifths, crown)');
+    // колірні ноти: септима (рівень 2), потім нона (рівень 3) — акорд звучить багатше
+    for (let slot = 0; slot < 4; slot++) {
+      const n1 = song.prog[slot].pcs.length;
+      for (const lvl of [2, 3]) {
+        if ((song.prog[slot].lvl || 1) >= lvl) continue;
+        let card = null; for (let i = 0; i < 80 && !card; i++) card = g.noteCards().find(o => o.slot === slot && o.lvl === lvl); assert.ok(card, genre + ': colour card level ' + lvl + ' is offered');
+        const before = song.prog[slot].pcs.slice(); g.applyUpgrade(card);
+        assert.equal(song.prog[slot].lvl, lvl); assert.ok(before.every(p => song.prog[slot].pcs.includes(p)) && song.prog[slot].pcs.length > before.length, genre + ': colour tone is added to the voicing');
+      }
+      assert.ok(song.prog[slot].pcs.includes((song.prog[slot].root + 2) % 12), genre + ': level 3 has the ninth'); assert.ok(song.prog[slot].pcs.length > n1 - 1);
+    }
+    assert.equal(g.noteCards().length, 0, genre + ': nothing left to collect');
+  }
+  // барабанщик нот не збирає: лише ритм-картки
+  await g.pick('drums'); g.setPause(true); assert.equal(g.noteCards().length, 0);
+  for (let i = 0; i < 100; i++) assert.ok(!g.levelOptions().some(o => o.note));
+  assert.deepEqual(s.errors, []);
+});
+
+test('chord function: each chord has its own effect and colour, applied to attacks and tinting them during its bar', async t => {
+  const s = session('http://127.0.0.1:8080'); t.after(() => s.close()); const g = s.game;
+  g.setGenre('pop'); await g.pick('bass'); g.setPause(true);
+  const song = g.makeSong(null, 'pop'); song.prog = [0, 5, 7, 9].map(off => g.mkChord(song, off, 1)); song.have = 4; g.setSong(song);
+  g.G.syn = 1; g.G.layers = { [g.LAYERS.bass[0].id]: 1 };
+  const kinds = [0, 1, 2, 3].map(b => g.chordStamp(g.chordAt(b)).k); assert.deepEqual(kinds, ['I', 'IV', 'V', 'vi']);
+  // мінор: i, iv, v, VI — ті ж функції; решта ступенів — «Світло»
+  assert.deepEqual([0, 5, 7, 8, 2, 4, 10].map(o => g.chordFnId(o)), ['I', 'IV', 'V', 'vi', 'ii', 'iii', 'iii']);
+  for (const k of ['I', 'IV', 'V', 'vi', 'ii', 'iii']) assert.ok(/^#[0-9a-f]{6}$/.test(g.CHORD_FN[k].col));
+  assert.equal(new Set(Object.values(g.CHORD_FN).map(f => f.col)).size, 6, 'six distinct colours');
+  const G = g.G, hpLoss = (type, cf) => { const m = g.addMob(type, G.p.x + 500, G.p.y); m.hp = m.max = 1e6; m.slow = 0; m.slowAmt = 0;
+    g.withAttack({ layer: 'root', step: 0, cf, owner: undefined }, () => g.hurtMob(m, 10, 0, 0)); const d = 1e6 - m.hp; G.mobs = G.mobs.filter(x => x !== m); return { d, m }; };
+  const base = hpLoss('fal').d;
+  assert.ok(Math.abs(hpLoss('fal', { k: 'I', l: 1 }).d / base - 1.2) < 1e-6, 'I: +20% damage');
+  assert.ok(Math.abs(hpLoss('fal', { k: 'I', l: 3 }).d / base - 1.4) < 1e-6, 'I: +10% per chord level');
+  assert.ok(Math.abs(hpLoss('fal', { k: 'IV', l: 1 }).d / base - 1) < 1e-6, 'IV does not add damage');
+  const elite = hpLoss('glush').d; assert.ok(Math.abs(hpLoss('glush', { k: 'iii', l: 1 }).d / elite - 1.15) < 1e-6, 'iii: +15% to elites'); assert.ok(Math.abs(hpLoss('fal', { k: 'iii', l: 1 }).d / base - 1) < 1e-6, 'iii: nothing against regular enemies');
+  const slowed = hpLoss('fal', { k: 'vi', l: 1 }).m; assert.ok(slowed.slow >= 1.5 && Math.abs(slowed.slowAmt - .25) < 1e-9, 'vi: slow 25% for 1.5 s'); assert.ok(Math.abs(hpLoss('fal', { k: 'vi', l: 2 }).m.slowAmt - .35) < 1e-9);
+  assert.equal(hpLoss('fal').m.slow, 0, 'no chord, no slow');
+  let crits = 0; for (let i = 0; i < 600; i++) { const r = hpLoss('fal', { k: 'V', l: 1 }).d; if (Math.abs(r / base - 1.8) < 1e-6) crits++; else assert.ok(Math.abs(r / base - 1) < 1e-6); }
+  assert.ok(crits > 30 && crits < 130, 'V: about 12% crits (×1.8), got ' + crits);
+  assert.equal(g.attackChord, null, 'no chord context leaks outside attacks');
+  // реальні атаки: штамп акорда такту йде з doPlayerStep, фарбує атаку й змінює розмір/швидкість
+  const fire = (bar, noChord) => {
+    G.shots = []; G.rings = []; G.cones = []; g.atkQ = [];
+    g.doPlayerStep(bar * 16, g.now() - .01); assert.ok(g.atkQ.length, 'the starter part attacks on the downbeat'); if (noChord) g.atkQ.forEach(a => { a.cf = null; });
+    else assert.equal(g.atkQ[0].cf.k, g.chordFnId(g.chordAt(bar).off));
+    g.processQueues(); return G.shots.concat(G.rings, G.cones);
+  };
+  const plainAtk = fire(1, true); assert.ok(plainAtk.length && plainAtk.every(a => a.cc === undefined && a.cf === undefined));
+  for (const bar of [0, 1, 2, 3]) {
+    const atk = fire(bar), col = g.CHORD_FN[kinds[bar]].col; assert.ok(atk.length);
+    for (const a of atk) { assert.equal(a.cc, col, 'attack carries the chord colour for the renderer'); assert.equal(a.cf.k, kinds[bar]); if (a.col) assert.notEqual(a.col, plainAtk[0].col, 'col is blended toward the chord colour'); }
+  }
+  const sPlain = fire(0, true).find(a => a.vx !== undefined), iv = fire(1).find(a => a.vx !== undefined);
+  assert.ok(sPlain && iv, 'the bass starter shoots waves'); assert.ok(Math.abs(iv.r / sPlain.r - 1.25) < 1e-9, 'IV: +25% size');
+  song.prog[3] = g.mkChord(song, 2, 1); const ii = fire(3).find(a => a.vx !== undefined);
+  assert.equal(ii.pierce, sPlain.pierce + 1, 'ii: +1 pierce'); assert.ok(Math.abs(Math.hypot(ii.vx, ii.vy) / Math.hypot(sPlain.vx, sPlain.vy) - 1.2) < 1e-9, 'ii: +20% projectile speed');
+  // барабанщик акордів не грає: без ефектів і фарби
+  g.setChar('drums'); assert.equal(g.chordStamp(g.chordAt(0)), null);
+  // HUD і малювання не падають
+  g.setChar('bass'); fire(2); g.draw(); assert.deepEqual(s.errors, []);
+});
+
+test('hearts: 2% / 6% / boss drops, heal 20% max HP to whoever picks them, despawn after 20 s; level-up heals nothing', async t => {
+  const s = session('http://127.0.0.1:8080', true); t.after(() => s.close()); const g = s.game;
+  await g.pick('guitar'); const G = g.G, p = G.p; G.mobs = [];
+  const count = (type, n) => { let c = 0; for (let i = 0; i < n; i++) { G.hearts = []; g.dropHearts({ type, x: 0, y: 0 }, undefined); c += G.hearts.length; } return c; };
+  const reg = count('fal', 6000), heavy = count('glush', 3000); assert.ok(reg > 60 && reg < 190, 'regular enemies drop ~2%, got ' + reg); assert.ok(heavy > 110 && heavy < 260, 'heavy enemies drop ~6%, got ' + heavy);
+  G.hearts = []; g.dropHearts({ type: 'boss1', x: 0, y: 0 }, undefined); assert.equal(G.hearts.length, 3, 'a boss always drops three hearts');
+  // помічник: +2% за рівень до шансу
+  G.pedals = { guitar_roadie: 3 }; const boosted = count('fal', 6000); assert.ok(boosted > reg * 1.8, 'roadie pedal raises the drop chance, got ' + boosted); G.pedals = {};
+  assert.ok(g.PEDALS.filter(x => (x.inst === 'guitar' && x.key === 'roadie') || x.key === 'crew' || ['nest', 'keeper', 'tuner'].includes(x.key)).every(x => x.fx.heartDrop && !x.fx.heal), 'tech pedals drop hearts instead of healing on kills');
+  // підбір: лікує 20% максимуму, на повному здоров'ї серце лишається
+  G.hearts = [{ x: p.x, y: p.y, age: 0 }]; p.hp = p.max; g.update(.016); assert.equal(G.hearts.length, 1, 'a full-health hero leaves the heart');
+  p.hp = 50; g.update(.016); assert.ok(Math.abs(p.hp - (50 + p.max * .2)) < 1e-6 && G.hearts.length === 0, 'heart heals 20% of max HP and is gone');
+  // зникає через 20 с, останні 3 с мигає
+  G.hearts = [{ x: p.x + 2000, y: p.y, age: 0 }]; g.update(.016); G.hearts[0].age = 19.9; g.update(.05); assert.equal(G.hearts.length, 1); g.update(.1); assert.equal(G.hearts.length, 0, 'despawns after 20 s');
+  G.hearts = [{ x: p.x + 30, y: p.y, age: 18 }]; g.draw(); G.hearts[0].age = 5; g.draw();
+  // рівень не лікує
+  p.hp = 40; G.xp = 99; g.levelUp(); assert.equal(p.hp, 40);
+  assert.deepEqual(s.errors, []);
+});
+
+test('co-op: guests see hearts and heal from them, and their note cards complete chords in the shared song', async t => {
+  const srv = await startServer(t);
+  const a = session(srv.origin, true); t.after(() => a.close()); await a.click('#multiplayer'); await until(() => a.game.net.id, 'host welcome');
+  const b = session(roomUrl(srv.origin, a), true); t.after(() => b.close()); await b.click('#multiplayer'); await until(() => b.game.net.id, 'guest welcome');
+  await a.pick('guitar'); await b.pick('bass'); await until(() => a.game.net.roster.every(p => p.char), 'picks');
+  await a.click('#ready'); await b.click('#ready'); await until(() => a.game.net.roster.every(p => p.ready), 'ready'); await a.click('#start-band');
+  await until(() => a.game.running && b.game.running, 'both playing');
+  const host = a.game, guest = b.game, H = host.G, me = H.players.find(p => p.id === guest.net.id);
+  // серця: гість бачить їх і лікується від них
+  H.mobs = []; me.p.hp = 30; H.hearts.push({ x: me.p.x + 400, y: me.p.y, age: 0 });
+  await until(() => guest.G.hearts && guest.G.hearts.length === 1 && guest.G.hearts[0].netId, 'guest sees the heart'); guest.draw();
+  H.hearts[0].x = me.p.x; H.hearts[0].y = me.p.y;
+  await until(() => H.hearts.length === 0 && me.p.hp > 30, 'the guest hero picks the heart'); assert.ok(me.p.hp >= 30 + me.p.max * .2 - 1);
+  await until(() => guest.G.hearts.length === 0, 'the heart disappears for the guest too');
+  // ноти гостя ведуть до спільного акорда
+  const song = host.SONG; let got = false;
+  for (let attempt = 0; attempt < 30 && !got; attempt++) {
+    H.xp = 4 + 5 * H.level; host.levelUp(); // ровно на рівень: без залишку, що одразу дав би наступний
+    await until(() => a.game.choosing && b.game.choosing && b.elements.get('#opts').children.length > 0 && a.elements.get('#opts').children.length > 0, 'both choose');
+    const opts = host.net.pending.get(guest.net.id), idx = opts.findIndex(o => o.note && o.lvl === 1), hostBtn = a.elements.get('#opts').children[0];
+    if (idx >= 0) {
+      assert.equal(b.elements.get('#opts').children.length, opts.length, 'the guest renders every card, note cards included');
+      const before = (song.notes[1] || []).length, haveBefore = song.have; await b.elements.get('#opts').children[idx].onclick(); got = true;
+      await until(() => host.SONG.have > haveBefore || (host.SONG.notes[1] || []).length > before, 'the guest note reaches the shared song');
+      await until(() => guest.SONG.have === host.SONG.have && (guest.SONG.notes[1] || []).length === (host.SONG.notes[1] || []).length, 'guest song matches');
+    } else await b.elements.get('#opts').children[0].onclick();
+    await hostBtn.onclick(); await until(() => !a.game.choosing && !b.game.choosing, 'level closes');
+  }
+  assert.ok(got, 'the guest was offered a note card');
+  assert.equal(H.players.find(p => p.char === 'bass').p.max, 120, 'levels do not change max HP');
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
 });

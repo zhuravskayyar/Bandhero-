@@ -7,7 +7,6 @@ function buildInstrumentExpansion(api) {
   const colors={flute:'#a9e6a0',violin:'#efad78',sax:'#f5d36d',accordion:'#f18fab'};
   const ranks=(a,b,c)=>[T(a),T(b),T(c)];
   const strength=ranks('Та сама фраза; базова сила','Та сама фраза; сильніша атака','Та сама фраза; ще більше сили');
-  const note=(ch,index=0,low=67,vel=.55,seconds=.42)=>{const base=tones(ch,low,4)[index%4];return E(api.personalPitch?.(ch,index*4,low,base)??base,vel,4,{seconds});};
   const songNote=(ch,s,b,low=67)=>{
     const melody=api.SONG?.mel||{},positions=Object.keys(melody).map(Number),p=((b%2)*16+s+32)%32;
     let nearest=positions[0],distance=99;for(const at of positions){const gap=Math.abs(at-p),d=Math.min(gap,32-gap);if(d<distance){nearest=at;distance=d;}}
@@ -18,13 +17,25 @@ function buildInstrumentExpansion(api) {
   const melodyLength=()=>api.SONG?.hook?.mood==='fierce'?.2:api.SONG?.hook?.mood==='playful'?.17:.45;
   // Starter parts follow the current unlocked chord. Beat/bar numbers set timing,
   // never an automatic arpeggio; melodic embellishments belong to chosen layers.
-  const events=(ch,s,_bar,positions,low=67,seconds=.42)=>positions.includes(s)?[E(api.personalPitch?.(ch,s,low)??up(ch.root,low),.55,4,{seconds})]:[];
-  function reeds(ch,s,positions,voice,vel=.3,bass=false){
-    if(!positions.includes(s))return[];
-    const holdSteps=(positions.find(p=>p>s)??16)-s,root=up(ch.root,bass?43:55);
-    const intervals=(ch.pcs||[ch.root,(ch.root+4)%12,(ch.root+7)%12]).map(pc=>(pc-ch.root+12)%12).sort((a,b)=>a-b);
-    const pitches=bass?[root,...(ch.octaveBass?[root+12]:[])]:intervals.slice(0,4).map((i,j)=>root+i+(ch.close&&j===0?12:0));
-    return pitches.map(m=>E(m,vel,holdSteps,{holdSteps,voice:'accordion-'+voice,harmony:ch.root+':'+intervals.join(',')+(ch.close?':close':''),fixedRegister:true}));
+  /* ===== Скрипка (фольклорний фідл у дусі «Fairytale») і акордеон (тарантела 6/8) =====
+     Правило: кожна нота — удар (атака береться з ноти), жодного гулу. Усі ноти короткі (штрих ≤ ~0,3 с), навіть арко перебивається смичком у ритм.
+     Партії не залежать від рівня прокачки: рівні лише посилюють шкоду (той самий ритм), тож «рівні» стилю — це різні партії: від чвертей із акцентами
+     (бас-штрих, піцикато) через рівні вісімки з акцентами на «і» (спіккато, колленьо) до шістнадцятих пробіжок, тріольних перекатів і подвійних нот. */
+  const vroot=(ch,s,vel,sec,o)=>E(api.personalPitch?.(ch,s,67)??up(ch.root,67),vel,1,{seconds:sec,...o});
+  const vtone=(ch,s,k,vel,sec,o,low=67)=>{const base=tones(ch,low,4)[k%4];return E(api.personalPitch?.(ch,s,low,base)??base,vel,1,{seconds:sec,...o});};
+  // Акордеон: 6/8 у сітці 4/4 з 16 кроків. Такт сітки = два такти 6/8 (12 вісімок, по 3 на долю): вісімка i=0..11 стоїть на кроці ⌊4i/3⌋
+  // плюс 1/3 або 2/3 кроку — цю частку нота несе в off (секунди). Свінг рушія зсуває кроки 2,6,10,14, тож для них віднімаємо його.
+  const EIGHTH=Array.from({length:12},(_,i)=>({s:Math.floor(4*i/3),f:(4*i%3)/3}));
+  const eighthOff=i=>{const e=EIGHTH[i],sd=60/(api.SONG?.bpm||120)/4;return e.f?e.f*sd-(e.s%4===2?(api.SONG?.swing||0)*sd:0):0;};
+  const tri=(s,list,make)=>{const out=[];for(const i of list)if(EIGHTH[i].s===s)out.push(...make(i,eighthOff(i)));return out;};
+  const at=off=>off?{off}:{};
+  // Короткий язичок: holdSteps:1 лише спрямовує звук у власний синтез язичка; seconds — стакатні «ворота» (без перенесення голосу на наступну ноту).
+  const reedNote=(m,vel,sec,off=0,o)=>E(m,vel,1,{holdSteps:1,seconds:sec,fixedRegister:true,...at(off),...o});
+  // Акорд правої руки / бас лівої: перша нота — атака, решта — той самий удар (noAtk), усі разом.
+  function reedChord(ch,vel,sec,off=0,bass=false,n=4){
+    const root=up(ch.root,bass?43:55),intervals=(ch.pcs||[ch.root,(ch.root+4)%12,(ch.root+7)%12]).map(pc=>(pc-ch.root+12)%12).sort((a,b)=>a-b);
+    const pitches=bass?[root,...(ch.octaveBass?[root+12]:[])]:intervals.slice(0,n).map((i,j)=>root+i+(ch.close&&j===0?12:0));
+    return pitches.map((m,j)=>reedNote(m,vel,sec,off,j?{noAtk:true}:{}));
   }
   // ===== Музика сопілки й сакса: спільні фрази (див. docs/skills-plan.md §5–6) =====
   // Масив подій одного кроку = ОДИН виклик atk (doPlayerStep: hits.push({Ly,evs}); atk(evs,L) б'є раз на крок),
@@ -42,8 +53,8 @@ function buildInstrumentExpansion(api) {
   /* ===== Техніка ноти: що саме героя «грає» цією нотою =====
      Кожна нота — окрема атака (perNote-партії), а вид атаки обирає technique(e). Порядок: прикраса, акцент, довга, спад, стрибок, коротка.
      trill — основні ноти трелі (дрібне листя на орбіті). Вага — частка «повної» шкоди ноти для балансу (hitsPerSec/balanceK). */
-  const technique=e=>!e?'short':e.orn?'orn':e.trill?'trill':(e.accent||e.vel>=.6)?'accent':(e.seconds||0)>=.35?'long':e.fall?'fall':e.leap?'leap':'short';
-  const TECH_W={orn:.2,trill:.6,short:1,long:1.5,accent:1.5,fall:1,leap:1};
+  const technique=e=>!e?'short':e.noAtk?'none':e.orn?'orn':e.trill?'trill':(e.accent||e.vel>=.6)?'accent':(e.seconds||0)>=.35?'long':e.fall?'fall':e.leap?'leap':'short';
+  const TECH_W={none:0,orn:.2,trill:.6,short:1,long:1.5,accent:1.5,fall:1,leap:1};
   const noteWeight=e=>TECH_W[technique(e)];
   const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
   const keyOf=(m,center)=>clamp(((m===undefined?center:m)-center)/12,-1,1); /* -1..1: вища нота — далі й трохи вбік */
@@ -159,6 +170,7 @@ function buildInstrumentExpansion(api) {
     const w=state();if(!w)return null;
     const f={...api.meta(),kind,age:0,...o};
     f.dmg=(f.dmg||0)*(api.ATK_SCALE||1);f.hit=new Map();
+    const cf=api.chordFx&&api.chordFx();if(cf){if(f.col)f.col=api.chordTint(f.col);if(cf.k==='IV'&&f.r)f.r*=1.25+.1*(cf.l-1);} // ефект і колір акорда такту (див. attackChord у game.html)
     const list=w.instrumentFX||(w.instrumentFX=[]);if(list.length>=220)list.shift(); /* стеля ефектів: найстаріший зникає, а нова атака завжди завдає шкоди */
     list.push(f);return f;
   }
@@ -270,16 +282,16 @@ function buildInstrumentExpansion(api) {
       {id:'duet',icon:'duet',name:T('Дует пташок'),lv:strength,desc:T('Друга сопілка відповідає мелодії: дві пір’їнки розлітаються й самі шукають ворогів.'),steps:(ch,s,b)=>fluteDuet(ch,s,b),atk:(e,L)=>{feather(L,-.3,{dmg:6,life:1.1});feather(L,.3,{dmg:6,life:1.1});}}
     ],
     violin:[
-      {id:'bow',icon:'thread',name:T('Звукова струна'),lv:strength,desc:T('Смичок натягує між двома точками звукову нитку. Вороги на ній отримують періодичну шкоду.'),steps:(ch,s,b)=>events(ch,s,b,[0,8],67,.85),atk:(e,L)=>thread(L)},
-      {id:'pizz',icon:'pizz',name:T('Піцикато'),lv:strength,desc:T('Короткий щипок ставить поперечну нитку перед тобою.'),steps:(ch,s,b)=>events(ch,s,b,[6,14],67,.2).map(e=>({...e,art:'pizzicato'})),atk:(e,L)=>thread(L,0,150,.7,5.5,true)},
-      {id:'web',icon:'web',name:T('Нотна павутина'),lv:strength,desc:T('Три звукові нитки розходяться віялом і сповільнюють ворогів.'),steps:(ch,s,b)=>s===0&&b%2===1?tones(ch,67,3).map((m,i)=>E(m,.26,6,{seconds:.8,off:i*.02})):[],atk:(e,L)=>{for(const d of [-.9,0,.9])thread(L,d,165,1.8,2.8);}},
-      {id:'harmonics',icon:'harmonics',name:T('Срібна нитка'),lv:strength,desc:T('Висока дзвінка нота натягує довгу тонку струну крізь ряди ворогів.'),steps:(ch,s,b)=>s===8&&b%2===0?[{...note(ch,2,79,.35,.9),art:'violin_harmonic'}]:[],atk:(e,L)=>thread(L,0,355,1.4,5)},
-      {id:'tremolo',icon:'tremolo',name:T('Тремоло смичка'),lv:strength,desc:T('Швидкі повтори однієї ноти змушують нитку тремтіти.'),steps:(ch,s,b)=>b%2===0&&s<4?[note(ch,1,67,.28,.16)]:[],atk:(e,L)=>thread(L,0,155,.75,2.5)},
-      {id:'spicc',icon:'spicc',name:T('Спіккато'),lv:strength,desc:T('Смичок підскакує короткими нотами на слабких долях.'),steps:(ch,s,b)=>[2,6,10,14].includes(s)?[note(ch,s%3,67,.34,.18)]:[],atk:(e,L)=>thread(L,0,125,.7,3.5,true)},
-      {id:'double',icon:'double',name:T('Подвійні ноти'),lv:strength,desc:T('Дві струни беруть ноти поточного акорду й розходяться вилкою.'),steps:(ch,s,b)=>s===0||s===8?[note(ch,0,67,.4,.55),note(ch,2,67,.3,.55)]:[],atk:(e,L)=>{thread(L,-.3,175,1.1,3);thread(L,.3,175,1.1,3);}},
-      {id:'gliss',icon:'gliss',name:T('Глісандо скрипки'),lv:strength,desc:T('Ноти акорду пробігають угору в кінці кожної другої фрази.'),steps:(ch,s,b)=>b%2===1&&s>=12?[note(ch,s-12,67,.3,.21)]:[],atk:(e,L)=>thread(L,0,200,1,3.5)},
-      {id:'col',icon:'col',name:T('Колленьо'),lv:strength,desc:T('Дерево смичка коротко б’є по струнах на другу й четверту долю.'),steps:(ch,s,b)=>s===4||s===12?[note(ch,1,67,.36,.13)]:[],atk:(e,L)=>thread(L,0,150,.5,5,true)},
-      {id:'sing',icon:'sing',name:T('Наспів скрипки'),lv:strength,desc:T('Довга мелодія поточного акорду тягне нитку крізь ворогів.'),steps:(ch,s,b)=>s===0||s===8?[E(songNote(ch,s,b,67),.47,7,{seconds:.85})]:[],atk:(e,L)=>thread(L,0,330,1.6,4)}
+      {id:'bow',icon:'thread',name:T('Звукова струна'),lv:strength,desc:T('Короткий штрих смичка на кожну долю, на сильних — з акцентом, тягне звукову нитку. Вороги на ній отримують періодичну шкоду.'),steps:(ch,s)=>s%4?[]:[vroot(ch,s,s%8?.44:.58,.2,{accent:!(s%8)})],atk:(e,L)=>thread(L)},
+      {id:'pizz',icon:'pizz',name:T('Піцикато'),lv:strength,desc:T('Щипки між долями ставлять поперечні нитки перед тобою.'),steps:(ch,s)=>s%4===2?[vroot(ch,s,.5,.2,{art:'pizzicato'})]:[],atk:(e,L)=>thread(L,0,150,.7,5.5,true)},
+      {id:'web',icon:'web',name:T('Нотна павутина'),lv:strength,desc:T('Акорд перекочується вгору на першу долю й униз на третю та розкладає три звукові нитки віялом: вороги сповільнюються.'),steps:(ch,s)=>s%8?[]:(s?[...tones(ch,67,3)].reverse():tones(ch,67,3)).map((m,i)=>E(m,.3,1,{seconds:.16,off:i*.018})),atk:(e,L)=>{for(const d of [-.9,0,.9])thread(L,d,165,1.8,2.8);}},
+      {id:'harmonics',icon:'harmonics',name:T('Срібна нитка'),lv:strength,desc:T('Дві короткі дзвінкі високі ноти на такт натягують довгу тонку струну крізь ряди ворогів.'),steps:(ch,s)=>s===4||s===12?[vtone(ch,s,2,.35,.3,{art:'violin_harmonic'},79)]:[],atk:(e,L)=>thread(L,0,355,1.4,5)},
+      {id:'tremolo',icon:'tremolo',name:T('Тремоло смичка'),lv:strength,desc:T('Швидкі повтори однієї ноти на початку такту й тріольний перекат посеред нього змушують нитку тремтіти.'),steps:(ch,s)=>s<4?[vtone(ch,s,1,s?.24:.32,.1)]:s===8?[0,1,2].map(i=>vtone(ch,s,1,i?.2:.3,.07,i?{orn:true,off:i*stepSec()/3}:{})):[],atk:(e,L)=>thread(L,0,155,.75,2.5)},
+      {id:'spicc',icon:'spicc',name:T('Спіккато'),lv:strength,desc:T('Смичок підскакує рівними вісімками, а акценти падають на слабкі долі.'),steps:(ch,s)=>s%2?[]:[vtone(ch,s,[0,1,2,1,0,1,2,1][s>>1],s%4?.46:.3,.12,s%4?{accent:true}:{})],atk:(e,L)=>thread(L,0,125,.7,3.5,true)},
+      {id:'double',icon:'double',name:T('Подвійні ноти'),lv:strength,desc:T('Дві струни беруть ноти акорду на сильних долях, а між ними короткий штрих: нитки розходяться вилкою.'),steps:(ch,s)=>s%8===0?[vtone(ch,s,0,.42,.2,{accent:true}),vtone(ch,s,2,.3,.2)]:s%8===6?[vtone(ch,s,2,.32,.16)]:[],atk:(e,L)=>{thread(L,-.3,175,1.1,3);thread(L,.3,175,1.1,3);}},
+      {id:'gliss',icon:'gliss',name:T('Глісандо скрипки'),lv:strength,desc:T('Акцент на початку такту й шістнадцяті пробіжки вгору по нотах акорду в його кінці.'),steps:(ch,s)=>s===0?[vtone(ch,s,0,.46,.14,{accent:true})]:s>=12?[vtone(ch,s,s-12,.3,.1)]:[],atk:(e,L)=>thread(L,0,200,1,3.5)},
+      {id:'col',icon:'col',name:T('Колленьо'),lv:strength,desc:T('Дерево смичка коротко б’є по струнах на другу й четверту долю.'),steps:(ch,s)=>s===4||s===12?[vtone(ch,s,1,.36,.1)]:[],atk:(e,L)=>thread(L,0,150,.5,5,true)},
+      {id:'sing',icon:'sing',name:T('Наспів скрипки'),lv:strength,desc:T('Мелодія акорду короткими перебитими штрихами смичка тягне нитку крізь ворогів.'),steps:(ch,s,b)=>[0,3,6,8,11,14].includes(s)?(s%8===0?graced(songNote(ch,s,b,67),.46,.3,1).map(e=>({...e,art:'arco'})):[E(songNote(ch,s,b,67),.4,1,{seconds:.2,art:'arco'})]):[],atk:(e,L)=>thread(L,0,330,1.6,4)}
     ],
     sax:[
       {id:'breath',icon:'beam',name:T('Довгий видих'),lv:strength,desc:T('Тримай дистанцію: тривалий потік звуку б’є ворогів у вузькому секторі.'),perNote:true,steps:(ch,s)=>[2,10].includes(s)?[E(cn(ch,0,60),.55,4,{seconds:.62})]:[], /* заготовка: у грі steps підміняє game.html (SAX_BREATH_CARDS) */
@@ -296,15 +308,15 @@ function buildInstrumentExpansion(api) {
       {id:'improv',icon:'improv',name:T('Імпровізація сакса'),lv:strength,desc:T('Імпровізована нота двічі стрибає між найближчими ворогами.'),steps:(ch,s,b)=>saxImprov(ch,s,b),atk:(e,L)=>bounce(L,{hops:2,dmg:4.5})}
     ],
     accordion:[
-      {id:'bellows',icon:'bellows',name:T('Вдих і видих'),lv:strength,desc:T('Міхи тримають поточний акорд; хвилі притягують ворогів і відштовхують на видиху.'),steps:(ch,s)=>reeds(ch,s,[0,12],'bellows'),atk:(e,L)=>pulse(L)},
-      {id:'chords',icon:'chordwave',name:T('Кнопковий акорд'),lv:strength,desc:T('Одночасні голоси поточного акорду додають протяжне звучання та широку хвилю.'),steps:(ch,s)=>reeds(ch,s,[4,12],'chords',.2),atk:(e,L)=>pulse(L,235,6,.22)},
-      {id:'bass',icon:'basswave',name:T('Ліва рука'),lv:strength,desc:T('Басова кнопка тримає основу поточного акорду й різко відкидає ворогів.'),steps:(ch,s,b)=>b%2===1?reeds(ch,s,[0],'bass',.32,true):[],atk:(e,L)=>pulse(L,130,15,.48)},
-      {id:'dance',icon:'dance',name:T('Жаб’ячий танок'),lv:strength,desc:T('Протяжний поточний акорд розгортає далеку пару хвиль навколо жабки.'),steps:(ch,s,b)=>b%2===0?reeds(ch,s,[10],'dance',.2):[],atk:(e,L)=>pulse(L,295,8,.3)},
-      {id:'oompah',icon:'oompah',name:T('Умпа'),lv:strength,desc:T('Бас на першу долю, легкий кнопковий акорд на решту долей.'),steps:(ch,s)=>s===0?reeds(ch,s,[0,4,8,12],'oom-bass',.36,true):s%4===0?reeds(ch,s,[0,4,8,12],'oom-chord',.2):[],atk:(e,L)=>noteRing(L,{r:e[0]?.midi<55?125:92,dmg:e[0]?.midi<55?9:5,kb:55,down:e[0]?.midi<55})},
-      {id:'right',icon:'right',name:T('Мелодія правої руки'),lv:strength,desc:T('Права рука грає ноти поточного акорду й посилає нотки до ворога.'),steps:(ch,s,b)=>melodyBeats().includes(s)?[E(songNote(ch,s,b),api.SONG?.hook?.mood==='fierce'?.6:.48,4,{seconds:melodyLength()})]:[],atk:(e,L)=>noteRing(L,{r:105,dmg:7,kb:35})},
-      {id:'under',icon:'under',name:T('Підголосок'),lv:strength,desc:T('Нижчий голос відповідає мелодії нотами цього ж акорду.'),steps:(ch,s,b)=>melodyBeats(true).includes(s)?[E(songNote(ch,s-2,b,55)-12,.3,3,{seconds:Math.min(.34,melodyLength())})]:[],atk:(e,L)=>noteRing(L,{r:83,dmg:4,kb:25})},
-      {id:'gliss',icon:'gliss',name:T('Глісандо по кнопках'),lv:strength,desc:T('Наприкінці такту ноти акорду пробігають угору віялом.'),steps:(ch,s)=>s>=12?[note(ch,s-12,67,.3,.18)]:[],atk:(e,L)=>noteRing(L,{r:95,dmg:5,kb:30})},
-      {id:'trem',icon:'trem',name:T('Тремоло міхами'),lv:strength,desc:T('Чотири швидкі поштовхи акорду на початку фрази.'),steps:(ch,s,b)=>b%4===0&&s<4?reeds(ch,s,[0,1,2,3],'trem',.17):[],atk:(e,L)=>noteRing(L,{r:72,dmg:3,kb:25})}
+      {id:'bellows',icon:'bellows',name:T('Вдих і видих'),lv:strength,desc:T('Короткі акценти міхів на першу долю кожного такту 6/8: хвилі притягують ворогів і відштовхують на видиху.'),perNote:true,steps:(ch,s)=>tri(s,[0,6],(i,o)=>reedChord(ch,.4,.16,o)),atk:(e,L)=>pulse(L)},
+      {id:'chords',icon:'chordwave',name:T('Кнопковий акорд'),lv:strength,desc:T('Короткі акорди правої руки на слабких долях тарантели додають широку хвилю.'),perNote:true,steps:(ch,s)=>tri(s,[2,5,8,11],(i,o)=>reedChord(ch,.22,.1,o)),atk:(e,L)=>pulse(L,235,6,.22)},
+      {id:'bass',icon:'basswave',name:T('Ліва рука'),lv:strength,desc:T('Короткий бас на першу й четверту вісімку такту 6/8 різко відкидає ворогів.'),perNote:true,steps:(ch,s)=>tri(s,[0,3,6,9],(i,o)=>reedChord(ch,i%6?.34:.42,.14,o,true)),atk:(e,L)=>pulse(L,130,15,.48)},
+      {id:'dance',icon:'dance',name:T('Жаб’ячий танок'),lv:strength,desc:T('Біжучі тріолі по звуках акорду розгортають далеку пару хвиль навколо жабки.'),perNote:true,steps:(ch,s)=>tri(s,[0,1,2,6,7,8],(i,o)=>[reedNote(tones(ch,67,3)[i%3],i%3?.24:.34,.09,o)]),atk:(e,L)=>pulse(L,295,8,.3)},
+      {id:'oompah',icon:'oompah',name:T('Умпа'),lv:strength,desc:T('Бас на першу й четверту долю, короткий акорд на третю й шосту: тарантела 6/8.'),perNote:true,steps:(ch,s)=>[...tri(s,[0,3,6,9],(i,o)=>reedChord(ch,i%6?.34:.4,.13,o,true)),...tri(s,[2,5,8,11],(i,o)=>reedChord(ch,.22,.09,o))],atk:(e,L)=>noteRing(L,{r:e[0]?.midi<55?125:92,dmg:e[0]?.midi<55?9:5,kb:55,down:e[0]?.midi<55})},
+      {id:'right',icon:'right',name:T('Мелодія правої руки'),lv:strength,desc:T('Права рука грає ноти поточного акорду повторами з акцентами й посилає нотки до ворога.'),perNote:true,steps:(ch,s,b)=>tri(s,[0,2,3,5,6,8,9,11],(i,o)=>[E(songNote(ch,s,b),i%3?.36:.5,1,{seconds:.11,...at(o)})]),atk:(e,L)=>noteRing(L,{r:105,dmg:7,kb:35})},
+      {id:'under',icon:'under',name:T('Підголосок'),lv:strength,desc:T('Нижчий голос відповідає мелодії нотами цього ж акорду.'),perNote:true,steps:(ch,s,b)=>tri(s,[1,4,7,10],(i,o)=>[E(songNote(ch,s-2,b,55)-12,.3,1,{seconds:.1,...at(o)})]),atk:(e,L)=>noteRing(L,{r:83,dmg:4,kb:25})},
+      {id:'gliss',icon:'gliss',name:T('Глісандо по кнопках'),lv:strength,desc:T('Наприкінці кожної половини такту ноти акорду пробігають угору тріолями.'),perNote:true,steps:(ch,s)=>tri(s,[3,4,5,9,10,11],(i,o)=>[E(tones(ch,67,4)[i%3],.28,1,{seconds:.1,...at(o)})]),atk:(e,L)=>noteRing(L,{r:95,dmg:5,kb:30})},
+      {id:'trem',icon:'trem',name:T('Тремоло міхами'),lv:strength,desc:T('Чотири швидкі поштовхи акорду на початку кожного такту.'),perNote:true,steps:(ch,s)=>s<4?reedChord(ch,.17,.06,0,false,3):[],atk:(e,L)=>noteRing(L,{r:72,dmg:3,kb:25})}
     ]
   };
   /* картки акордів гравця (терція, квінта, тоніка, обернення…) мають чутно міняти й інші партії флейти й сакса; партії зрізу вже користуються pp самі */
@@ -318,7 +330,7 @@ function buildInstrumentExpansion(api) {
       {key:'wind',name:T('Різьблений мундштук'),ic:'♧',type:'спорядження',fx:{wind:1},lv:ranks('Політ нот +12%','Політ нот +24%','Політ нот +36%')},
       {key:'feather',name:T('Легке пір’я'),ic:'➶',type:'спорядження',fx:{haste:1},lv:ranks('Швидкість руху +5%','Швидкість руху +10%','Швидкість руху +15%')},
       {key:'return',name:T('Листяний хвіст'),ic:'↶',type:'спорядження',fx:{return:1},lv:ranks('Шкода нот +10%; ширина +2','Шкода нот +20%; ширина +4','Шкода нот +30%; ширина +6')},
-      {key:'nest',name:T('Гніздечко'),ic:'♥',type:'помічник',fx:{heal:1,magnet:1},lv:ranks('Вбивство лікує 1 HP; підбір +30','Лікує 2 HP; підбір +60','Лікує 3 HP; підбір +90')},
+      {key:'nest',name:T('Гніздечко'),ic:'♥',type:'помічник',fx:{heartDrop:1,magnet:1},lv:ranks('Шанс серця з ворогів +2%; підбір +30','Шанс серця +4%; підбір +60','Шанс серця +6%; підбір +90')},
       {key:'sharp',name:T('Гострий вітер'),ic:'✦',type:'спорядження',fx:{sharp:1},lv:ranks('Шанс сильного пориву 10%','Шанс сильного пориву 20%','Шанс сильного пориву 30%')},
       {key:'vibrato',name:T('Вібрато сопілки'),ic:'≈',type:'педаль',fx:{vibrato:1},lv:ranks('Легке коливання висоти','Глибше коливання висоти','Виразне коливання висоти')},
       {key:'breath',name:T('Подих сопілки'),ic:'◌',type:'педаль',fx:{breath:1},lv:ranks('Чутний подих на початку ноти','Більше повітря в атаці','Широкий подих в атаці')},
@@ -330,7 +342,7 @@ function buildInstrumentExpansion(api) {
       {key:'resin',name:T('Бурштинова каніфоль'),ic:'◆',type:'спорядження',fx:{resin:1},lv:ranks('Шкода ниток +12%','Шкода ниток +24%','Шкода ниток +36%')},
       {key:'bridge',name:T('Резонансна підставка'),ic:'⌁',type:'спорядження',fx:{bridge:1},lv:ranks('Довжина ниток +12%; тривалість +15%','Довжина +24%; тривалість +30%','Довжина +36%; тривалість +45%')},
       {key:'silk',name:T('Шовкові струни'),ic:'≋',type:'спорядження',fx:{silk:1},lv:ranks('Нитки сповільнюють на 20%','Нитки сповільнюють на 28%','Нитки сповільнюють на 36%')},
-      {key:'keeper',name:T('Павучок-майстер'),ic:'♥',type:'помічник',fx:{heal:1,guard:1},lv:ranks('Вбивство лікує 1 HP; вхідна шкода −8%','Лікує 2 HP; вхідна шкода −16%','Лікує 3 HP; вхідна шкода −24%')},
+      {key:'keeper',name:T('Павучок-майстер'),ic:'♥',type:'помічник',fx:{heartDrop:1,guard:1},lv:ranks('Шанс серця з ворогів +2%; вхідна шкода −8%','Шанс серця +4%; вхідна шкода −16%','Шанс серця +6%; вхідна шкода −24%')},
       {key:'tension',name:T('Натяг струни'),ic:'✦',type:'спорядження',fx:{tension:1},lv:ranks('Шанс гострої нитки 10%','Шанс гострої нитки 20%','Шанс гострої нитки 30%')},
       {key:'vibrato',name:T('Вібрато скрипки'),ic:'≈',type:'педаль',fx:{vibrato:1},lv:ranks('Легке коливання висоти','Глибше коливання висоти','Виразне коливання висоти')},
       {key:'mute',name:T('Сурдина'),ic:'◒',type:'педаль',fx:{mute:1},lv:ranks('Темніший тон скрипки','М’який приглушений тон','Глибокий камерний тон')},
@@ -354,7 +366,7 @@ function buildInstrumentExpansion(api) {
       {key:'folds',name:T('Широкі міхи'),ic:'≋',type:'спорядження',fx:{folds:1},lv:ranks('Радіус хвиль +12%','Радіус хвиль +24%','Радіус хвиль +36%')},
       {key:'reeds',name:T('Сталеві язички'),ic:'♬',type:'спорядження',fx:{reeds:1},lv:ranks('Шкода хвиль +12%','Шкода хвиль +24%','Шкода хвиль +36%')},
       {key:'strap',name:T('Зручні ремені'),ic:'➶',type:'спорядження',fx:{haste:1},lv:ranks('Швидкість руху +5%','Швидкість руху +10%','Швидкість руху +15%')},
-      {key:'tuner',name:T('Жабеня-настроювач'),ic:'♥',type:'помічник',fx:{heal:1,guard:1},lv:ranks('Вбивство лікує 1 HP; вхідна шкода −8%','Лікує 2 HP; вхідна шкода −16%','Лікує 3 HP; вхідна шкода −24%')},
+      {key:'tuner',name:T('Жабеня-настроювач'),ic:'♥',type:'помічник',fx:{heartDrop:1,guard:1},lv:ranks('Шанс серця з ворогів +2%; вхідна шкода −8%','Шанс серця +4%; вхідна шкода −16%','Шанс серця +6%; вхідна шкода −24%')},
       {key:'tongue',name:T('Липкий язик'),ic:'◔',type:'спорядження',fx:{tongue:1},lv:ranks('Кільця сповільнюють на 15%','Кільця сповільнюють на 25%','Кільця сповільнюють на 35%')},
       {key:'poison',name:T('Отруйна шкіра'),ic:'✿',type:'спорядження',fx:{poison:1},lv:ranks('Кільця отруюють на 1,5 с','Кільця отруюють на 2 с','Кільця отруюють на 2,5 с')},
       {key:'heavy',name:T('Важкі міхи'),ic:'▣',type:'спорядження',fx:{heavy:1},lv:ranks('Сильна доля: шкода +50%','Сильна доля: шкода +100%','Сильна доля: шкода +150%')},

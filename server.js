@@ -84,6 +84,14 @@ function logVisit(req) {
 // ---------- HTTP: лише сама гра, без кешу (щоб завжди була свіжа версія) ----------
 const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0];
+  // семпли скрипки VSCO-2 (CC0): лише файли з білого списку імен — без виходу за межі папки
+  const violin = /^\/assets\/violin\/([A-Za-z0-9_]+\.mp3|LICENSE\.txt)$/.exec(url);
+  if (req.method === 'GET' && violin) {
+    fs.readFile(path.join(__dirname, 'assets', 'violin', violin[1]), (err, data) => {
+      if (err) { res.writeHead(404); res.end('Asset not found'); return; }
+      res.writeHead(200, { 'Content-Type': violin[1].endsWith('.mp3') ? 'audio/mpeg' : 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=604800' }); res.end(data);
+    }); return;
+  }
   if (req.method === 'GET' && ASSETS.has(url)) {
     const [file, type] = ASSETS.get(url);
     fs.readFile(path.join(__dirname, file), (err, data) => {

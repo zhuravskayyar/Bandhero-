@@ -1,0 +1,8 @@
+Solo violin samples from VSCO-2 Community Edition (Versilian Studios)
+https://github.com/sgossner/VSCO-2-CE — Strings/Solo Violin (spic, Arco Vib, Pizz)
+License: CC0 1.0 Universal (public domain dedication).
+Recorded by Sam Gossner and Simon Dalzell, sample editing by Elan Hickler / Soundemote.
+
+Converted for the game: leading silence trimmed, mono, 44.1 kHz MP3 96 kbps;
+sustained (arco) notes cut to 4 s with a 0.4 s fade-out.
+Naming: spic_<note>_v<1|2 layer>_rr<round-robin>.mp3, arco_<note>_<p|f>.mp3, pizz_<note>_<p|f>_rr<n>.mp3

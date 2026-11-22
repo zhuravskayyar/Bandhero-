@@ -47,20 +47,44 @@ test('starter parts hold a fixed note or simultaneous chord without rotating bet
   }
 });
 
-test('accordion chord pads hold the same harmony without register changes',()=>{
+test('accordion chord layers play short staccato chords: one attack per chord, no held voices',()=>{
   const f=fixture('accordion'),ch={root:0,q:'m',pcs:[0,3,7]},block=[60,63,67];
-  for(const layer of f.module.layers.accordion.slice(0,4))for(let bar=0;bar<12;bar++)for(let step=0;step<16;step++){
-    const evs=layer.steps(ch,step,bar,1);if(!evs.length)continue;
-    if(layer.id==='bass')assert.ok(evs.every(e=>e.midi%12===0));else assert.deepEqual(evs.map(e=>e.midi),block);
-    for(const e of evs){assert.ok(e.holdSteps>0&&e.holdSteps<=16-step);assert.equal(e.fixedRegister,true);assert.equal(e.harmony,'0:0,3,7');assert.ok(!e.off&&!e.seconds,'all chord voices start together and use the bellows gate');}
+  for(const id of ['bellows','chords','trem'])for(let bar=0;bar<4;bar++)for(let step=0;step<16;step++){
+    const evs=f.module.layers.accordion.find(l=>l.id===id).steps(ch,step,bar,1);if(!evs.length)continue;
+    assert.deepEqual(evs.map(e=>e.midi),block);
+    assert.equal(evs.filter(e=>!e.noAtk).length,1,id+': a chord is one attack');
+    for(const e of evs){assert.equal(e.holdSteps,1);assert.ok(e.seconds>0&&e.seconds<=.2,'staccato gate');assert.equal(e.fixedRegister,true);assert.ok(!e.voice&&!e.harmony,'no voice to carry over into the next note');}
   }
 });
 
+test('violin and accordion never hold a note: every note is short and every bar has at least two attacks at level 1',()=>{
+  for(const inst of ['violin','accordion']){
+    const f=fixture(inst),ch={root:0,q:'m',pcs:[0,3,7]};
+    for(const layer of f.module.layers[inst])for(let bar=0;bar<4;bar++){
+      const steps=[];let attacks=0;
+      for(let s=0;s<16;s++){const evs=layer.steps(ch,s,bar,1);
+        for(const e of evs){assert.ok(e.dur<=6,inst+'/'+layer.id+' note is not longer than 6 steps');assert.ok(!(e.seconds>.5),inst+'/'+layer.id+' gate is short');assert.ok(!(e.holdSteps>2),inst+'/'+layer.id+' no held reeds');}
+        steps.push(evs);
+        attacks+=layer.perNote?evs.filter(e=>!e.noAtk&&!e.orn).length:(evs.length?1:0);}
+      assert.ok(attacks>=2,inst+'/'+layer.id+' bar '+bar+' has '+attacks+' attacks');
+    }
+  }
+});
+
+test('tarantella 6/8: bass on eighths 1 and 4, short chords on 3 and 6, triplet offsets stay inside the step',()=>{
+  const f=fixture('accordion'),ch={root:0,q:'m',pcs:[0,3,7]},oom=f.module.layers.accordion.find(l=>l.id==='oompah'),sd=60/120/4;
+  const hits=[];for(let s=0;s<16;s++)for(const e of oom.steps(ch,s,0,1))if(!e.noAtk)hits.push({at:(s+(e.off||0)/sd)*1,bass:e.midi<55});
+  assert.equal(hits.length,8);
+  assert.deepEqual(hits.filter(h=>h.bass).map(h=>Math.round(h.at*3)/3),[0,4,8,12],'bass on the 1st and 4th eighth of each 6/8 bar');
+  assert.deepEqual(hits.filter(h=>!h.bass).map(h=>+h.at.toFixed(2)),[2.67,6.67,10.67,14.67],'chords on the 3rd and 6th eighth');
+  for(const e of oom.steps(ch,2,0,1))assert.ok(e.off>0&&e.off<sd);
+});
+
 test('new instruments have distinct starter rhythms without adding hits or changing the held chord',()=>{
-  const f=fixture(),rhythms=new Set(),counts={flute:4,violin:2,sax:2,accordion:2};
+  const f=fixture(),rhythms=new Set(),counts={flute:4,violin:4,sax:2,accordion:2};
   for(const [inst,layers] of Object.entries(f.module.layers)){
-    const beats=[];for(let step=0;step<16;step++)if(layers[0].steps({root:0},step,0,1).length)beats.push(step);
-    assert.equal(beats.length,counts[inst],inst+' keeps its note density');rhythms.add(JSON.stringify(beats));
+    const beats=[],shape=[];for(let step=0;step<16;step++){const evs=layers[0].steps({root:0},step,0,1);if(evs.length){beats.push(step);shape.push([step,evs[0].vel]);}}
+    assert.equal(beats.length,counts[inst],inst+' keeps its note density');rhythms.add(JSON.stringify(shape));
   }
   assert.equal(rhythms.size,4,'flute, violin, sax and accordion each phrase their own part');
 });

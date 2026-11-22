@@ -98,3 +98,18 @@ test('new flute and sax skill kinds each draw their own pixel art, not the accor
   assert.equal(seen.size,Object.keys(samples).length);
   const {ph,ctx}=harness();ph.fxFrame();assert.equal(ph.drawInstrumentFx(ctx,{kind:'fireball',x:0,y:0,vx:1,vy:0,aoe:60,ex:.1,age:.3,life:.6},2),true);
 });
+
+test('chord tint: attacks carrying cc are redrawn in a palette blended toward the chord colour, the instrument stays recognisable',()=>{
+  const {ph,calls,ctx}=harness();
+  const draw=(cc,kind,o,inst)=>{calls.length=0;ctx.fillStyle=undefined;ph.fxFrame();const ok=ph.drawFx(ctx,kind,{x:50,y:50,age:.1,r:30,maxR:80,w:.52,dir:0,vx:200,vy:0,layer:kind==='cone'?'strum':kind==='shot'?'wave':'kick',x1:0,y1:0,x2:60,y2:20,...(cc?{cc}:{}),...o},inst,.1,.28,1,2.1);return {ok,colors:new Set(calls.map(c=>c.name==='drawImage'&&c.args[0]&&c.args[0].pixels?'img:'+Array.from(c.args[0].pixels).join():c.color).filter(Boolean)),n:calls.length};};
+  for(const [kind,inst] of [['ring','drums'],['zap','drums'],['shot','bass'],['cone','guitar']]){
+    const plain=draw(null,kind,{},inst),gold=draw('#ffd54a',kind,{},inst),blue=draw('#6aa8ff',kind,{},inst);
+    assert.equal(plain.ok,true,kind+' draws');assert.equal(gold.ok,true);assert.ok(gold.n>0&&blue.n>0);
+    if(kind==='ring'||kind==='zap')assert.notDeepEqual([...gold.colors].sort(),[...plain.colors].sort(),kind+' uses a tinted palette');
+    assert.notDeepEqual([...gold.colors].sort(),[...blue.colors].sort(),kind+' differs between chords');
+    const again=draw(null,kind,{},inst);assert.deepEqual([...again.colors].sort(),[...plain.colors].sort(),'tint does not leak into later untinted attacks');
+  }
+  // спрайти (снаряд, конус) запечено окремо для кожного кольору: кеш не змішує їх
+  const a=ph.drawShot?1:0;assert.ok(a);
+  assert.equal(ph.drawInstrumentFx(ctx,{kind:'boomerang',x:0,y:0,age:.1,life:1,r:11,dir:0,cc:'#c58aff'}),true);
+});
