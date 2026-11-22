@@ -1719,11 +1719,114 @@ test('co-op: guests see hearts and heal from them, and their note cards complete
       const before = (song.notes[1] || []).length, haveBefore = song.have; await b.elements.get('#opts').children[idx].onclick(); got = true;
       await until(() => host.SONG.have > haveBefore || (host.SONG.notes[1] || []).length > before, 'the guest note reaches the shared song');
       await until(() => guest.SONG.have === host.SONG.have && (guest.SONG.notes[1] || []).length === (host.SONG.notes[1] || []).length, 'guest song matches');
-    } else await b.elements.get('#opts').children[0].onclick();
+    } else await b.elements.get('#opts').children[Math.max(0, opts.findIndex(o => !o.hp))].onclick(); // не картка +10% макс. HP: вона законно змінює максимум
     await hostBtn.onclick(); await until(() => !a.game.choosing && !b.game.choosing, 'level closes');
   }
   assert.ok(got, 'the guest was offered a note card');
   assert.equal(H.players.find(p => p.char === 'bass').p.max, 120, 'levels do not change max HP');
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+/* ================= МЕРЕЖЕВА ПЛАВНІСТЬ ГОСТЯ: коалесценція, інтерполяція, SONG раз на зміну, акорд одним числом ================= */
+// Знімок для ручної подачі гостю: справжній стан хоста + службові поля; усі числа вже пройшли через проводовий формат.
+const handSnapshot = (host, over = {}, mobs) => {
+  const state = host.game.cleanState(); if (mobs) state.mobs = mobs; state.t = over.t ?? state.t;
+  return JSON.parse(JSON.stringify({ k: 'state', match: host.game.net.match, sq: over.sq ?? 1, ts: over.ts ?? 1000, state, step: 0, until: 0.1, paused: !!over.paused, choosing: false, choices: {}, ended: false, ...(over.ev ? { ev: 1 } : {}) }));
+};
+const deliver = (guest, d) => guest.game.net.ws.__handler({ data: JSON.stringify({ t: 'fromHost', d }) });
+// гість більше не бачить справжніх знімків хоста: усе, що він застосує, подаємо вручну
+const cutFeed = guest => { const ws = guest.game.net.ws; ws.__handler = ws.onmessage; ws.onmessage = null; };
+
+test('guest coalesces a burst of snapshots into one apply per frame; event snapshots apply at once and cancel older ones', async t => {
+  const srv = await startServer(t); const [a, b] = await bandOfTwo(t, srv.origin);
+  a.game.G.mobs = []; await delay(150); cutFeed(b); b.holdFrames(true); await delay(250); // зачекати, поки застосується знімок, що вже стояв у черзі
+  const ip = b.game.net.ip, applied = ip.applied, coalesced = ip.coalesced;
+  for (let i = 0; i < 3; i++) deliver(b, handSnapshot(a, { t: 1000 + i, sq: 10 + i, ts: 5000 + i * 20 }));
+  assert.equal(ip.applied, applied, 'regular snapshots wait for the frame, they are not applied one by one');
+  await until(() => ip.applied > applied, 'the pending snapshot is applied (timer fallback while frames are held)');
+  assert.equal(ip.applied, applied + 1, 'three snapshots, one apply'); assert.equal(ip.coalesced, coalesced + 2);
+  assert.equal(b.game.G.t, 1002, 'the newest one won');
+  // подія (пауза) іде одразу й по черзі; старіший регулярний знімок після неї не повертає гру з паузи
+  deliver(b, handSnapshot(a, { t: 2000, sq: 20, ts: 5100 })); deliver(b, handSnapshot(a, { t: 2001, sq: 21, ts: 5120, paused: true, ev: 1 }));
+  assert.equal(b.game.G.t, 2001, 'the event snapshot is applied immediately'); assert.equal(b.game.paused, true);
+  await delay(200); assert.equal(b.game.G.t, 2001, 'the older regular snapshot was discarded'); assert.equal(b.game.paused, true);
+  b.holdFrames(false); assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+test('net.ip interpolation state resets on connect, host change, prepare and leave', async t => {
+  const srv = await startServer(t); const [a, b] = await bandOfTwo(t, srv.origin);
+  const g = b.game, ip = g.net.ip, dirty = () => Object.assign(ip, { off: 12345, last: 99, lost: 3, applied: 7, gaps: [1, 2] });
+  dirty(); g.leaveBand(); assert.equal(g.net.ip, ip, 'same object'); assert.deepEqual([ip.off, ip.last, ip.lost, ip.applied, ip.gaps.length], [null, 0, 0, 0, 0], 'leaveBand resets');
+  assert.deepEqual(a.errors, []);
+});
+
+test('guest interpolates remote mobs between snapshots, extrapolates up to 150 ms, then holds, and snaps on teleports', async t => {
+  const srv = await startServer(t); const [a, b] = await bandOfTwo(t, srv.origin);
+  a.game.G.mobs = []; await delay(150); cutFeed(b); b.holdFrames(true); await delay(250); // зачекати, поки застосується знімок, що вже стояв у черзі
+  const g = b.game, ip = g.net.ip, at = (x, ts) => handSnapshot(a, { ts, sq: ts }, [{ netId: 9001, type: 'fal', x, y: -x / 2, hp: 10 }]);
+  const mob = () => g.G.mobs.find(m => m.netId === 9001);
+  ip.off = 0; ip.avg = 75; ip.dev = 0; ip.delay = 110; // зсув годинників 0: час знімка = ts; затримка рендера 110 мс
+  for (const [x, ts] of [[0, 1000], [75, 1075], [150, 1150]]) await g.receiveHost(at(x, ts), performance.now()); // напряму: без статистики годинників, час знімка = ts
+  const frame = rt => { g.interpolateWorld(0.001, rt + ip.delay); return mob(); }; // render time = rt
+  let m = frame(1040); assert.ok(Math.abs(m.x - 40) < .6 && Math.abs(m.y + 20) < .6, 'between snapshots 1 and 2: x=' + m.x);
+  m = frame(1100); assert.ok(Math.abs(m.x - 100) < .6, 'between snapshots 2 and 3: x=' + m.x);
+  m = frame(1200); assert.ok(Math.abs(m.x - 200) < .6, 'newer snapshot not here yet: extrapolates by the last velocity, x=' + m.x);
+  m = frame(1500); assert.ok(Math.abs(m.x - 300) < .6, 'extrapolation is capped at 150 ms, then the mob holds, x=' + m.x);
+  m = frame(1100); assert.ok(Math.abs(m.x - 100) < .6, 'sampling is a pure function of render time');
+  await g.receiveHost(at(2000, 1225), performance.now()); m = frame(1226);
+  assert.equal(Math.round(m.x), 2000, 'a teleport (>500 px) snaps instead of sliding across the screen');
+  // нова сутність не виїжджає з нескінченності: одна вибірка — стоїть на місці
+  await g.receiveHost(handSnapshot(a, { ts: 1300, sq: 1300 }, [{ netId: 9002, type: 'fal', x: 30, y: 40, hp: 10 }]), performance.now());
+  g.interpolateWorld(0.001, 1300 + ip.delay + 500); const fresh = g.G.mobs.find(x => x.netId === 9002); assert.deepEqual([fresh.x, fresh.y], [30, 40]);
+  assert.equal(g.G.players.find(p => p.id === g.net.id).p.sm, undefined, 'the own hero is predicted, never interpolated');
+  // чистий sampleAt: вибірки [T,x,y…]
+  assert.deepEqual(Array.from(g.sampleAt([0, 0, 0, 100, 100, 50], 50)), [50, 25]); assert.deepEqual(Array.from(g.sampleAt([0, 0, 0], 999)), [0, 0]);
+  b.holdFrames(false); assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+test('own hero reconciliation corrects small errors gradually instead of teleporting', async t => {
+  const srv = await startServer(t); const [a, b] = await bandOfTwo(t, srv.origin);
+  a.game.G.mobs = []; await delay(150); cutFeed(b); b.holdFrames(true); await delay(250); // зачекати, поки застосується знімок, що вже стояв у черзі
+  const g = b.game, me = g.G.players.find(p => p.id === g.net.id), x0 = me.p.x;
+  g.net.hist = [{ t: performance.now() - 1000, x: x0, y: me.p.y }]; g.net.rtt = 0;
+  const d = handSnapshot(a, { ts: 3000, sq: 3000, ev: 1 }); d.state.players.find(p => p.id === g.net.id).p.x = x0 + 40; // хост бачить нас на 40 px правіше
+  await g.receiveHost(d, performance.now());
+  const mine = g.G.players.find(p => p.id === g.net.id);
+  assert.ok(Math.abs(mine.p.x - x0) < 1, 'applying a snapshot does not move the own hero by the error'); assert.ok(g.net.err && Math.abs(g.net.err.x - 40) < 2);
+  g.interpolateWorld(1 / 60); const step1 = mine.p.x - x0; assert.ok(step1 > 0 && step1 < 10, 'one frame removes only a part of the error: ' + step1);
+  for (let i = 0; i < 90; i++) g.interpolateWorld(1 / 60); assert.ok(Math.abs(mine.p.x - (x0 + 40)) < 1.5, 'and it converges: ' + (mine.p.x - x0));
+  b.holdFrames(false); assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+test('SONG travels only when it changes (and in event/reconnect snapshots); guests keep the last one, also after a reconnect', async t => {
+  const srv = await startServer(t); const [a, b] = await bandOfTwo(t, srv.origin);
+  const sent = []; const ws = a.game.net.ws, orig = ws.send.bind(ws); ws.send = s => { try { const m = JSON.parse(s); if (m.t === 'toAll' && m.d && m.d.k === 'state') sent.push({ ev: !!m.d.ev, song: !!m.d.song, len: s.length }); } catch {} return orig(s); };
+  await until(() => sent.filter(s => !s.ev).length >= 8, 'a few regular snapshots');
+  const regular = sent.filter(s => !s.ev);
+  assert.ok(regular.filter(s => !s.song).length >= regular.length - 2, 'regular snapshots carry no SONG while it is unchanged: ' + JSON.stringify(regular.map(s => +s.song)));
+  const withSong = regular.find(s => s.song), without = regular.find(s => !s.song); if (withSong) assert.ok(withSong.len > without.len + 500, 'the SONG is the bulky part');
+  assert.equal(JSON.stringify(b.game.SONG), JSON.stringify(a.game.SONG), 'the guest has the host song');
+  // ноти-карта на хості змінює пісню (рівні) — гість отримує нову
+  const before = a.game.SONG.have; a.game.SONG.have = (before || 0) + 1; await until(() => b.game.SONG.have === a.game.SONG.have, 'a changed SONG reaches the guest');
+  // обрив і повернення: хост одразу надсилає пісню знову
+  sent.length = 0; b.game.net.ws.close();
+  await until(() => b.game.net.ws && b.game.net.ws.readyState === 1 && !b.game.net.reconnecting, 'guest reconnects', 8000);
+  await until(() => sent.some(s => s.song), 'the host resends the SONG for the returned guest');
+  assert.equal(JSON.stringify(b.game.SONG), JSON.stringify(a.game.SONG), 'the guest still has the right SONG after the reconnect');
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+test('attack chord travels as one number and the guest renders the same colour and chord level as before', async t => {
+  const srv = await startServer(t); const [a, b] = await bandOfTwo(t, srv.origin);
+  const H = a.game.G, host = a.game; H.mobs = [];
+  const keys = host.CHORD_KEYS; assert.deepEqual(Array.from(keys), Object.keys(host.CHORD_FN));
+  const wire = JSON.parse(JSON.stringify({ cf: { k: 'V', l: 2 }, cc: host.CHORD_FN.V.col, x: 1.26, y: -3.51, vx: 120.4, age: .123456 }, host.wireReplacer));
+  assert.deepEqual(wire, { cf: keys.indexOf('V') * 4 + 2, x: 1, y: -4, vx: 120, age: .12 }, 'cf is a number, cc is gone, coordinates are integers');
+  assert.equal(JSON.stringify({ hp: 1, fx: 1, x: 1.26 }, host.wireReplacer), '{"hp":1,"fx":1,"x":1.3}', 'heroes keep one decimal');
+  const me = H.players[0], ids = {};
+  keys.forEach((k, i) => { const vid = 770 + i; ids[k] = vid; H.shots.push({ owner: me.id, layer: 'down', step: 0, cf: { k, l: 1 + i % 3 }, cc: host.CHORD_FN[k].col, inst: 'guitar', visualId: vid, kbk: 1, x: me.p.x + 3000 + i * 30, y: me.p.y + 3000, vx: 0, vy: 0, hit: new Set(), age: 0, life: 99, dmg: 0, spd: 0, pierce: 99, r: 4 }); });
+  await until(() => keys.every(k => b.game.G.shots.some(s => s.visualId === ids[k])), 'guest sees the six chord shots');
+  keys.forEach((k, i) => { const s = b.game.G.shots.find(x => x.visualId === ids[k]); assert.equal(s.cc, host.CHORD_FN[k].col, k + ' colour'); assert.deepEqual({ ...s.cf }, { k, l: 1 + i % 3 }, k + ' chord'); });
   assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
 });
 
@@ -1948,4 +2051,94 @@ test('Driving Rock: a fast major genre with eighth-note drive, snare on 2 and 4 
   const be=Array.from({length:64},(_,i)=>g.backingEvents(i>>4,i&15)).flat();
   assert.deepEqual([...new Set(be.map(e=>e.kind))].sort(),['bass','chord','drum','hook'],'the backing has the whole band');
   assert.deepEqual(s.errors,[]);
+});
+
+test('mobile: viewport meta, screen sound controls mute the final gain only', async t => {
+  const html = fs.readFileSync(path.join(__dirname, 'game.html'), 'utf8');
+  const vp = html.match(/<meta name="viewport" content="([^"]*)"/)[1];
+  assert.ok(/width=device-width/.test(vp) && /initial-scale=1/.test(vp) && /viewport-fit=cover/.test(vp));
+  assert.ok(/id="mute"/.test(html) && /id="vol"/.test(html));
+  const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
+  await s.game.pick('guitar');
+  const u = () => s.game.userSound;
+  assert.ok(u().gain, 'user gain node exists after audio init');
+  const master = s.game.masterReact.master.gain.value;
+  s.game.setUserSound(1, true); assert.equal(u().gain.gain.value, 0);
+  s.game.setUserSound(.5, false); assert.equal(u().gain.gain.value, .25);
+  assert.equal(s.game.masterReact.master.gain.value, master, 'master gain untouched');
+  assert.deepEqual(s.errors, []);
+});
+
+// ---- тюнінг SF2, баланс рівнів героїв, рух висоти в стартових партіях ----
+test('SF2 renders are in tune: sustained A4 within ±3 cents, staccato tenor sax onset corrected across its whole range', () => {
+  require('./assets/sf2-bank.js');
+  const raw = fs.readFileSync(path.join(__dirname, 'assets/soundfonts/A320U.sf2'));
+  const bank = globalThis.SF2Bank.parse(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.length)), sr = 44100;
+  const cents = (f, hz) => 1200 * Math.log2(f / hz);
+  const dft = (d, hz, from, to) => { // піки спектра з кроком 0.04% — точніше за автокореляцію на довгому вікні
+    let best = 0, bf = hz; const a = Math.floor(sr * from), z = Math.floor(sr * to);
+    for (let f = hz * .97; f <= hz * 1.03; f += hz * .0004) { let re = 0, im = 0; const w = 2 * Math.PI * f / sr;
+      for (let i = a; i < z; i++) { const h = .5 - .5 * Math.cos(2 * Math.PI * (i - a) / (z - a)); re += d[i] * h * Math.cos(w * i); im += d[i] * h * Math.sin(w * i); }
+      if (re * re + im * im > best) { best = re * re + im * im; bf = f; } }
+    return bf;
+  };
+  const acorr = (d, hz, from, to) => { // середня висота короткого вікна (як у стакато-нотах гри)
+    const a = Math.floor(sr * from), w = Math.floor(sr * (to - from)), ac = L => { let c = 0; for (let i = a; i < a + w && i + L < d.length; i++) c += d[i] * d[i + L]; return c; };
+    let bl = 0, best = -Infinity; for (let L = Math.floor(sr / hz * .93); L <= Math.ceil(sr / hz * 1.07); L++) { const c = ac(L); if (c > best) { best = c; bl = L; } }
+    const p = ac(bl - 1), m = ac(bl), n = ac(bl + 1); return sr / (bl + .5 * (p - n) / (p - 2 * m + n));
+  };
+  for (const [name, program, key] of [['tenor_sax', 66, 69], ['flute', 73, 69], ['bass', 33, 57], ['piano', 0, 69]]) {
+    const hz = 440 * Math.pow(2, (key - 69) / 12), d = bank.render(0, program, key, { sampleRate: sr, seconds: 1.6 });
+    const c = cents(dft(d, hz, .3, 1.3), hz); assert.ok(Math.abs(c) <= 3, name + ' sustained pitch ' + c.toFixed(1) + ' cents');
+  }
+  // 75 мс стакато-нота сакса звучить лише в «плавучому» початку семпла: до виправлення середня висота на всьому діапазоні ≈ -10…-15 центів
+  const early = (opt, key, from, to) => { const hz = 440 * Math.pow(2, (key - 69) / 12); return cents(acorr(bank.render(0, 66, key, { sampleRate: sr, seconds: .4, ...opt }), hz, from, to), hz); };
+  const mean = opt => { let sum = 0, n = 0; for (let key = 58; key <= 73; key++) { sum += early(opt, key, .01, .075); n++; } return sum / n; };
+  const fixed = mean({}), plain = mean({ pitchFix: false });
+  assert.ok(plain < -8, 'the raw A320U tenor sax starts flat: ' + plain.toFixed(1) + ' cents');
+  assert.ok(Math.abs(fixed) <= 5, 'a staccato sax note is in tune (58…73): ' + fixed.toFixed(1) + ' cents');
+  for (const key of [74, 75, 76]) { const a = early({}, key, .03, .09), b = early({ pitchFix: false }, key, .03, .09); assert.ok(a > b + 6 && Math.abs(a) <= 6, 'top zone ' + key + ' corrected too: ' + b.toFixed(1) + ' -> ' + a.toFixed(1)); }
+});
+
+test('hero bus levels: per-instrument gains bring every starter part into one window', async t => {
+  const s = session('http://127.0.0.1:8080', true); t.after(() => s.close()); const g = s.game;
+  const OLD = { guitar: .95, bass: .95, piano: .85, drums: .9, flute: .95, violin: .95, sax: .9, accordion: .9 };
+  const MEASURED = { bass: -10.9, guitar: -12.3, drums: -17.5, piano: -18.8, violin: -25.2, flute: -29.1, sax: -30.4, accordion: -32.4 }; // RMS шини, дБFS, до змін
+  const SILENCE = { bass: 0, guitar: 0, drums: 0, piano: 0, violin: .45, flute: .62, sax: .76, accordion: .43 }; // частка тиші у 16 с партії
+  assert.deepEqual({ ...g.MIX }, { guitar: .62, bass: .53, piano: 1.05, drums: .9, flute: 2.4, violin: 2.15, sax: 2.4, accordion: 2.6 }, 'pinned gain table');
+  const now = Object.fromEntries(Object.keys(OLD).map(k => [k, MEASURED[k] + 20 * Math.log10(g.MIX[k] / OLD[k])])); // шина лінійна (компресор ratio 1)
+  const active = Object.fromEntries(Object.keys(now).map(k => [k, now[k] - 10 * Math.log10(1 - SILENCE[k])]));
+  const spread = o => Math.max(...Object.values(o)) - Math.min(...Object.values(o));
+  assert.ok(spread(now) <= 7.5 && Math.min(...Object.values(now)) >= -24 && Math.max(...Object.values(now)) <= -15, 'bus RMS window: ' + JSON.stringify(now));
+  const lead = Object.entries(active).filter(([k]) => k !== 'drums').map(([, v]) => v);
+  assert.ok(Math.max(...lead) - Math.min(...lead) <= 6 && Math.min(...lead) >= -21.5 && Math.max(...lead) <= -14, 'active-note levels within about ±3 dB (flute/accordion trimmed ~2 dB to keep loud chords out of the master limiter): ' + JSON.stringify(active));
+  const before = Object.fromEntries(Object.keys(OLD).map(k => [k, MEASURED[k] - 10 * Math.log10(1 - SILENCE[k])]));
+  assert.ok(spread(active) < spread(before) / 2, 'spread at least halved');
+  // піки: типова гучна нота (vel .75) × CFG.gain × пік семпла (розширені інструменти вирівняні levelTrim до ≤.8) × MIX × master .42 лишається під лімітером master (-2 дБ)
+  for (const k of Object.keys(OLD)) { if (k === 'drums') continue; const peak = .75 * g.CFG[k].gain * (['flute', 'violin', 'sax', 'accordion'].includes(k) ? .8 : .9) * g.MIX[k] * .42; assert.ok(peak < .794, k + ' single-note peak ' + peak.toFixed(2)); }
+});
+
+test('starter parts over one chord keep their attacks but walk through the chord (no drone), deterministically', async t => {
+  const s = session('http://127.0.0.1:8080'); t.after(() => s.close()); const g = s.game;
+  await g.pick('flute'); g.setPause(true);
+  const voiceOf = (inst, bars) => { // голос, що має рухатись: бас акорду в гітари, верхній голос у піаніно, весь звук в інших
+    const pick = { guitar: a => Math.min(...a), piano: a => Math.max(...a) }[inst] || (a => a[0]);
+    return new Set(bars.flatMap(b => b.filter(a => a.length).map(pick)));
+  };
+  for (let round = 0; round < 12; round++) for (const genre of Object.keys(g.GENRES)) {
+    const song = g.makeSong(null, genre); g.setSong(song); assert.equal(song.have, 1);
+    for (const inst of ['guitar', 'bass', 'piano', 'violin', 'flute', 'sax', 'accordion']) {
+      const part = g.LAYERS[inst][0], play = bar => Array.from({ length: 16 }, (_, st) => part.steps(g.chordAt(bar), st, bar, 1).filter(e => !e.orn).map(e => e.midi));
+      for (const bars of [[0, 1], [2, 3], [4, 5]]) {
+        const all = new Set(bars.flatMap(b => play(b).flat()));
+        assert.ok(all.size >= 3, genre + '/' + inst + ' bars ' + bars + ' use ' + all.size + ' pitches');
+        const voice = voiceOf(inst, bars.map(play));
+        assert.ok(voice.size >= 3, genre + '/' + inst + ' moving voice has ' + voice.size + ' pitches in bars ' + bars);
+      }
+      assert.deepEqual(play(0), play(0), genre + '/' + inst + ' is deterministic');
+      assert.deepEqual(play(2).map(a => a.length > 0), play(0).map(a => a.length > 0), genre + '/' + inst + ' same attack steps in every bar');
+      if (['guitar', 'bass', 'piano', 'violin'].includes(inst)) for (const m of play(0).flat()) assert.ok(song.prog[0].pcs.includes(m % 12), genre + '/' + inst + ' stays on the unlocked chord');
+    }
+  }
+  assert.deepEqual(s.errors, []);
 });

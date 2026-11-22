@@ -139,15 +139,19 @@ function frame(text) {
   return Buffer.concat([head, payload]);
 }
 const GRACE_MS = Number(process.env.GRACE_MS || 30000); // скільки чекаємо гравця (і гостя, і хоста), у якого обірвався зв’язок посеред забігу
-const DROP_BACKLOG = 48 * 1024;    // повільному гравцю пропускаємо чергові знімки світу (а не копимо затримку й не відключаємо його)
+const DROP_BACKLOG = 128 * 1024;   // жорсткий ліміт черги знімків для повільного гравця (байти)
+const DROP_AGE_MS = 200;           // і головний: якщо найстаріший недописаний запис чекає довше — свіжі знімки світу пропускаємо, а не копимо затримку
 const HARD_BACKLOG = 8 * 1024 * 1024; // лише якщо зовсім нічого не приймає
 
 function sendRaw(c, buf, droppable) {
   if (!c || !c.sock || c.sock.destroyed) return;
-  const queued = c.sock.writableLength;
-  if (droppable && queued > DROP_BACKLOG) { c.dropped = (c.dropped || 0) + 1; return; }
-  if (queued > HARD_BACKLOG) { c.reason = 'не встигав приймати дані'; c.sock.destroy(); return; }
-  c.sock.write(buf);
+  const sock = c.sock, queued = sock.writableLength, pend = sock.pendingAt || (sock.pendingAt = []);
+  // Вік черги: найстаріший запис ще не пішов у лінію довше за DROP_AGE_MS (callback write не спрацював) — лінія не встигає.
+  const stale = queued > 0 && pend.length > 0 && Date.now() - pend[0] > DROP_AGE_MS;
+  if (droppable && (queued > DROP_BACKLOG || stale)) { c.dropped = (c.dropped || 0) + 1; return; }
+  if (queued > HARD_BACKLOG) { c.reason = 'не встигав приймати дані'; sock.destroy(); return; }
+  pend.push(Date.now());
+  sock.write(buf, () => { pend.shift(); });
 }
 function send(c, obj) { sendRaw(c, frame(JSON.stringify(obj))); }
 function broadcast(room, obj, exceptId, droppable) { const f = frame(JSON.stringify(obj)); for (const c of room.clients.values()) if (c.id !== exceptId) sendRaw(c, f, droppable); }
@@ -292,7 +296,7 @@ function onMessage(c, text) {
   }
   if (m.t === 'ready' && room.phase === 'lobby') { c.ready = !!m.ready && !!c.char; pushRoster(room); return; }
   if (m.t === 'genre' && c.id === room.hostId && room.phase === 'lobby' && typeof m.genre === 'string') {
-    if (!['rand', 'lofi', 'pop', 'rock', 'newwave', 'metal', 'jazz', 'chanson', 'chanson_ua', 'reggae', 'industrial', 'funk', 'synthwave', 'folkrock', 'blues', 'dnb'].includes(m.genre)) return;
+    if (!['rand', 'lofi', 'pop', 'rock', 'newwave', 'metal', 'jazz', 'chanson', 'chanson_ua', 'reggae', 'industrial', 'funk', 'synthwave', 'folkrock', 'blues', 'dnb', 'rockfast'].includes(m.genre)) return;
     room.genre = m.genre; pushRoster(room); return;
   }
   if (m.t === 'begin' && c.id === room.hostId && room.phase === 'lobby') {

@@ -3,3 +3,6 @@
 !.claude/skills/
 node_modules/
 *.log
+
+# граф коду (graphify) — локальний, перебудовується
+graphify-out/

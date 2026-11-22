@@ -68,7 +68,17 @@ function buildInstrumentExpansion(api) {
     const sorted=(real?pos.filter(p=>p<32):FALLBACK_POS).slice().sort((a,c)=>a-c),p=(b%2)*16+s;
     const i=sorted.indexOf(p);if(i<0)return null;
     const next=sorted[i+1]??sorted[0]+32,prev=sorted[i-1]??sorted[sorted.length-1];
-    const m=real?fold(snapTo(mot[p],ch),lo,hi):cn(ch,FALLBACK_DEG[i%FALLBACK_DEG.length],lo+(hi-lo>14?5:0));
+    let m=real?fold(snapTo(mot[p],ch),lo,hi):cn(ch,FALLBACK_DEG[i%FALLBACK_DEG.length],lo+(hi-lo>14?5:0));
+    /* Поки відкрито один акорд, мотив після притискання до його тонів може звестися до 1–2 висот («дрон»). Тоді лінія ходить тонами акорду
+       (0, +1, +2, +1 щаблі знизу вгору; назад, якщо угорі тісно) — ті самі кроки, ті самі атаки, змінюється лише висота. Детерміновано від пісні. */
+    if(real&&(S.have||4)<=1&&sorted.length>=3){
+      const snapped=sorted.map(q=>fold(snapTo(mot[q],ch),lo,hi));
+      if(new Set(snapped).size<3){
+        const pcs=chordPcs(ch),lad=[];for(let x=lo;x<=hi;x++)if(pcs.includes(((x%12)+12)%12))lad.push(x);
+        let at=lad.indexOf(snapped[0]);if(at<0)at=0;const dir=at+2<lad.length?1:-1;
+        if(lad.length>=3){const w=[0,1,2,1][i%4];let k=at+dir*w;if(k<0||k>=lad.length)k=at-dir*w;m=lad[Math.max(0,Math.min(lad.length-1,k))];}
+      }
+    }
     const leap=real?Math.abs(mot[p]-mot[prev])>=7:false;
     return {m,gap:next-p,last:i===sorted.length-1,leap};
   }

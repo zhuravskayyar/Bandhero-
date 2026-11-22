@@ -94,6 +94,7 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
   <div id="team"></div>
 </div>
 <div id="load"></div>
+<div id="snd"><button id="mute" type="button" aria-label="Вимкнути звук">♪</button><input id="vol" type="range" min="0" max="100" step="5" value="100" aria-label="Гучність"></div>
 
 <div id="menu" class="ov">
   <h1 class="logo">BAND <span>HERO</span></h1>
@@ -112,7 +113,7 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
 <div id="lobby" class="ov hide">
   <h1>Збираємо гурт · 2–4 гравці</h1>
   <p>Надішли друзям посилання на цю кімнату. Через публічний сервер можна грати з різних мереж; локальна адреса працює лише в одній Wi-Fi мережі. Кожен бере свій інструмент.</p>
-  <input id="invite" readonly aria-label="Адреса гри для друзів">
+  <input id="invite" readonly inputmode="url" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Адреса гри для друзів">
   <div id="net-status" role="status" aria-live="polite"></div>
   <div id="roster"></div>
   <div id="lobby-genres" class="chips genres"></div>
@@ -618,6 +619,13 @@ function backingEvents(bar,s){
 
 /* ================= ЗВУКОВИЙ РУШІЙ ================= */
 let ctx=null,master,reverbIn,noiseBuf,masterLP,masterMood;
+/* Гучність на екрані: окремий фінальний gain (після компресора), тож фермата/реакція музики, що малюють master.gain, її не скидають */
+let userVol=1,userMuted=false,userGain=null;
+try{const v=parseFloat(localStorage.getItem('bandhero.vol'));if(v>=0&&v<=1)userVol=v;userMuted=localStorage.getItem('bandhero.mute')==='1';}catch(e){}
+function applyUserVol(){if(userGain)userGain.gain.value=userMuted?0:userVol*userVol;}
+function syncSndUI(){const b=$('#mute'),r=$('#vol');if(b){b.textContent=userMuted||userVol===0?'✕':'♪';b.classList.toggle('off',userMuted||userVol===0);b.setAttribute&&b.setAttribute('aria-label',T(userMuted?'Увімкнути звук':'Вимкнути звук'));}if(r)r.value=Math.round(userVol*100);}
+function setUserSound(vol,muted){if(vol!==undefined)userVol=Math.max(0,Math.min(1,vol));if(muted!==undefined)userMuted=!!muted;applyUserVol();syncSndUI();
+  try{localStorage.setItem('bandhero.vol',String(userVol));localStorage.setItem('bandhero.mute',userMuted?'1':'0');}catch(e){}}
 function makeIR(dur,decay){
   const sr=ctx.sampleRate,len=Math.floor(sr*dur),b=ctx.createBuffer(2,len,sr);
   for(let c=0;c<2;c++){const d=b.getChannelData(c);let lp=0;
@@ -627,10 +635,10 @@ function makeIR(dur,decay){
 function initAudio(){
   const AC=window.AudioContext||window.webkitAudioContext;ctx=new AC({latencyHint:'playback'});
   const comp=ctx.createDynamicsCompressor();comp.threshold.value=-2;comp.knee.value=0;comp.ratio.value=16;comp.attack.value=.002;comp.release.value=.07;
-  master=ctx.createGain();master.gain.value=.42;
+  master=ctx.createGain();master.gain.value=.42;userGain=ctx.createGain();applyUserVol();
   // masterLP/masterMood — реакція музики на стан героя (удар, мало HP); див. MUSIC_REACT
   masterLP=ctx.createBiquadFilter();masterLP.type='lowpass';masterLP.frequency.value=20000;masterLP.Q.value=.7;masterMood=ctx.createGain();masterMood.gain.value=1;
-  master.connect(masterLP);masterLP.connect(masterMood);masterMood.connect(comp);comp.connect(ctx.destination); // чистий вихід; без спільного «лоу-фай» забарвлення й пульсуючого компресора
+  master.connect(masterLP);masterLP.connect(masterMood);masterMood.connect(comp);comp.connect(userGain);userGain.connect(ctx.destination); // чистий вихід; без спільного «лоу-фай» забарвлення й пульсуючого компресора
   const conv=ctx.createConvolver();conv.buffer=makeIR(1.35,3.2);
   reverbIn=ctx.createGain();const wet=ctx.createGain();wet.gain.value=.16;
   reverbIn.connect(conv);conv.connect(wet);wet.connect(master);
@@ -646,7 +654,12 @@ const EQ={
   drums:[['highpass',30,0,.7],['lowpass',9000,0,.7]]
 };
 Object.assign(EQ,{flute:[['highpass',220,0,.7],['lowpass',8500,0,.7]],violin:[['highpass',170,0,.7],['peaking',2800,-2,1],['lowpass',9500,0,.7]],sax:[['highpass',110,0,.7],['peaking',1600,1,1],['lowpass',8000,0,.7]],accordion:[['highpass',95,0,.7],['lowpass',7500,0,.7]]});
-const MIX={guitar:.95,bass:.95,piano:.85,drums:.9,flute:.95,violin:.95,sax:.9,accordion:.9};
+/* Рівень шини героя. Виміряно на стартових партіях (поп, A320U, 16 с, RMS шини, дБFS): бас -10.9, гітара -12.3, ударні -17.5, рояль -18.8, скрипка -25.2, сопілка -29.1, сакс -30.4, акордеон -32.4.
+   Шина лінійна (компресор шини ratio 1), тож множник = 10^(Δ/20) від старого MIX (.95/.95/.85/.9/.95/.95/.9/.9): бас -5.1 дБ, гітара -3.7, ударні 0, рояль +1.8, скрипка +7.2, сопілка +10.1, сакс +8.5, акордеон +11.3.
+   Звичайний RMS шини після змін: бас -16.0, гітара -16.0, ударні -17.5, рояль -17.0, скрипка -18.1, сопілка -19.1, сакс -21.9, акордеон -21.1. Рідкі партії частково мовчать (скрипка 45%, сопілка 62%, сакс 76%, акордеон 43% тиші),
+   тож у АКТИВНИХ нотах (RMS + 10·lg(1/(1-тиша))): скрипка -15.5, сопілка -14.9, сакс -15.7, акордеон -18.7, бас/гітара -16 — усе в межах ±3 дБ навколо -16, мелодія чути над фоном.
+   Сопілку (3→2.4) і акордеон (3.3→2.6) знижено ≈2 дБ: їхні гучні удари/акорди заходили в лімітер (−2 дБ, ratio 16) і «качали» шину; у активних нотах: сопілка ≈-16.8, акордеон ≈-20.8. Сакс і акордеон не піднято до -19: MIX множить усю шину (акорди, фанфара, кооп), а головний лімітер (-2 дБ, ratio 16) не повинен «качати» пік ≈ 0,8·MIX·0,42. Фон (backingSlot) має власний вхід .48 — не чіпаємо. */
+const MIX={guitar:.62,bass:.53,piano:1.05,drums:.9,flute:2.4,violin:2.15,sax:2.4,accordion:2.6};
 const SEND={guitar:.16,bass:.035,piano:.2,drums:.07,flute:.14,violin:.16,sax:.1,accordion:.08};
 function makeBus(inst){
   // Перегруз, як у підсилювача: зріз низу (tight) і «горб» середини (mid) ДО обрізання — інакше низ акорду змішується в бруд;
@@ -1749,6 +1762,7 @@ function pedalEffects(owned=G&&G.pedals,inst=charKey){
 }
 const availableGear=inst=>PEDALS.filter(p=>p.inst===inst);
 const FAMILIAR={id:'familiar',atk:(e,L)=>homing(L,4*lv(L),5)};
+const HERO_SPEED=1.2; // швидкість бігу всіх героїв: +20% до базової CHARS[...].spd (прохання гравців)
 const CHARS={
   guitar:{name:T('Гітара-кусайка'),inst:'guitar',col:'#ffc56e',hp:100,spd:150,glyph:'♪',role:T('Гітара · ближній бій'),desc:T('Дерев’яна паща, кабель-хвіст і дуже гострий риф. Ріже найближчих ворогів звуковими дугами.')},
   drums:{name:T('Бум-барабан'),inst:'drums',col:'#ff967f',hp:130,spd:135,glyph:'◉',role:T('Ударні · захист'),desc:T('Круглий, гучний і впертий. Підстрибує в ритм та розкидає ворогів ударними хвилями.')},
@@ -1764,13 +1778,24 @@ genreExpansion.installLayers(LAYERS);
    Справжні малюнки (Бій, Перебір, Пінч, бочка жанру, басова лінія…) приходять лише картками. Щойно взято картку зі списку `by`,
    стартова партія замовкає і не займає місце серед 5 партій. Усе виводиться зі стану шарів — однаково на всіх пристроях гурту. */
 const STARTER_K=.7; // стартова партія б'є на 30% слабше: картка, що її замінює, — помітне посилення
+/* Стартові партії з одним акордом не стоять на одній ноті: кроком по долях ходять тони акорду (за номером такту й долі — однаково в усіх гравців).
+   Скільки ударів і де вони — не міняється (ноти = атаки, ритм = шкода); міняється лише висота. */
+const STARTER_WALK=[[0,1,2,3],[3,2,1,2]]; // скрипка: 1-3-5-8, потім 8-5-3-5 (номери тонів акорду знизу)
+function starterLadder(ch,low,s,bar){let t=tones(ch,up(ch.root,low),4);if(t[t.length-1]>VIOLIN_TOP)t=tones(ch,up(ch.root,low)-12,4);return t[STARTER_WALK[bar%2][(s>>2)%4]%t.length];}
+const VIOLIN_TOP=81; // стеля стартової скрипки: вище — октавою нижче
+function starterBassPitch(ch,s,bar){ // корінь–октава–квінта–октава, потім корінь–квінта–октава–квінта; картки баса (personalPitch) мають перевагу
+  const base=personalPitch(ch,s,33),plain=up(ch.root,33+(ch.close?5:0));if(base!==plain||ch.bassTonicPedal)return base;
+  return plain+[[0,12,7,12],[0,7,12,7]][bar%2][(s>>2)%4];}
+const starterInversion=(s,bar)=>[[0,1,2,1],[2,1,0,1]][bar%2][(s>>2)%4]; // піаніно: кореневе → 1-ше → 2-ге обернення
 const STARTERS={
   guitar:{id:'down',art:'strum',fx:'down',name:'Удар униз',lv:'Один удар униз по акорду на кожну долю',desc:'Один удар униз по всіх струнах на кожну долю — хвиля-конус у найближчого ворога.',
-    by:['strum','pick','pinch','garp'],steps:(ch,s)=>s%4?[]:strum(ch,'D',s?.72:.85,4,s)},
-  bass:{id:'beat',art:'root',name:'Тоніка в долю',lv:'Корінь акорду на кожну долю',desc:'Корінь поточного акорду на кожну долю — важка хвиля, що пробиває ряди.',
-    by:['root','walk','groove','pedal','fifths','sync','slap'],steps:(ch,s)=>ch.bassChromatic&&s===14?[E(up(ch.nextRoot,33)-1,.6,1,{str:0,fixedRegister:true})]:s%4?[]:[E(personalPitch(ch,s,33),s?.75:.9,4,{str:0,fixedRegister:true})]},
+    by:['strum','pick','pinch','garp'],steps:(ch,s,bar)=>{if(s%4)return[];const drop=ch.vo.length>2?Math.min(ch.vo.length-1,[[0,1,0,2],[1,2,0,1]][(bar||0)%2][s>>2]):0; // найнижча струна ходить: бас акорду кожен раз інший («бум-чік»), ударів стільки ж
+      const vo=drop?ch.vo.slice(drop):ch.vo;return strum(drop?{...ch,vo:vo.length<2?[vo[0],{...vo[0],midi:vo[0].midi+12,str:Math.min(5,vo[0].str+1)}]:vo}:ch,'D',s?.72:.85,4,s);}}, // мін. 2 струни: з однієї лишилась би «нота», тож додаємо октаву
+  bass:{id:'beat',art:'root',name:'Тоніка в долю',lv:'Корінь, октава й квінта по долях',desc:'Корінь поточного акорду ходить із октавою й квінтою — важка хвиля, що пробиває ряди.',
+    by:['root','walk','groove','pedal','fifths','sync','slap'],steps:(ch,s,bar)=>ch.bassChromatic&&s===14?[E(up(ch.nextRoot,33)-1,.6,1,{str:0,fixedRegister:true})]:s%4?[]:[E(starterBassPitch(ch,s,bar||0),s?.75:.9,4,{str:0,fixedRegister:true})]},
   piano:{id:'pulse',art:'chords',name:'Акорд у долю',lv:'Акорд на кожну долю',desc:'Поточний акорд на кожну долю — дві самонавідні ноти.',
-    by:['chords','arp','stab','pad'],steps:(ch,s)=>s%4?[]:tones(ch,ch.close?64:60,ch.seventh!==undefined||ch.add9||ch.pcs.length>3?4:3).map((m,i)=>E(m,s?.5:.62,4,{off:i*.008,fixedRegister:true}))},
+    by:['chords','arp','stab','pad'],steps:(ch,s,bar)=>{if(s%4)return[];const n=ch.seventh!==undefined||ch.add9||ch.pcs.length>3?4:3,inv=starterInversion(s,bar||0); // обернення міняються по долях: верхній голос веде лінію
+      return tones(ch,ch.close?64:60,n+inv).slice(inv).map((m,i)=>E(m,s?.5:.62,4,{off:i*.008,fixedRegister:true}));}},
   drums:{id:'pulse',art:'kick',name:'Біт жанру',lv:'Бочка й малий у ритмі жанру',desc:'Бочка й малий грають малюнок жанру; кожен удар створює хвилю.',
     by:['kick','snare'],steps:(ch,s,bar)=>{const fe=figEvents(bar,s);if(fe==='mute')return[];if(fe)return fe; // ритм-фігури звучать і в простому біті
       const g=BACKING_GROOVES[SONG.genre],out=[];if(g.kick.includes(s))out.push(D('kick',s===0?1:.8));if(g.snare.includes(s))out.push(D('snare',.8));return out;},
@@ -1778,13 +1803,14 @@ const STARTERS={
       try{LAYERS.drums.find(l=>l.id===id).atk(e,L);}finally{attackLayer=prev;}}},
   flute:{id:'pulse',art:'melody',name:'Наспів сопілки',lv:'Мелодія пісні простою лінією',desc:'Сопілка сама веде мелодію пісні: форшлаг перед сильною нотою, а кожна нота — своя пір’їнка.',perNote:true,
     by:['melody','flutter','stacc','legato'],steps:instrumentExpansion.starterSteps.flute,atk:instrumentExpansion.starterAtk.flute},
-  violin:{id:'pulse',art:'bow',name:'Смичок у долю',lv:'Тоніка на кожну долю',desc:'Коротка тоніка смичком на кожну долю — звукова нитка.',
-    by:['bow','pizz'],steps:(ch,s)=>{if(s%4)return[];let pc=ch.root;
+  violin:{id:'pulse',art:'bow',name:'Смичок у долю',lv:'Тони акорду по долях',desc:'Смичок проходить тони акорду 1-3-5-8 — звукова нитка.',
+    by:['bow','pizz'],steps:(ch,s,bar)=>{if(s%4)return[];let pc=starterLadder(ch,ch.close?72:67,s,bar||0);
       if(ch.violinThird&&s===4)pc=ch.pcs.find(n=>[3,4].includes((n-ch.root+12)%12))??pc;
       if(ch.violinSixth&&s===8)pc=(ch.root+9)%12;
       if(ch.violinFifth&&s===12)pc=(ch.root+7)%12;
       if(ch.violinPicardy&&s===12)pc=(ch.root+4)%12;
-      return[E(up(pc,ch.close?72:67),s%8?.44:.58,1,{seconds:.22,fixedRegister:true,accent:!(s%8)})];}}, // спіккато на кожну долю, сильні долі — з акцентом
+      let vm=pc<24?up(pc,ch.close?72:67):pc;while(vm>VIOLIN_TOP)vm-=12;
+      return[E(vm,s%8?.44:.58,1,{seconds:.22,fixedRegister:true,accent:!(s%8)})];}}, // спіккато на кожну долю, сильні долі — з акцентом
   sax:{id:'pulse',art:'breath',name:'Данс-хук',lv:'Мелодія пісні стакато, акценти на «і»',desc:'Сакс сам веде мелодію пісні стакато: акценти на слабких частках б’ють ударним кільцем, решта нот — малими кільцями.',perNote:true,
     by:['breath','stab','riff'],steps:instrumentExpansion.starterSteps.sax,atk:instrumentExpansion.starterAtk.sax},
   // жаба перебирає акорд на клавішах, як на піаніно: по одній ноті акорду на долю; лишається й після карток (by порожній)
@@ -2264,7 +2290,7 @@ function newRun(){
   G=null;BAL=balanceTable();DMGK=BAL[mainLayerId(charKey)][0]; // DMGK — для горіння й вибухів
   G={seed:(Math.random()*1e9)|0,t:0,kills:0,xp:0,level:1,
     layers:{[LAYERS[charKey][0].id]:1},pedals:{},syn:synergy(songOffs(),SONG.genre).bonus,
-    p:{x:0,y:0,r:15,hp:C.hp,max:C.hp,spd:C.spd,fx:1,fy:0,pulse:0,hurt:0},
+    p:{x:0,y:0,r:15,hp:C.hp,max:C.hp,spd:C.spd*HERO_SPEED,fx:1,fy:0,pulse:0,hurt:0},
     mobs:[],eshots:[],shots:[],rings:[],cones:[],zaps:[],gems:[],hearts:[],fx:[],texts:[],spawnAcc:0,bossNext:0,won:false};
   SONG.label=songLabel(); // підпис — уже з шарами нового забігу (на старті гітара: «Удар униз»)
   restoreMaster();atkQ=[];bossQ=[];walkSide=1;walkLast=null;slot.strings=[];slot.voices=[];slot.drumv={};slot.lastKick=undefined;applyPedalAudio();beat.ok=false;
@@ -2389,15 +2415,22 @@ addEventListener('keydown',e=>{
 addEventListener('keyup',e=>keys.delete(e.code));
 addEventListener('blur',()=>keys.clear());
 let joy=null;
-cv.addEventListener('pointerdown',e=>{if(!running||paused||joy)return;joy={id:e.pointerId,x0:e.clientX,y0:e.clientY,x:e.clientX,y:e.clientY};cv.setPointerCapture(e.pointerId);});
-cv.addEventListener('pointermove',e=>{if(joy&&e.pointerId===joy.id){joy.x=e.clientX;joy.y=e.clientY;}});
+/* Плаваючий джойстик: з'являється під пальцем. Дотик чи мишка — будь-де на полотні (кнопки DOM лежать над ним). */
+const JOY_R=60,JOY_DZ=10;
+cv.addEventListener('pointerdown',e=>{if(!running||paused||joy)return;
+  joy={id:e.pointerId,x0:e.clientX,y0:e.clientY,x:e.clientX,y:e.clientY,touch:e.pointerType==='touch'};cv.setPointerCapture(e.pointerId);if(e.preventDefault)e.preventDefault();});
+cv.addEventListener('pointermove',e=>{if(joy&&e.pointerId===joy.id){joy.x=e.clientX;joy.y=e.clientY;
+  if(joy.touch){const dx=joy.x-joy.x0,dy=joy.y-joy.y0,l=Math.hypot(dx,dy);if(l>JOY_R*1.5){const k=(l-JOY_R*1.5)/l;joy.x0+=dx*k;joy.y0+=dy*k;}} // база «тягнеться» за пальцем, щоб розвернутись швидко
+  if(e.preventDefault)e.preventDefault();}});
 const endJoy=e=>{if(joy&&e.pointerId===joy.id)joy=null;};
 cv.addEventListener('pointerup',endJoy);cv.addEventListener('pointercancel',endJoy);
+for(const t of ['touchstart','touchmove'])cv.addEventListener(t,e=>{if(e.cancelable)e.preventDefault();},{passive:false}); // без скролу/зуму/подвійного тапу
+cv.addEventListener('contextmenu',e=>e.preventDefault&&e.preventDefault());
 function inputDir(){
   let x=0,y=0;
   if(keys.has('KeyA')||keys.has('ArrowLeft'))x--;if(keys.has('KeyD')||keys.has('ArrowRight'))x++;
   if(keys.has('KeyW')||keys.has('ArrowUp'))y--;if(keys.has('KeyS')||keys.has('ArrowDown'))y++;
-  if(joy){const dx=joy.x-joy.x0,dy=joy.y-joy.y0,l=Math.hypot(dx,dy);if(l>8){const k=Math.min(1,l/60);x=dx/l*k;y=dy/l*k;}}
+  if(joy){const dx=joy.x-joy.x0,dy=joy.y-joy.y0,l=Math.hypot(dx,dy);if(l>JOY_DZ){const k=Math.min(1,(l-JOY_DZ)/(JOY_R-JOY_DZ));x=dx/l*k;y=dy/l*k;}}
   const l=Math.hypot(x,y);if(l>1){x/=l;y/=l;}return [x,y];
 }
 
@@ -3068,8 +3101,8 @@ function draw(){
   }
   g2.globalAlpha=1;g2.setTransform(DPR,0,0,DPR,0,0);
   if(joy){
-    g2.strokeStyle='#d9e8d54d';g2.lineWidth=2;g2.fillStyle='#101f2a55';g2.beginPath();g2.arc(joy.x0,joy.y0,55,0,Math.PI*2);g2.fill();g2.stroke();
-    const dx=joy.x-joy.x0,dy=joy.y-joy.y0,l=Math.hypot(dx,dy),k=l>55?55/l:1;g2.fillStyle='#c3dcc559';g2.beginPath();g2.arc(joy.x0+dx*k,joy.y0+dy*k,20,0,Math.PI*2);g2.fill();
+    g2.strokeStyle='#d9e8d599';g2.lineWidth=3;g2.fillStyle='#101f2a73';g2.beginPath();g2.arc(joy.x0,joy.y0,JOY_R,0,Math.PI*2);g2.fill();g2.stroke();
+    const dx=joy.x-joy.x0,dy=joy.y-joy.y0,l=Math.hypot(dx,dy),k=l>JOY_R?JOY_R/l:1;g2.fillStyle='#c3dcc59a';g2.beginPath();g2.arc(joy.x0+dx*k,joy.y0+dy*k,24,0,Math.PI*2);g2.fill();g2.stroke();
   }
   drawBeatHud();
   drawBandFinder(p);drawBossHud(p);
@@ -3194,6 +3227,7 @@ function loop(ts){
     keys.clear();joy=null;if(!net.active||net.isHost)setPause(true);else sendInput(true);
   }
   renderDT=running&&!paused?dt:0;
+  if(net.stateBox)flushState(); // найсвіжіший знімок хоста — раз на кадр (і до перевірки running: саме перший знімок запускає забіг гостя)
   if(running&&!paused&&G){if(net.active&&!net.isHost)interpolateWorld(dt);else update(dt);musicReact(dt);}
   else if(bossDrone)setBossDrone(false); // кінець забігу, пауза чи вибір покращення (у гурті звук не зупиняється) — гул вимикаємо; повернеться з боєм
   draw();hud();measuredFrames++;
@@ -3332,6 +3366,9 @@ function toMenu(){
   stopRun();
   ['#paused','#over','#hud','#lvl'].forEach(s=>$(s).classList.add('hide'));$('#menu').classList.remove('hide');}
 $('#pause').onclick=()=>{if(!choosing)setPause(true);};
+$('#mute').onclick=()=>{if(userVol===0)setUserSound(.7,false);else setUserSound(undefined,!userMuted);}; // гучність 0 зі збережених налаштувань: кнопка повертає звук
+$('#vol').oninput=e=>{const v=Number(e.target&&e.target.value);if(Number.isFinite(v))setUserSound(v/100,v===0?userMuted:false);};
+syncSndUI();
 $('#resume').onclick=()=>setPause(false);
 $('#quit').onclick=toMenu;
 $('#again').onclick=()=>net.active?(net.isHost?bandToLobby():null):startRun();
@@ -3367,7 +3404,7 @@ function connectBand(){
   if(net.active)return;
   if(!/^https?:$/.test(location.protocol)){$('#menu-notice').textContent=T('Для гри з друзями запусти node server.js і відкрий адресу, яку він покаже.');return;}
   stopRun();hideScreens();$('#menu-notice').textContent='';$('#lobby').classList.remove('hide');
-  net.active=true;net.id=null;net.host=null;net.roster=[];net.phase='lobby';net.renderedChoice=null;
+  resetNetIp();net.active=true;net.id=null;net.host=null;net.roster=[];net.phase='lobby';net.renderedChoice=null;
   const link=new URLSearchParams(location.search);
   net.room=net.ignoreRoomLink?null:(link.get('room')||(link.has('band')?'0000000000':null));net.inviteOrigin=location.origin;
   $('#invite').value='';bandStatus(T('Підключаюся до гурту…'));
@@ -3405,7 +3442,7 @@ function openBandSocket(){
       net.token=m.token||null;net.room=m.room||net.room;updateBandInvite();
     }
     if(m.t==='welcome'||m.t==='roster'){
-      if(m.id)net.id=m.id;net.host=m.host;net.roster=m.players;net.phase=m.phase;chosenGenre=m.genre;
+      if(m.id)net.id=m.id;if(net.host!==m.host)resetNetIp();net.host=m.host;net.roster=m.players;net.phase=m.phase;chosenGenre=m.genre;
       if(G&&G.players&&net.isHost){
         G.players=G.players.filter(a=>net.roster.some(p=>p.id===a.id));
         for(const key of ['shots','rings','cones'])G[key]=G[key].filter(o=>!o.owner||owner(o.owner));
@@ -3421,19 +3458,21 @@ function openBandSocket(){
     if(m.t==='hostAway'&&!net.isHost){if(running&&!net.waitingHost){net.waitingHost=true;keys.clear();joy=null;sendInput(true);$('#pause-title').textContent=T('Хост не відповідає. Чекаємо…');$('#resume').classList.add('hide');$('#lvl').classList.add('hide');$('#paused').classList.remove('hide');}return;}
     if(m.t==='hostBack'){net.renderedChoice=null;if(loading&&net.loadedSent===net.match)sendHost({k:'loaded',match:net.match});return;}
     if(m.t==='hostLeft'){
-      net.host=m.host;stopRun();net.match=null;net.pending.clear();net.phase='lobby';hideScreens();$('#lobby').classList.remove('hide');renderLobby();
+      resetNetIp();net.host=m.host;stopRun();net.match=null;net.pending.clear();net.phase='lobby';hideScreens();$('#lobby').classList.remove('hide');renderLobby();
       bandStatus(T('Хост відключився. Гурт повернувся в лобі; можна почати новий забіг.'));return;
     }
     if(m.t==='back'&&net.isHost){ // гість повернувся після обриву: одразу надсилаємо йому актуальний світ
       // під час завантаження знімок не шлемо: він запустив би забіг у гостей раніше за хоста
-      if(loading){if(net.prepared&&!net.loaded.has(m.id))wire({t:'toPeer',to:m.id,d:net.prepared});}else sendSnapshot();return;
+      if(loading){if(net.prepared&&!net.loaded.has(m.id))wire({t:'toPeer',to:m.id,d:net.prepared});}else{net.songJson=null;sendSnapshot();}return;
     }
     if(m.t==='fromPeer'&&net.isHost)receivePeer(m.from,m.d);
     if(m.t==='fromHost'&&!net.isHost){
       net.lastHeard=performance.now();
       if(net.waitingHost){net.waitingHost=false;$('#pause-title').textContent=choosing?T('Чекаємо, поки гурт обере покращення'):T('Гурт на паузі');if(!paused)$('#paused').classList.add('hide');}
-      // знімки світу застарівають миттєво: після затримки малюємо лише найсвіжіший
-      if(m.d&&m.d.k==='state'){net.stateBox=m.d;if(!net.stateTimer)net.stateTimer=setTimeout(()=>{net.stateTimer=0;const d=net.stateBox;net.stateBox=null;if(d&&net.active)receiveHost(d).catch(bandLoadError);},0);}
+      // Регулярні знімки світу застарівають миттєво: тримаємо лише найсвіжіший, а застосовуємо раз на кадр (flushState у loop).
+      // Знімки подій (ev: пауза, рівень, кінець) — одразу й по черзі; вони новіші за будь-який знімок, що чекає, тож той скидаємо.
+      if(m.d&&m.d.k==='state'){const recv=net.lastServer;noteSnapshot(m.d,e.data.length,recv);
+        if(m.d.ev){net.stateBox=null;receiveHost(m.d,recv).catch(bandLoadError);}else queueState(m.d,recv);}
       else receiveHost(m.d).catch(bandLoadError);
     }
   };
@@ -3458,7 +3497,7 @@ function bandDropped(rejected){
 }
 function leaveBand(dropped){
   const ws=net.ws;net.ws=null;net.active=false;net.match=null;net.pending.clear();clearTimeout(net.loadTimeout);
-  clearTimeout(net.retry);clearTimeout(net.connectTimer);clearTimeout(net.stateTimer);net.stateTimer=0;net.stateBox=null;net.reconnecting=false;net.autoPaused=false;net.triedOnce=false;net.waitingHost=false;net.token=null;net.room=null;net.inviteOrigin=null;net.prepared=null;net.hist=[];
+  clearTimeout(net.retry);clearTimeout(net.connectTimer);clearTimeout(net.stateTimer);net.stateTimer=0;net.stateBox=null;net.reconnecting=false;net.autoPaused=false;net.triedOnce=false;net.waitingHost=false;net.token=null;net.room=null;net.inviteOrigin=null;net.prepared=null;net.hist=[];resetNetIp();
   if(ws){if(dropped!==true&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({t:'bye'}));ws.onclose=null;ws.close();}
   stopRun();hideScreens();buildCards();$('#menu').classList.remove('hide');
   $('#resume').classList.remove('hide');$('#again').disabled=false;$('#again').textContent=T('Ще раз (нова пісня)');$('#pause-title').textContent=T('Пауза');
@@ -3504,14 +3543,14 @@ async function prepareBandAudio(my){
   slot=audioSlots[charKey]||slot;$('#load').textContent='';
 }
 function initBandWorld(d){
-  stopRun();runId++;loading=true;net.match=d.match;net.renderedChoice=null;net.pending.clear();net.entity=0;
+  stopRun();runId++;loading=true;resetNetIp();net.match=d.match;net.renderedChoice=null;net.pending.clear();net.entity=0;
   SONG=d.song;charKey=net.roster.find(p=>p.id===net.id).char;
   G={seed:d.seed,t:0,kills:0,xp:0,level:1,layers:{},syn:synergy(songOffs(),SONG.genre).bonus,
     players:[],mobs:[],eshots:[],shots:[],rings:[],cones:[],zaps:[],gems:[],hearts:[],fx:[],texts:[],spawnAcc:0,bossNext:0,won:false};
   const ownChar=charKey;
   for(const [i,p] of net.roster.entries()){
     charKey=p.char;const C=CHARS[p.char],bal=balanceTable();
-    G.players.push({id:p.id,char:p.char,p:{x:(i%2)*52-26,y:Math.floor(i/2)*52-26,r:15,hp:C.hp,max:C.hp,spd:C.spd,fx:1,fy:0,pulse:0,hurt:0},
+    G.players.push({id:p.id,char:p.char,p:{x:(i%2)*52-26,y:Math.floor(i/2)*52-26,r:15,hp:C.hp,max:C.hp,spd:C.spd*HERO_SPEED,fx:1,fy:0,pulse:0,hurt:0},
       layers:{[LAYERS[p.char][0].id]:1},pedals:{},bal,dmg:bal[mainLayerId(p.char)][0],input:[0,0],inputAt:0});
   }
   charKey=ownChar;bindLocalPlayer();hideScreens();$('#lobby').classList.remove('hide');bandStatus(T('Завантажуємо інструменти. Чекаємо всіх учасників…'));
@@ -3539,19 +3578,39 @@ function cleanState(){
   for(const key of ['mobs','shots','gems','hearts','rings','cones'])for(const item of G[key]||[])if(!item.netId)item.netId=++net.entity;
   const state={};for(const key of fields)state[key]=G[key];
   // гостям потрібно лише те, що малюється: внутрішні таймери й швидкості ворогів не шлемо (пізня гра — 140+ ворогів)
-  state.mobs=G.mobs.map(m=>{const o={};for(const k of MOB_WIRE)if(m[k]!==undefined&&(m[k]!==0||k==='x'||k==='y'))o[k]=m[k];return o;});
+  // r (типовий радіус) і max (= hp у непошкодженого) гість відновлює сам — це ~третина байтів кожного ворога
+  state.mobs=G.mobs.map(m=>{const o={};for(const k of MOB_WIRE){const v=m[k];if(v===undefined||(v===0&&k!=='x'&&k!=='y'))continue;
+    if(k==='r'&&MOBS[m.type]&&v===MOBS[m.type].r)continue;if(k==='max'&&Math.round(m.max*100)===Math.round(m.hp*100))continue;o[k]=v;}return o;});
   state.players=G.players.map(a=>({id:a.id,char:a.char,p:a.p,layers:a.layers,pedals:a.pedals}));
-  return JSON.parse(JSON.stringify(state,(k,v)=>k==='hit'||k==='target'?undefined:typeof v==='number'?Math.round(v*100)/100:v));
+  return JSON.parse(JSON.stringify(state,wireReplacer));
+}
+// Акорд атаки (cf:{k,l} + колір cc) їде одним числом: індекс функції в CHORD_KEYS·4 + рівень (1–3). Гість відновлює cf і cc у unpackChords.
+const CHORD_KEYS=Object.keys(CHORD_FN);
+function wireReplacer(k,v){
+  if(k==='hit'||k==='target')return undefined;
+  if(k==='cf'&&v&&typeof v==='object'&&CHORD_KEYS.includes(v.k))return CHORD_KEYS.indexOf(v.k)*4+Math.min(3,v.l||1);
+  if(k==='cc'&&this&&this.cf&&typeof this.cf==='object'&&CHORD_KEYS.includes(this.cf.k))return undefined;
+  if(typeof v!=='number')return v;
+  if(k==='x'||k==='y')return this&&this.fx!==undefined?Math.round(v*10)/10:Math.round(v); // герої (мають fx) — десяті, решта — цілі: гість усе одно інтерполює
+  if(k==='vx'||k==='vy'||k==='wob')return Math.round(v);
+  return Math.round(v*100)/100;
+}
+function unpackChords(state){
+  for(const key in state){const list=state[key];if(!Array.isArray(list))continue;
+    for(const o of list)if(o&&typeof o.cf==='number'){const n=o.cf;o.cf={k:CHORD_KEYS[n>>2],l:n&3||1};o.cc=CHORD_FN[o.cf.k].col;}}
 }
 function serializeOption(o){return o.l?{layer:o.l.id,isNew:o.isNew,...(o.variant?{variant:o.variant}:{})}:o.pd?{pedal:o.pd.id,cat:o.pd.cat,isNew:o.isNew}:o;}
 function deserializeOption(o){return o.layer?{l:LAYERS[charKey].find(l=>l.id===o.layer),isNew:o.isNew,...(o.variant?{variant:o.variant}:{})}:o.pedal?{pd:PEDALS.find(p=>p.id===o.pedal),isNew:o.isNew}:o;}
 function sendSnapshot(droppable){
   if(!net.isHost||!G||!net.match)return;
   if(droppable===true&&net.ws&&net.ws.bufferedAmount>64*1024){net.lastState=performance.now();return;}
-  const d={k:'state',match:net.match,state:cleanState(),song:SONG,step:seq.step,until:seq.nextTime-now(),paused,choosing,
-    choices:Object.fromEntries([...net.pending].map(([id,opts])=>[id,opts.map(serializeOption)])),ended:!running&&!loading};
-  // регулярні знімки сервер може пропустити повільному гравцю; знімки подій (пауза, рівень, кінець) — ніколи
-  if(droppable===true)wire({t:'toAll',d,drop:1});else sendBand(d);net.lastState=performance.now();
+  // Пісня (2–4 КБ) їде лише коли змінилася (порівняння рядків), у кожному знімку події та раз на 5 с про всяк випадок: гість тримає останню.
+  const t=performance.now(),ev=droppable!==true,sj=JSON.stringify(SONG),songChanged=sj!==net.songJson,withSong=ev||songChanged||t-net.songAt>5000;
+  const d={k:'state',match:net.match,sq:++net.sq,ts:Math.round(t),state:cleanState(),...(withSong?{song:SONG}:{}),step:seq.step,until:seq.nextTime-now(),paused,choosing,
+    choices:Object.fromEntries([...net.pending].map(([id,opts])=>[id,opts.map(serializeOption)])),ended:!running&&!loading,...(ev?{ev:1}:{})};
+  if(withSong){net.songJson=sj;net.songAt=t;}
+  // регулярні знімки сервер може пропустити повільному гравцю; знімки подій (пауза, рівень, кінець) і зміни пісні — ніколи
+  if(droppable===true&&!songChanged)wire({t:'toAll',d,drop:1});else sendBand(d);net.lastState=performance.now();
 }
 function receivePeer(from,d){
   if(!d||typeof d!=='object')return;
@@ -3565,7 +3624,50 @@ function receivePeer(from,d){
   if(d.k==='pause'&&running&&!choosing)netPause(true);
   if(d.k==='choice')chooseBandUpgrade(from,d.index,d.level);
 }
-async function receiveHost(d){
+// ---------- мережева інтерполяція гостя ----------
+// Кожен віддалений об’єкт тримає до 4 вибірок [T,x,y,…] (T — локальний час знімка = час хоста + зсув годинників).
+// Малюємо в момент now−delay: між двома знімками — лінійно, коли новіших ще нема — екстраполяція за швидкістю до 150 мс, далі стоїмо.
+const IP_MAX_EXTRAP=150,IP_MIN_DELAY=110,IP_MAX_DELAY=280;
+const freshIp=()=>({off:null,last:0,avg:75,dev:8,delay:120,sq:null,lost:0,coalesced:0,applied:0,bytes:0,gaps:[]});
+function resetNetIp(){Object.assign(net.ip,freshIp());} // старий зсув годинників хоста не має змушувати sampleAt екстраполювати постійно
+net.ip=freshIp();net.sq=0;net.songJson=null;net.songAt=0;
+// ?netdebug=1 у гостя: невеликий оверлей для вимірів на телефоні (інтервал знімків, пропуски, розмір, затримка рендера)
+let netDebugBox=null;
+if(new URLSearchParams(location.search).get('netdebug')==='1')setInterval(()=>{
+  if(!net.active||net.isHost||!net.ip.last)return;
+  if(!netDebugBox){netDebugBox=document.createElement('div');netDebugBox.style.cssText='position:fixed;left:4px;top:4px;z-index:99;padding:3px 6px;background:rgba(0,0,0,.65);color:#9f9;font:11px/1.3 monospace;pointer-events:none;white-space:pre';(document.body||document.documentElement).appendChild(netDebugBox);}
+  const ip=net.ip,g=ip.gaps,max=g.length?Math.max(...g):0;
+  netDebugBox.textContent='snap int '+Math.round(ip.avg)+'/'+Math.round(max)+' ms (avg/max)\ndropped '+ip.lost+' coalesced '+ip.coalesced+'\nsize '+(ip.bytes/1024).toFixed(1)+' KB  delay '+Math.round(ip.delay)+' ms\nrtt '+Math.round(net.rtt)+' ms';
+},500);
+function noteSnapshot(d,bytes,recv){
+  const ip=net.ip;if(typeof recv!=='number')recv=performance.now();
+  if(typeof d.ts==='number'){const sample=recv-d.ts;ip.off=ip.off===null||sample<ip.off?sample:ip.off+(sample-ip.off)*.02;}
+  if(ip.last){const gap=Math.min(1000,recv-ip.last);ip.avg+=(gap-ip.avg)*.1;ip.dev+=(Math.abs(gap-ip.avg)-ip.dev)*.1;ip.gaps.push(gap);if(ip.gaps.length>60)ip.gaps.shift();}
+  ip.last=recv;ip.bytes=ip.bytes?ip.bytes+(bytes-ip.bytes)*.1:bytes;
+  if(typeof d.sq==='number'){if(ip.sq!==null&&d.sq>ip.sq+1)ip.lost+=d.sq-ip.sq-1;ip.sq=d.sq;}
+}
+function queueState(d,recv){
+  if(net.stateBox){net.ip.coalesced++;if(net.stateBox.song&&!d.song)d.song=net.stateBox.song;} // пісня, що змінилась, не губиться разом зі старим знімком
+  net.stateBox=d;net.stateAt=recv;
+  if(!net.stateTimer)net.stateTimer=setTimeout(()=>{net.stateTimer=0;flushState();},100); // запасний вихід: у прихованій вкладці кадрів нема
+}
+function flushState(){
+  clearTimeout(net.stateTimer);net.stateTimer=0;
+  const d=net.stateBox,at=net.stateAt;net.stateBox=null;
+  if(d&&net.active&&!net.isHost)receiveHost(d,at).catch(bandLoadError);
+}
+function pushSample(o,prev,T){
+  const sm=prev&&prev.sm,n=sm?sm.length:0;
+  if(n&&T>sm[n-3]&&T-sm[n-3]<=400&&Math.hypot(sm[n-2]-o.x,sm[n-1]-o.y)<=500){o.sm=n>=12?sm.slice(3):sm.slice();o.sm.push(T,o.x,o.y);} // стрибок (воскресіння, телепорт) чи пауза в зв’язку: без ліну, одразу на місце
+  else o.sm=[T,o.x,o.y];
+}
+function sampleAt(sm,t,vx,vy){
+  const n=sm.length;if(n<6||t<=sm[0]){let x=sm[1],y=sm[2];if(n<6&&vx!==undefined&&t>sm[0]){const e=Math.min(IP_MAX_EXTRAP,t-sm[0])/1000;x+=vx*e;y+=vy*e;}return [x,y];}
+  for(let i=0;i+5<n;i+=3)if(t<=sm[i+3]){const a=(t-sm[i])/(sm[i+3]-sm[i]);return [sm[i+1]+(sm[i+4]-sm[i+1])*a,sm[i+2]+(sm[i+5]-sm[i+2])*a];}
+  const span=sm[n-3]-sm[n-6],e=Math.min(IP_MAX_EXTRAP,t-sm[n-3]),k=span>0?e/span:0;
+  return [sm[n-2]+(sm[n-2]-sm[n-5])*k,sm[n-1]+(sm[n-1]-sm[n-4])*k];
+}
+async function receiveHost(d,at){
   if(!d||typeof d!=='object')return;
   if(d.k==='pong'){net.rtt=Math.min(1000,Math.max(0,performance.now()-d.at));return;}
   if(d.k==='lobby'){stopRun();net.match=null;net.phase='lobby';hideScreens();$('#lobby').classList.remove('hide');renderLobby();return;}
@@ -3574,15 +3676,20 @@ async function receiveHost(d){
     if(my===runId&&net.active){net.loadedSent=net.match;sendHost({k:'loaded',match:net.match});}return;
   }
   if(d.k!=='state'||d.match!==net.match||!G)return;
-  const old=G,oldPlayers=new Map(G.players.map(a=>[a.id,a]));
-  SONG=d.song;G=d.state;
+  const old=G,oldPlayers=new Map(G.players.map(a=>[a.id,a])),ip=net.ip,recv=typeof at==='number'?at:performance.now(),wait=Math.max(0,(performance.now()-recv)/1000);
+  if(d.song)SONG=d.song;G=d.state;unpackChords(G);ip.applied++;
+  if(ip.off===null)ip.off=recv-(typeof d.ts==='number'?d.ts:recv);
+  const T=(typeof d.ts==='number'?d.ts:recv)+ip.off; // локальний час, якому відповідає цей знімок
+  for(const m of G.mobs){if(m.max===undefined)m.max=m.hp;if(m.r===undefined&&MOBS[m.type])m.r=MOBS[m.type].r;}
+  const prevMobs=new Map(old.mobs.map(o=>[o.netId,o]));
   for(const a of G.players){const prev=oldPlayers.get(a.id);a.bal=prev?prev.bal:{};a.dmg=prev?prev.dmg:1;
-    if(a.id===net.id&&running&&!d.paused&&a.p.hp>0)reconcileOwn(a.p,prev&&prev.p);else{smoothPosition(a.p,prev&&prev.p);if(a.id===net.id)net.hist=[];}}
-  for(const key of ['mobs','shots','gems']){const prev=new Map(old[key].map(o=>[o.netId,o]));for(const o of G[key])smoothPosition(o,prev.get(o.netId));}
-  // Знімок іде по мережі: хвилі й конуси вже «старші» на половину пінгу, інакше гість бачить удар із запізненням до звуку.
-  const lag=Math.min(.15,net.rtt/2000);if(lag>0)for(const key of ['rings','cones','zaps'])for(const o of G[key]||[])o.age+=lag;
+    if(a.id===net.id){if(running&&!d.paused&&a.p.hp>0)reconcileOwn(a.p,prev&&prev.p,recv);else{net.hist=[];net.err=null;}}else pushSample(a.p,prev&&prev.p,T);}
+  for(const m of G.mobs){const prev=prevMobs.get(m.netId);pushSample(m,prev,T);if(prev&&prev.wob!==undefined)m.wob=prev.wob;} // фаза «качання» крокує локально, а не стрибає від кожного знімка
+  for(const key of ['shots','gems']){const prev=new Map(old[key].map(o=>[o.netId,o]));for(const o of G[key])pushSample(o,prev.get(o.netId),T);}
+  // Знімок іде по мережі: хвилі й конуси вже «старші» на половину пінгу (і на очікування кадру), інакше гість бачить удар із запізненням до звуку.
+  const lag=Math.min(.15,net.rtt/2000)+Math.min(.1,wait);if(lag>0)for(const key of ['rings','cones','zaps'])for(const o of G[key]||[])o.age+=lag;
   bindLocalPlayer();loading=false;running=!d.ended;paused=d.paused;choosing=d.choosing;
-  const remoteTime=now()+d.until-net.rtt/2000,localStep=seq.step+(now()-seq.nextTime)/stepDur(),remoteStep=d.step+(now()-remoteTime)/stepDur();
+  const remoteTime=now()+d.until-net.rtt/2000-wait,localStep=seq.step+(now()-seq.nextTime)/stepDur(),remoteStep=d.step+(now()-remoteTime)/stepDur();
   if(paused||Math.abs(localStep-remoteStep)>.8||!Number.isFinite(localStep)){seq.step=d.step;seq.nextTime=remoteTime;}
   for(const a of G.players)withPlayer(a,applyPedalAudio);
   if(d.ended&&G.won&&REACT_W.boss){REACT_W.boss=false;musicSting('bossOut');} // фінальний бос: гість чує той самий сигнал перемоги, що й хост
@@ -3594,22 +3701,32 @@ function predictOwn(dt){
   const a=owner(net.id);if(!a||a.p.hp<=0)return;const q=a.p,[ix,iy]=inputDir();
   const fx=pedalEffects(a.pedals,a.char),speed=(q.spd||0)*(1+.05*(fx.haste||0));
   q.x+=ix*speed*dt;q.y+=iy*speed*dt;if(ix||iy){const l=Math.hypot(ix,iy);q.fx=ix/l;q.fy=iy/l;}
-  q.toX=undefined;const t=performance.now();(net.hist||(net.hist=[])).push({t,x:q.x,y:q.y});while(net.hist.length&&t-net.hist[0].t>1500)net.hist.shift();
+  const t=performance.now();(net.hist||(net.hist=[])).push({t,x:q.x,y:q.y});while(net.hist.length&&t-net.hist[0].t>1500)net.hist.shift();
+  bleedOwnError(q,dt);
 }
-function reconcileOwn(p,prev){
-  if(!prev||!Number.isFinite(prev.x)){net.hist=[];return;}
-  const back=performance.now()-Math.min(1000,(net.rtt||0)+70),h=net.hist||[];let was=null;
+// Різниця з хостом не стрибком, а плавно: щокадру знімаємо частку залишкової похибки (τ ≈ 0,2 с) з героя й з історії позицій.
+function bleedOwnError(q,dt){
+  const e=net.err;if(!e)return;const c=Math.min(1,dt*5),dx=e.x*c,dy=e.y*c;
+  q.x+=dx;q.y+=dy;for(const s of net.hist||[]){s.x+=dx;s.y+=dy;}
+  e.x-=dx;e.y-=dy;if(Math.hypot(e.x,e.y)<.3)net.err=null;
+}
+function reconcileOwn(p,prev,at){
+  if(!prev||!Number.isFinite(prev.x)){net.hist=[];net.err=null;return;}
+  const back=(typeof at==='number'?at:performance.now())-Math.min(1000,(net.rtt||0)+70),h=net.hist||[];let was=null;
   for(let i=h.length-1;i>=0;i--)if(h[i].t<=back){was=h[i];break;}
-  if(!was){if(Math.hypot(p.x-prev.x,p.y-prev.y)<=160){p.x=prev.x;p.y=prev.y;p.toX=p.toY=undefined;}return;} // історії ще замало: не тягнемо назад
+  if(!was){if(Math.hypot(p.x-prev.x,p.y-prev.y)<=160){p.x=prev.x;p.y=prev.y;}return;} // історії ще замало: не тягнемо назад
   const ex=p.x-was.x,ey=p.y-was.y;
-  if(Math.hypot(ex,ey)>160){net.hist=[];return;} // сильно розійшлися (воскресіння, телепорт): беремо позицію хоста
-  const k=Math.hypot(ex,ey)<2?1:.25;p.x=prev.x+ex*k;p.y=prev.y+ey*k;p.toX=undefined;p.toY=undefined;
-  for(const s of h){s.x+=ex*k;s.y+=ey*k;}
+  if(Math.hypot(ex,ey)>160){net.hist=[];net.err=null;return;} // сильно розійшлися (воскресіння, телепорт): беремо позицію хоста
+  p.x=prev.x;p.y=prev.y;net.err=Math.hypot(ex,ey)<.3?null:{x:ex,y:ey}; // лишаємо локальну позицію; різницю плавно знімає bleedOwnError
 }
-function smoothPosition(o,prev){o.toX=o.x;o.toY=o.y;if(prev&&Math.hypot(prev.x-o.x,prev.y-o.y)<500){o.x=prev.x;o.y=prev.y;}}
-function interpolateWorld(dt){
+function interpolateWorld(dt,nowMs){
+  const ip=net.ip,tNow=typeof nowMs==='number'?nowMs:performance.now();
+  // затримка рендера підлаштовується під виміряний інтервал і джитер знімків, але змінюється плавно (≤ 60 мс/с), щоб рух не «дихав»
+  const target=Math.min(IP_MAX_DELAY,Math.max(IP_MIN_DELAY,ip.avg+2.5*ip.dev+35)),step=60*dt;ip.delay+=Math.max(-step,Math.min(step,target-ip.delay));
   instrumentExpansion.interpolate(dt);if(!net.reconnecting&&!net.waitingHost)predictOwn(dt);
-  for(const list of [G.players.map(a=>a.p),G.mobs,G.shots,G.gems])for(const o of list)if(o.toX!==undefined){const k=Math.min(1,dt*20);o.x+=(o.toX-o.x)*k;o.y+=(o.toY-o.y)*k;}
+  const rt=tNow-ip.delay;
+  for(const a of G.players)if(a.id!==net.id&&a.p.sm){const [x,y]=sampleAt(a.p.sm,rt);a.p.x=x;a.p.y=y;}
+  for(const list of [G.mobs,G.shots,G.gems])for(const o of list)if(o.sm){const [x,y]=sampleAt(o.sm,rt,o.vx,o.vy);o.x=x;o.y=y;}
   for(const e of G.eshots||[]){e.x+=e.vx*dt;e.y+=e.vy*dt;e.age+=dt;} // снаряди ворогів летять по прямій між знімками
   G.t+=dt;for(const list of [G.rings,G.cones,G.zaps,G.shots,G.fx,G.texts,G.pfx||[],G.hearts||[]])for(const o of list)o.age+=dt;
   for(const m of G.mobs){m.flash=Math.max(0,(m.flash||0)-dt);m.wob=(m.wob||0)+dt*8;}
@@ -3692,14 +3809,15 @@ window.addEventListener('error',e=>{$('#load').textContent=TF('Помилка: {
 buildCards();
 
 // для тестів і налагодження
-window.__game={get beatState(){return {BK,BP,ok:beat.ok};},hitsPerSec,MUSIC_REACT,reactState:id=>({...reactOf(id)}),get reactWorld(){return {...REACT_W};},reactNotes,get bossDrone(){return !!bossDrone;},get masterReact(){return {lp:masterLP,mood:masterMood,master};},get sampled(){return Object.keys(SF);},get cache(){return [...bufCache.keys()];},get G(){return G;},get SONG(){return SONG;},
+window.__game={MIX,CFG,get beatState(){return {BK,BP,ok:beat.ok};},hitsPerSec,MUSIC_REACT,reactState:id=>({...reactOf(id)}),get reactWorld(){return {...REACT_W};},reactNotes,get bossDrone(){return !!bossDrone;},get userSound(){return {vol:userVol,muted:userMuted,gain:userGain};},setUserSound,get masterReact(){return {lp:masterLP,mood:masterMood,master};},get sampled(){return Object.keys(SF);},get cache(){return [...bufCache.keys()];},get G(){return G;},get SONG(){return SONG;},
   get ctx(){return ctx;},get audioOK(){return audioOK;},tileAt,pick,setPause,levelUp,addMob,spawnMob,hurtMob,MOBS,CHARS,ICON,makeSong,voicing,LAYERS,layerNotes,strum,chordAt,backingEvents,songLabel,songPartLabel,instrumentExpansion,genreExpansion,update,cleanState,
-  GENRES,synergy,hitsPerSec,balanceK,balanceTable,mkChord,noteCards,applyNote,chordTint,chordFnId,CHORD_FN,chordStamp,chordTones,dropHearts,pickHearts,HEART_LIFE,drawHeart,checkSongEvent,get attackChord(){return attackChord;},PEDALS,GEAR,VARIANTS,VOICINGS,voiced,availableGear,pedalEffects,levelOptions,applyUpgrade,serializeOption,deserializeOption,withPlayer,withAttack,driveCurve,bellowsBar,bellowsStrokes,bellowsStroke,
+  leaveBand,GENRES,synergy,hitsPerSec,balanceK,balanceTable,mkChord,noteCards,applyNote,chordTint,chordFnId,CHORD_FN,chordStamp,chordTones,dropHearts,pickHearts,HEART_LIFE,drawHeart,checkSongEvent,get attackChord(){return attackChord;},PEDALS,GEAR,VARIANTS,VOICINGS,voiced,availableGear,pedalEffects,levelOptions,applyUpgrade,serializeOption,deserializeOption,withPlayer,withAttack,driveCurve,bellowsBar,bellowsStrokes,bellowsStroke,
   backingSkip,now,doPlayerStep,processQueues,qInsert,get atkQ(){return atkQ;},set atkQ(v){atkQ=v;},get walkSide(){return walkSide;},get walkLast(){return walkLast;},get runId(){return runId;},get buses(){return buses;},get backingVoices(){return backingSlot?.voices.length||0;},get renderStats(){return {...renderStats};},FX_PROFILES,VISUAL_ASSETS,draw,setChar(k){charKey=k;},setGenre(k){chosenGenre=k;},
   sectionAt,phraseName,hookPhrase,directorStep,fullChordAt,patOf,P,SEC_NAME,
   logNotes(on){NOTE_LOG=on?[]:null;},get notes(){return NOTE_LOG;},setSong(s){SONG=s;},
   playBuffered,fire,reqBuf,warmLayer,endNoteTails,get voices(){return slot.voices;},
-  get running(){return running;},get paused(){return paused;},get choosing(){return choosing;},get net(){return net;}};
+  get running(){return running;},get paused(){return paused;},get choosing(){return choosing;},get net(){return net;},
+  receiveHost,interpolateWorld,sampleAt,flushState,wireReplacer,CHORD_KEYS};
 if(new URLSearchParams(location.search).has('band'))connectBand();
 })();
 </script>

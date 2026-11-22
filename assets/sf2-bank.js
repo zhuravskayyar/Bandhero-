@@ -45,6 +45,11 @@ function parse(ab){
 
 const inRange=(zone,global,op,v)=>{const r=zone.get(op)||global.get(op);return !r||(v>=r[0]&&v<=r[1]);};
 const seconds=tc=>Math.pow(2,tc/1200);
+// Per-preset pitch fixes measured on the real A320U samples (bank*1000+preset -> {cents,tau,tune}).
+// Tenor sax (GM 66): every recorded note starts 10-20 cents flat and settles within ~0.15 s (a breath scoop baked into the samples),
+// so the game's short staccato sax notes (75 ms) were heard ~20 cents flat. Playback is pushed sharp by cents*exp(-t/tau) to cancel it,
+// and tune (+2 c) removes the small remaining offset of the sustained part. The generators and sample pitchCorrection are already honoured below.
+const PITCH_FIX={66:{cents:17,tau:.07,tune:2,high:{from:74,cents:26,tau:.09}}}; // high: найвища зона сакса (семпл ds5) починає ще нижче
 
 class Bank{
   constructor(presets,instruments,samples,smpl){this.presets=presets;this.instruments=instruments;this.samples=samples;this.smpl=smpl;}
@@ -72,6 +77,7 @@ class Bank{
   render(bank,preset,key,opt={}){
     const sr=opt.sampleRate||44100,len=Math.floor(sr*(opt.seconds||3)),vel=opt.vel||100,voices=this.voices(bank,preset,key,vel);
     if(!voices.length)return null;
+    let fix=opt.pitchFix===false?null:opt.pitchFix||PITCH_FIX[bank*1000+preset]||null;if(fix&&fix.high&&key>=fix.high.from)fix={...fix,...fix.high};
     const out=new Float32Array(len),smpl=this.smpl;let last=0;
     for(const {sample:s,g} of voices){
       const v=k=>g[k]||0;
@@ -80,7 +86,7 @@ class Bank{
       const loop=(v(G.sampleModes)&1)===1&&le>ls+1&&le<=end;
       const root=g[G.rootKey]>=0?g[G.rootKey]:s.pitch>127?60:s.pitch;
       const cents=(key-root)*g[G.scaleTuning]+100*v(G.coarseTune)+v(G.fineTune)+s.correction;
-      const step=Math.pow(2,cents/1200)*s.rate/sr,amp=Math.pow(10,-Math.max(0,v(G.attenuation))*.4/200)/32768;
+      const step=Math.pow(2,(cents+(fix?fix.tune||0:0))/1200)*s.rate/sr,amp=Math.pow(10,-Math.max(0,v(G.attenuation))*.4/200)/32768;
       const attack=seconds(g[G.attack]),hold=seconds(g[G.hold]),decay=seconds(g[G.decay]),sustainDb=Math.min(144,Math.max(0,v(G.sustain))/10);
       let pos=start;
       for(let n=0;n<len;n++){
@@ -89,7 +95,7 @@ class Bank{
         const db=t<attack+hold?0:Math.min(sustainDb,100*(t-attack-hold)/decay);
         if(db>=96)break; // silent from here on
         out[n]+=x*amp*(t<attack?t/attack:1)*Math.pow(10,-db/20);
-        pos+=step;if(n>last)last=n;
+        pos+=fix&&t<fix.tau*6?step*Math.pow(2,fix.cents*Math.exp(-t/fix.tau)/1200):step;if(n>last)last=n;
       }
     }
     const used=Math.min(len,last+1),fade=Math.min(used,Math.floor(sr*.03));

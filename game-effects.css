@@ -171,3 +171,62 @@ kbd{--fill:#203845;--edge:#4f6f72;--shade:#0b161e;display:inline-block;min-width
   #song{font-size:10px}#layers{font-size:9px}.stage-label{font-size:9px}#xp-label{font-size:10px}#lobby h1{font-size:24px}#team{font-size:10px}
 }
 @media(prefers-reduced-motion:reduce){.card,.btn,#hp,#xp,#opts .card{transition:none}#opts .card.sel{transform:none}}
+
+/* ================= ЗВУК НА ЕКРАНІ ================= */
+#snd{position:fixed;right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));display:flex;align-items:center;gap:6px;
+  padding:3px 10px 3px 3px;background:#05090ecc;border:2px solid #2f474e;pointer-events:auto;z-index:6;touch-action:manipulation}
+#mute{width:40px;height:40px;padding:0;border:0;background:#15293a;color:#e2e6d2;font:400 18px var(--px);cursor:pointer;display:flex;align-items:center;justify-content:center}
+#mute.off{color:#e78273}
+#vol{width:96px;height:32px;margin:0;accent-color:#80d9cd;cursor:pointer;touch-action:none;background:transparent}
+
+/* ================= ТЕЛЕФОН ================= */
+html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;-webkit-touch-callout:none}
+#hud{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right));padding-top:max(10px,env(safe-area-inset-top))}
+#invite,input[type=text],input[type=url]{font-size:16px}
+.ov{padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+#lvl,#paused,#over{justify-content:flex-start}
+#lvl::before,#lvl::after,#paused::before,#paused::after,#over::before,#over::after{content:'';margin:auto}  /* центр, що не обрізає верх при прокручуванні */
+@media(pointer:coarse){
+  .btn{min-height:48px}.chips button{min-height:44px}#lang-switch button{min-width:44px}#pause{width:48px;height:48px}
+  #mute{width:44px;height:44px}#vol{height:44px}
+}
+@media(max-width:640px){
+  /* меню / лобі: одна колонка, великі кнопки */
+  #menu .menu-copy,.ov p{font-size:14px}
+  .ov>.btn,.menu-foot .btn{width:100%;max-width:420px;min-height:52px;font-size:17px}
+  .menu-foot{flex-direction:column;align-items:stretch;gap:10px;width:100%;max-width:420px}
+  #lang-switch{justify-content:center}#lang-switch button{min-height:44px;min-width:48px;font-size:14px}
+  .chips button{font-size:14px}.gn{font-size:12px}
+  #cards,#lobby-cards{max-width:100%}.musician small,.musician .st{font-size:12px}
+  #roster{width:100%}.member{font-size:14px;padding:10px 12px}
+  #net-status{font-size:14px}
+  /* рівень: великі картки, читабельний опис */
+  #opts{max-width:560px;width:100%;gap:12px}
+  #opts .card{min-height:92px;padding:14px 14px;gap:14px}
+  #opts .card .ic{flex:0 0 64px;width:64px;height:64px}
+  #opts .card b{font-size:18px;line-height:1.2}#opts .card small{font-size:15px;line-height:1.4}#opts .card .st,#opts .card .syn{font-size:13px}
+  #gear-hint{font-size:15px}
+  /* HUD: компактніше, не закриває поле */
+  .stage-label,#xp-label{display:none}
+  #layers{max-height:34px;overflow:hidden}
+  #team{font-size:11px;line-height:1.4}
+  #hud{gap:4px}
+  #snd #vol{width:84px}
+}
+/* телефон у ландшафті: низький екран */
+@media(max-height:450px) and (orientation:landscape){
+  .ov{padding-top:max(10px,env(safe-area-inset-top));padding-bottom:max(10px,env(safe-area-inset-bottom));gap:8px}
+  .ov h1,#lvl h1,#paused h1,#over h1,#lobby h1{font-size:24px}
+  #menu h1.logo{font-size:40px}
+  #menu .menu-copy{display:none}
+  #cards,#lobby-cards{grid-template-columns:repeat(4,minmax(0,1fr))}.portrait{width:72px;height:72px}
+  .chips.genres{grid-template-columns:repeat(8,minmax(0,1fr))}.gi{width:32px;height:32px;background-size:352px 32px;background-position:calc(var(--i) * -32px) 0}
+  #opts{grid-template-columns:repeat(auto-fit,minmax(230px,1fr));max-width:min(100%,900px)}
+  #opts .card{min-height:0}#opts .card .ic{flex-basis:48px;width:48px;height:48px}
+  #opts .card small{font-size:14px}#opts .card b{font-size:16px}
+  .ov>.btn,.menu-foot{max-width:360px}
+  #layers,.stage-label,#xp-label{display:none}
+  .player-panel{height:54px}.hud-portrait{width:44px;height:46px}
+  #hud{gap:3px}
+}
+@media(max-width:430px){.chips.genres{grid-template-columns:repeat(3,minmax(0,1fr))}.gn{overflow-wrap:break-word;hyphens:auto}}
