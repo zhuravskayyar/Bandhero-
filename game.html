@@ -24,10 +24,6 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
 #pause{pointer-events:auto;margin-left:auto;background:#0009;border:1px solid #fff2;color:#e8e6df;border-radius:10px;padding:6px 12px;font-size:14px}
 .ov{position:fixed;inset:0;background:#0e0f14ee;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;z-index:5;text-align:center;overflow:auto}
 .ov h1{margin:0;font-size:22px;color:#f1dba0;letter-spacing:.04em}
-.sync{display:flex;flex-direction:column;gap:6px;color:#d9e8d5;font-size:14px;width:min(320px,80vw)}
-.sync input{width:100%}
-.sync-hint{font-size:12px!important}
-.bank-row{display:flex;gap:8px}.bank-row .btn{flex:1;margin:0}.bank-row .btn.on{outline:2px solid #ffd54a;outline-offset:2px}
 .ov p{margin:0;color:#a9a592;font-size:14px;max-width:420px;line-height:1.45}
 .cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:100%;max-width:520px}
 #opts{grid-template-columns:1fr;max-width:380px}
@@ -133,11 +129,6 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
 <div id="paused" class="ov hide">
   <h1 id="pause-title">Пауза</h1>
   <button class="btn" id="resume">▶ Далі</button>
-  <label class="sync"><span>Синхронізація звуку: <b id="sync-val">0</b> мс</span>
-    <input id="sync" type="range" min="-100" max="300" step="10" value="0"></label>
-  <p class="sync-hint">Удар видно раніше за звук (наприклад, у Bluetooth-навушниках) — підніми повзунок.</p>
-  <div class="sync"><span>Звуки інструментів:</span>
-    <div class="bank-row"><button class="btn s" id="bank-a320u">A320U</button><button class="btn s" id="bank-fluid">FluidR3</button></div></div>
   <button class="btn s" id="quit">У меню</button>
 </div>
 
@@ -577,7 +568,7 @@ const GM={acoustic_grand_piano:0,electric_piano_1:4,electric_piano_2:5,clavinet:
   acoustic_guitar_nylon:24,acoustic_guitar_steel:25,electric_guitar_jazz:26,electric_guitar_clean:27,distortion_guitar:30,
   acoustic_bass:32,electric_bass_finger:33,electric_bass_pick:34,slap_bass_1:36,synth_bass_1:38,synth_bass_2:39,
   violin:40,pizzicato_strings:45,string_ensemble_1:48,synth_strings_1:50,tenor_sax:66,flute:73,lead_2_sawtooth:81};
-// Набір звуків для порівняння на слух: 'a320u' або 'fluid' (FluidR3 + Pearl/teropa з CDN). ?sf=fluid|a320u у адресі або перемикач на паузі.
+// Набір звуків для порівняння на слух: 'a320u' або 'fluid' (FluidR3 + Pearl/teropa з CDN). ?sf=fluid|a320u у адресі.
 let SOUND_BANK='a320u';
 // Електрогітари A320U (clean, jazz) — лише 15–200 мс справжнього запису, далі коротка петля, як у електропіано: звучать як піаніно.
 // Справжніх довгих записів електрогітари в банку немає, тож ці дві беремо з FluidR3 (CC BY 3.0) — записи справжніх гітар.
@@ -1918,9 +1909,7 @@ const seq={step:0,nextTime:0};
    рахується з нього, тож картинка завжди збігається зі звуком і атаками. */
 const beat={step:0,t:0,ok:false};let BK=0,BP=null;
 // Звук виходить із буфера пристрою пізніше, ніж його заплановано. Картинку (атаки, пульс) зсуваємо на цю затримку, щоб вона збігалась зі звуком, який чує гравець.
-// SYNC_MS — ручна поправка гравця (повзунок на паузі): браузер часто занижує затримку Bluetooth-навушників.
-let SYNC_MS=0;try{SYNC_MS=Math.max(-100,Math.min(300,+localStorage.getItem('bandhero.sync')||0));}catch(e){}
-const outLat=()=>audioOK&&ctx?Math.max(0,Math.min(.5,(ctx.outputLatency||0)+(ctx.baseLatency||0)+SYNC_MS/1000)):0;
+const outLat=()=>audioOK&&ctx?Math.max(0,Math.min(.5,(ctx.outputLatency||0)+(ctx.baseLatency||0))):0;
 function beatPos(){
   if(!beat.ok||!SONG)return null;
   const s=beat.step+(now()-outLat()-beat.t)/stepDur(),b=s/4,bi=Math.floor(b);
@@ -3001,24 +2990,7 @@ function toMenu(){
   ['#paused','#over','#hud','#lvl'].forEach(s=>$(s).classList.add('hide'));$('#menu').classList.remove('hide');}
 $('#pause').onclick=()=>{if(!choosing)setPause(true);};
 $('#resume').onclick=()=>setPause(false);
-{const syncEl=$('#sync'),syncVal=$('#sync-val');syncEl.value=SYNC_MS;syncVal.textContent=SYNC_MS;
-  syncEl.oninput=()=>{SYNC_MS=+syncEl.value||0;syncVal.textContent=SYNC_MS;try{localStorage.setItem('bandhero.sync',String(SYNC_MS));}catch(e){}};}
 $('#quit').onclick=toMenu;
-// Перемикач A320U ↔ FluidR3: скидає семпли й одразу перезавантажує партії, що звучать зараз.
-async function switchSoundBank(bank){
-  SOUND_BANK=bank;try{localStorage.setItem('bandhero.soundbank',bank);}catch(e){}
-  for(const k of ['a320u','fluid'])$('#bank-'+k).classList.toggle('on',k===bank);
-  bufCache.clear();for(const k in SF)delete SF[k];for(const k in sfFetch)delete sfFetch[k];for(const k in DKITS)delete DKITS[k];
-  if(!audioOK||!G||!SONG)return;
-  const my=runId,insts=net.active?G.players.map(a=>a.char):[CHARS[charKey].inst];
-  for(const inst of new Set(insts)){
-    const s=audioSlots[inst],name=GENRES[SONG.genre].sf[inst];if(!s)continue;
-    if(inst==='drums'){const kit=await loadKit(GENRES[SONG.genre].kit||'acoustic');if(my!==runId||SOUND_BANK!==bank)return;DKIT=kit;continue;}
-    s.sf=null;if(name){const map=await fetchSF(name);if(my!==runId||SOUND_BANK!==bank)return;if(map){SF[name]=map;s.sf=name;}}
-    await loadArtBanks(inst,my);
-  }
-}
-for(const k of ['a320u','fluid']){const b=$('#bank-'+k);b.classList.toggle('on',k===SOUND_BANK);b.onclick=()=>switchSoundBank(k);}
 $('#again').onclick=()=>net.active?(net.isHost?bandToLobby():null):startRun();
 $('#other').onclick=toMenu;
 document.addEventListener('visibilitychange',()=>{if(document.hidden){keys.clear();joy=null;if(net.active)sendInput(true);if(running&&!paused&&(!net.active||net.isHost))setPause(true);}

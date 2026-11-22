@@ -111,7 +111,6 @@ kbd{--fill:#203845;--edge:#4f6f72;--shade:#0b161e;display:inline-block;min-width
 
 #paused h1,#over h1{font-size:40px;margin-bottom:4px}
 #paused .btn,#over .btn{min-width:230px}
-.sync{font-family:var(--px);color:var(--paper)}
 
 /* ---------- гурт ---------- */
 #lobby{gap:12px}#lobby h1{font-size:30px}#lobby>p{font-size:13px;max-width:680px}
