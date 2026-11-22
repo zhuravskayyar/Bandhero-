@@ -1,0 +1,12 @@
+# Усі текстові файли — завжди LF (і в репозиторії, і в робочій копії на Windows).
+# Тести читають game.html як текст і ламаються на CRLF.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.png binary
+*.jpg binary
+*.mp3 binary
+*.wav binary
+*.sf2 binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
