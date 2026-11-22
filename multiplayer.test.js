@@ -85,7 +85,7 @@ function session(origin, audio = false, audioFixture = {}) {
     addEventListener: (name, fn) => { if (!events.has(name)) events.set(name, []); events.get(name).push(fn); },
   });
   context.window = context;
-  for(const file of ['assets/expansion-audio.js','assets/sf2-bank.js','assets/expansion-genres.js','assets/expansion-instruments.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,file),'utf8'),context,{filename:file});
+  for(const file of ['pixel-icons.js','assets/expansion-audio.js','assets/sf2-bank.js','assets/expansion-genres.js','assets/expansion-instruments.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,file),'utf8'),context,{filename:file});
   vm.runInContext(source, context, { filename: 'game.html' });
   return {
     get game() { return context.__game; }, get dictionary(){return dictionary;}, elements, errors,
@@ -371,7 +371,7 @@ test('flute, violin and sax have complete playable and translated skill catalogs
     for(const genre of Object.keys(g.GENRES)){
       const song=g.makeSong(null,genre);song.have=4;g.setSong(song);
       for(const l of layers){let n=0;for(let bar=0;bar<4;bar++)for(let step=0;step<16;step++)for(const e of l.steps(g.chordAt(bar),step,bar,1)){
-        if(e.midi!==undefined){assert.ok(g.chordAt(bar).pcs.includes(e.midi%12),inst+'/'+l.id+' follows the chord');n++;}
+        if(e.midi!==undefined&&!e.orn){assert.ok(g.chordAt(bar).pcs.includes(e.midi%12),inst+'/'+l.id+' follows the chord');n++;}
       }assert.ok(n>0,inst+'/'+l.id+' plays in '+genre);}
     }
   }
@@ -476,7 +476,7 @@ test('solo flute hears a backing band and new sound cards change the audio path'
   g.applyUpgrade({pd:gear.echo});assert.ok(g.buses.flute.fb.gain.value>0,'echo changes the delay bus');
   g.applyUpgrade({pd:gear.flutter});assert.ok(g.buses.flute.tremDepth.gain.value>0,'flutter modulates volume');
   g.applyUpgrade({pd:gear.vibrato});g.applyUpgrade({pd:gear.breath});g.applyUpgrade({pd:gear.octave});
-  const midi=g.LAYERS.flute[0].steps(g.chordAt(0),0,0,1)[0].midi;await g.reqBuf('flute',midi);await g.reqBuf('flute',midi+12);
+  const midi=Array.from({length:32},(_,i)=>g.LAYERS.flute[0].steps(g.chordAt(i>>4),i%16,i>>4,1).filter(e=>!e.orn)).find(a=>a.length)[0].midi; /* стартова партія грає мелодію пісні на її позиціях, а не на кожній долі */await g.reqBuf('flute',midi);await g.reqBuf('flute',midi+12);
   const before=g.voices.length;g.logNotes(true);g.fire(g.ctx.currentTime+.05,[{midi,vel:.5,dur:3}]);
   assert.ok(g.voices.length>=before+3,'main note, octave and air attack are audible voices');
   assert.ok(g.notes.some(n=>n.midi===midi+12),'flute octave sounds above the note');
@@ -1095,18 +1095,22 @@ test('new starter instruments keep the sole unlocked chord until a chord card is
   for(const genre of Object.keys(g.GENRES)){
     const song=g.makeSong(null,genre);g.setSong(song);assert.equal(song.have,1);
     const starterNotes=inst=>Array.from({length:12},(_,bar)=>{
-      const notes=[];for(let step=0;step<16;step++)notes.push(...g.LAYERS[inst].find(l=>!l.starter).steps(g.chordAt(bar),step,bar,1).map(e=>e.midi));return notes; // головна партія, не стартова
+      const notes=[];for(let step=0;step<16;step++)notes.push(...(['flute','sax'].includes(inst)?g.LAYERS[inst][0]:g.LAYERS[inst].find(l=>!l.starter)).steps(g.chordAt(bar),step,bar,1).filter(e=>!e.orn).map(e=>e.midi));return notes; /* стартова партія флейти й сакса веде мелодію пісні (лише ноти відкритих акордів); у решти — головна партія */
     });
     for(const inst of ['flute','violin','sax','accordion']){
       const bars=starterNotes(inst),root=song.prog[0].root;
-      for(const notes of bars){const allowed=inst==='accordion'?Array.from(song.prog[0].pcs):[root];assert.ok(notes.every(m=>allowed.includes(m%12)),genre+'/'+inst+' holds the unlocked chord');assert.deepEqual(notes,bars[0],genre+'/'+inst+' cannot rotate notes automatically');}
+      const melodic=['accordion','flute','sax'].includes(inst);
+      for(const notes of bars){const allowed=melodic?Array.from(song.prog[0].pcs):[root];assert.ok(notes.every(m=>allowed.includes(m%12)),genre+'/'+inst+' holds the unlocked chord');if(!melodic)assert.deepEqual(notes,bars[0],genre+'/'+inst+' cannot rotate notes automatically');}
     }
     assert.equal(song.have,1,'playing bars never unlocks chords');
     const card=g.chordCard();assert.ok(card?.add);g.applyUpgrade(card);assert.equal(song.have,2);
     const allowed=new Set(Array.from(song.prog.slice(0,2),ch=>ch.root));
     for(const inst of ['flute','violin','sax','accordion']){
       const roots=new Set(starterNotes(inst).flat().map(m=>m%12));
-      if(inst==='accordion'){
+      if(inst!=='accordion'&&inst!=='violin'){
+        const pcs=new Set(Array.from(song.prog.slice(0,2)).flatMap(ch=>Array.from(ch.pcs)));
+        for(const pc of roots)assert.ok(pcs.has(pc),genre+'/'+inst+' never plays a locked chord');
+      }else if(inst==='accordion'){
         const pcs=new Set(Array.from(song.prog.slice(0,2)).flatMap(ch=>Array.from(ch.pcs)));
         assert.deepEqual([...roots].sort((a,b)=>a-b),[...pcs].sort((a,b)=>a-b),genre+'/'+inst+' plays exactly the unlocked chord tones');
       }else{assert.equal(roots.size,2,genre+'/'+inst+' follows the second chord only after the card');for(const root of roots)assert.ok(allowed.has(root),genre+'/'+inst+' never plays a locked chord');}
@@ -1181,4 +1185,188 @@ test('accordion frog picks the chord on the keys, one small ring per note that n
   const G = g.G; G.instrumentFX = []; part.atk(part.steps(ch, 0, 0, 1), 1);
   const ring = G.instrumentFX.at(-1); assert.equal(ring.kind, 'noteRing'); assert.ok(ring.maxR <= 120 && !ring.delay, 'small ring, no pull phase');
   assert.deepEqual(s.errors, []);
+});
+
+/* ===== Зріз «герой сам грає мелодію»: сопілка й сакс ===== */
+test('flute and sax carry the song melody themselves: the backing hook is muted for them, still plays for guitar',async t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  await g.pick('flute');g.setPause(true);
+  const hook={kind:'hook'};
+  const w=(char,layers={pulse:1})=>({char,layers});
+  assert.equal(g.backingSkip(hook,[w('flute')]),true);assert.equal(g.backingSkip(hook,[w('sax')]),true);
+  assert.equal(g.backingSkip(hook,[w('guitar')]),false,'a guitar hero still gets the backing melody');
+  assert.equal(g.backingSkip(hook,[w('guitar'),w('flute')]),true,'one melody-carrying wind player in the band is enough');
+  assert.equal(g.backingSkip({kind:'bass'},[{char:'flute'}]),false);assert.equal(g.backingSkip({kind:'chord'},[{char:'sax'}]),false);
+  assert.equal(g.backingSkip({kind:'bass'},[{char:'bass'}]),true,'old muting rules unchanged');
+  for(const inst of ['flute','sax']){
+    await g.pick(inst);g.setPause(true);g.SONG.have=4;let heard=0;
+    for(let i=0;i<32;i++){const bar=i>>4,st=i%16,hooks=g.backingEvents(bar,st).filter(e=>e.kind==='hook');
+      const starter=g.LAYERS[inst][0].steps(g.voiced(g.chordAt(bar),g.G.layers,st,bar),st,bar,1).filter(e=>!e.orn);
+      assert.equal(starter.length>0,hooks.length>0,inst+' starter sounds exactly where the song melody sits');
+      if(hooks.length){heard++;assert.equal(starter[0].midi%12,hooks[0].midi%12,inst+' plays the same melody note');}}
+    assert.ok(heard>=4);
+  }
+  assert.deepEqual(s.errors,[]);
+});
+
+test('perNote layers queue one attack per note at t+off; each note is exactly one attack; ornaments are tiny and give no swing',async t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  for(const [inst,ids] of [['flute',['pulse','melody','legato','trill']],['sax',['pulse','riff','breath','stab']]]){
+    g.setGenre('pop');await g.pick(inst);g.setPause(true);g.SONG.have=4;g.SONG.swing=0;
+    for(const id of ids){
+      const Ly=g.LAYERS[inst].find(l=>l.id===id);assert.ok(Ly.perNote,inst+'/'+id+' is perNote');
+      g.G.layers={[id]:1};g.atkQ=[];g.G.mobs=[];g.G.instrumentFX=[];
+      const T=g.now()-.1;let notes=0,orns=0;
+      for(let step=0;step<64;step++){
+        const bar=step>>4,st=step&15,evs=Ly.steps(g.voiced(g.chordAt(bar),g.G.layers,st,bar),st,bar,1);notes+=evs.length;orns+=evs.filter(e=>e.orn).length;
+        const before=g.atkQ.length;g.doPlayerStep(step,T);
+        const fresh=g.atkQ.length-before;assert.equal(fresh,evs.length,inst+'/'+id+' one queue entry per note at step '+step);
+      }
+      assert.equal(g.atkQ.length,notes);
+      for(let i=0;i<g.atkQ.length;i++){const q=g.atkQ[i];assert.equal(q.hits.length,1);assert.equal(q.hits[0].evs.length,1);assert.equal(q.hits[0].Ly,Ly);
+        assert.equal(q.orn,!!q.hits[0].evs[0].orn);assert.ok(Number.isFinite(q.t));if(i)assert.ok(q.t>=g.atkQ[i-1].t,'queue stays sorted by time');
+        assert.equal(q.t,T+(q.hits[0].evs[0].off||0),'t = step time + note offset');}
+      assert.equal(g.atkQ.filter(q=>q.orn).length,orns);
+    }
+  }
+  /* один крок із прикрасою: два записи — форшлаг одразу, нота пізніше */
+  g.setGenre('pop');await g.pick('flute');g.setPause(true);g.SONG.have=4;g.SONG.swing=0;g.G.layers={melody:1};
+  const Ly=g.LAYERS.flute.find(l=>l.id==='melody');let graceStep=-1;
+  for(let i=0;i<64&&graceStep<0;i++){const evs=Ly.steps(g.voiced(g.chordAt(i>>4),g.G.layers,i&15,i>>4),i&15,i>>4,1);if(evs.some(e=>e.orn))graceStep=i;}
+  assert.ok(graceStep>=0,'melody has a grace note somewhere');
+  g.atkQ=[];const T=g.now()-.1;g.doPlayerStep(graceStep,T);
+  assert.equal(g.atkQ.length,2);assert.equal(g.atkQ[0].orn,true);assert.equal(g.atkQ[0].t,T);assert.ok(g.atkQ[1].t>T&&!g.atkQ[1].orn,'the main note attacks later, at its own offset');
+  assert.deepEqual(s.errors,[]);
+});
+
+test('perNote attacks are consumed one effect per note, with echo pedals and the hero swing',async t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  g.setGenre('pop');await g.pick('flute');g.setPause(true);g.SONG.have=4;g.SONG.swing=0;
+  g.G.layers={melody:1};const Ly=g.LAYERS.flute.find(l=>l.id==='melody');
+  let graceStep=-1;for(let i=0;i<64&&graceStep<0;i++){const evs=Ly.steps(g.voiced(g.chordAt(i>>4),g.G.layers,i&15,i>>4),i&15,i>>4,1);if(evs.some(e=>e.orn))graceStep=i;}
+  /* порожній забіг: одна прикраса — ефект є, замаху немає */
+  g.atkQ=[];g.G.instrumentFX=[];g.G.p.atkT=undefined;
+  g.doPlayerStep(graceStep,g.now()-.3);g.processQueues();
+  assert.equal(g.atkQ.length,0);assert.equal(g.G.instrumentFX.length,2,'grace and note each fired one effect');
+  const tiny=g.G.instrumentFX.filter(f=>f.tiny);assert.equal(tiny.length,1);assert.ok(tiny[0].life<=.35);
+  assert.notEqual(g.G.p.atkT,undefined,'the real note swings the hero');
+  /* echo-педаль: кожен запис дає одне відлуння з тією самою єдиною нотою */
+  g.PEDALS.push({id:'flute_testdelay',key:'testdelay',inst:'flute',fx:{delay:1},lv:[]});g.G.pedals={flute_testdelay:1};
+  g.atkQ=[];g.G.instrumentFX=[];g.doPlayerStep(graceStep,g.now()-.3);g.processQueues();
+  assert.equal(g.atkQ.length,2,'each of the two note entries queued one echo');
+  for(const q of g.atkQ){assert.ok(q.echo>0);assert.equal(q.hits.length,1);assert.equal(q.hits[0].evs.length,1);}
+  assert.deepEqual(s.errors,[]);
+});
+
+test('perNote balance: damage per bar stays within 25% of the old one-attack-per-step model for every slice layer',async t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  /* старі партії: [атак на такт, шкода атаки] — те, що було до «кожна нота — атака» */
+  const OLD={flute:{pulse:[4,12],melody:[4.5,12],legato:[1,15],trill:[1,8.4]},sax:{pulse:[4,19.5],riff:[5,5],breath:[2,19.5],stab:[2,7]}};
+  const nominal=f=>f.dmg*(f.kind==='beam'?Math.ceil(f.life/.16):f.kind==='orbit'?Math.ceil(f.life/f.tick):f.kind==='puddle'?Math.ceil(f.life/f.tick):f.kind==='bounce'?f.hops:1);
+  for(const genre of ['lofi','pop','metal','reggae','jazz'])for(const [inst,layers] of Object.entries(OLD)){
+    g.setGenre(genre);await g.pick(inst);g.setPause(true);g.SONG.have=4;g.SONG.swing=0;
+    const bpm=g.SONG.bpm;
+    for(const [id,[hits,dmg]] of Object.entries(layers)){
+      const Ly=g.LAYERS[inst].find(l=>l.id===id);g.G.layers={[id]:1};g.G.mobs=[];let total=0;const bars=8;
+      for(let step=0;step<bars*16;step++){g.atkQ=[];g.G.instrumentFX=[];g.doPlayerStep(step,g.now()-.3);g.processQueues();for(const f of g.G.instrumentFX)total+=nominal(f);}
+      const old=128*hits*dmg*(Ly.starter?.7:1)/bpm,now=total/bars;
+      assert.ok(now/old>.75&&now/old<1.25,genre+' '+inst+'/'+id+' damage per bar '+now.toFixed(1)+' vs old '+old.toFixed(1)+' ('+(now/old).toFixed(2)+')');
+    }
+  }
+  assert.deepEqual(s.errors,[]);
+});
+
+test('every flute and sax chord card audibly changes a slice layer (personalPitch routing)',async t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  for(const inst of ['flute','sax']){
+    g.setGenre('pop');await g.pick(inst);g.setPause(true);g.SONG.have=4;
+    /* контрольна мелодія: ноти в кожній чверті такту, щоб кожна картка мала на що лягти */
+    g.SONG.phrases={...g.SONG.phrases,mel:[0,4,8,12,18,22,26,30]};g.SONG.mel={0:76,4:74,8:72,12:79,18:77,22:74,26:71,30:67};
+    const sliceHeard=layers=>(inst==='flute'?['pulse','melody','legato','trill']:['pulse','riff','breath','stab']).map(id=>{const Ly=g.LAYERS[inst].find(l=>l.id===id);
+      return Array.from({length:64},(_,i)=>{const bar=i>>4,st=i&15,ch=g.voiced(g.chordAt(bar),layers,st,bar);return Ly.steps(ch,st,bar,1).map(e=>e.midi).join('+');}).join('|');}).join('/');
+    const before=sliceHeard({});
+    for(const id of Object.keys(g.VOICINGS[inst]))assert.notEqual(sliceHeard({['$v_'+id]:1}),before,inst+'/'+id+' changes the notes of a slice layer');
+  }
+  assert.deepEqual(s.errors,[]);
+});
+
+test('the song melody is muted only while a wind player actually holds a melody-carrying layer',async t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  await g.pick('flute');g.setPause(true);
+  const hook={kind:'hook'},skip=(char,layers,p)=>g.backingSkip(hook,[{char,layers,...(p?{p}:{})}]);
+  assert.equal(skip('flute',{pulse:1}),true,'active starter carries the melody');
+  assert.equal(skip('flute',{pulse:1,melody:1}),true);assert.equal(skip('flute',{melody:1}),true);
+  for(const id of ['legato','flutter','stacc'])assert.equal(skip('flute',{pulse:1,[id]:1}),false,'flute+'+id+': starter replaced, melody returns to the backing');
+  assert.equal(skip('flute',{pulse:1,legato:1,melody:1}),true);
+  assert.equal(skip('sax',{pulse:1}),true);assert.equal(skip('sax',{pulse:1,riff:1}),true);
+  for(const id of ['breath','stab'])assert.equal(skip('sax',{pulse:1,[id]:1}),false,'sax+'+id+': hook audible');
+  assert.equal(skip('sax',{pulse:1,breath:1,riff:1}),true);
+  assert.equal(skip('flute',{pulse:1},{hp:0}),false,'a dead player carries nothing');assert.equal(skip('flute',{pulse:1},{hp:5}),true);
+  assert.equal(g.backingSkip(hook,[{char:'flute',layers:{pulse:1},p:{hp:0}},{char:'guitar',layers:{}}]),false);
+  assert.equal(g.backingSkip(hook,[{char:'guitar',layers:{}}]),false);
+  assert.deepEqual(s.errors,[]);
+});
+
+test('sax starter steps aside for riff, and the in-game breath and stab use the per-note path',async t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  g.setGenre('pop');await g.pick('sax');g.setPause(true);g.SONG.have=4;g.SONG.swing=0;
+  g.G.layers={pulse:1,riff:1};g.atkQ=[];const T=g.now()-.3;
+  for(let i=0;i<32;i++)g.doPlayerStep(i,T);
+  assert.ok(g.atkQ.length>0&&g.atkQ.every(q=>q.hits[0].Ly.id==='riff'),'only riff plays, the starter does not double it');
+  /* стаб: акцент → ударне кільце r≈110; видих: промінь на довжину ноти */
+  g.G.layers={stab:1};g.atkQ=[];g.G.instrumentFX=[];
+  for(let i=0;i<16;i++)g.doPlayerStep(i,T);
+  assert.ok(g.atkQ.length>0&&g.atkQ.every(q=>q.per&&q.hits[0].evs[0].accent===true));
+  g.processQueues();assert.ok(g.G.instrumentFX.length>0&&g.G.instrumentFX.every(f=>f.kind==='blast'&&f.maxR>=100));
+  g.G.layers={breath:1};g.atkQ=[];g.G.instrumentFX=[];
+  for(let i=0;i<16;i++)g.doPlayerStep(i,T);
+  assert.ok(g.atkQ.length>0);g.processQueues();assert.ok(g.G.instrumentFX.length>0&&g.G.instrumentFX.every(f=>f.kind==='beam'));
+  assert.deepEqual(s.errors,[]);
+});
+
+test('trill and double-time pairs do not restart the hero swing every note',async t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  g.setGenre('pop');await g.pick('flute');g.setPause(true);g.SONG.swing=0;
+  const Ly=g.LAYERS.flute.find(l=>l.id==='melody');g.G.layers={melody:1};g.G.mobs=[];
+  let st=-1;for(let i=0;i<32&&st<0;i++)if(Ly.steps(g.voiced(g.chordAt(i>>4),g.G.layers,i&15,i>>4),i&15,i>>4,1).some(e=>!e.orn))st=i;
+  g.atkQ=[];g.doPlayerStep(st,g.now()-.3);g.G.p.atkT=undefined;g.processQueues();
+  const first=g.G.p.atkT;assert.notEqual(first,undefined,'the first note swings');
+  g.G.t+=.05;g.atkQ=[];g.doPlayerStep(st,g.now()-.3);g.processQueues();
+  assert.equal(g.G.p.atkT,first,'a note within .18 s of the swing does not restart it');
+  g.G.t+=.3;g.atkQ=[];g.doPlayerStep(st,g.now()-.3);g.processQueues();
+  assert.ok(g.G.p.atkT>first,'later notes swing again');
+  assert.deepEqual(s.errors,[]);
+});
+
+test('bass walk follows the note: root straight at the enemy, other notes fan out by pitch (country variant)',async t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  g.setGenre('pop');await g.pick('bass');g.setPause(true);g.SONG.have=4;
+  const Ly=g.LAYERS.bass.find(l=>l.id==='walk');g.G.layers={walk:2,$walk:'country'};g.G.mobs=[];g.G.shots=[];
+  const p=g.G.p,m=g.addMob('strel',p.x+300,p.y);m.hp=1e9;
+  const angles=[],rootAngles=[];
+  for(let st=0;st<16;st+=4){
+    const ch=g.voiced(g.chordAt(0),g.G.layers,st,0),evs=Ly.steps(ch,st,0,2);assert.equal(evs.length,1);
+    g.G.shots=[];g.withAttack({owner:null,layer:'walk',step:st},()=>Ly.atk(evs,2,st));
+    const sh=g.G.shots[0],a=Math.atan2(sh.vy,sh.vx),toEnemy=Math.atan2(m.y-p.y,m.x-p.x);
+    angles.push(Math.round((a-toEnemy)*1000)/1000);if((evs[0].midi-evs[0].rootMidi)%12===0)rootAngles.push(a-toEnemy);
+  }
+  assert.ok(new Set(angles).size>=3,'a bar sweeps across at least three directions: '+angles);
+  assert.ok(rootAngles.length>=1&&rootAngles.every(a=>Math.abs(a)<1e-6),'the root note hits straight at the enemy');
+  assert.deepEqual(s.errors,[]);
+});
+
+test('walk side alternates on repeated original notes, but an echo (ATK_SCALE<1) keeps the side',async t=>{
+  const s=session('http://127.0.0.1:8080');t.after(()=>s.close());const g=s.game;
+  g.setGenre('pop');await g.pick('bass');g.setPause(true);g.SONG.have=4;
+  const Ly=g.LAYERS.bass.find(l=>l.id==='walk');g.G.layers={walk:2,$walk:'country'};g.G.mobs=[];g.G.shots=[];
+  const p=g.G.p;g.addMob('strel',p.x+300,p.y).hp=1e9;
+  const ev=[{midi:40,rootMidi:36}];
+  const original=()=>{g.G.shots=[];g.withAttack({owner:null,layer:'walk',step:0},()=>Ly.atk(ev,2,0));return g.walkSide;};
+  assert.deepEqual([original(),original()],[1,-1],'repeated original note flips the side');
+  g.atkQ=[];g.qInsert({t:g.now()-.1,s:0,hits:[{Ly,evs:ev,L:2}],run:g.runId,owner:null,echo:.5});
+  g.processQueues();
+  assert.ok(g.G.shots.length>=1,'the echo actually fired a shot');
+  assert.equal(g.walkSide,-1,'echo of the same note keeps the side');
+  assert.equal(g.walkLast,4,'echo does not touch walkLast');
+  assert.deepEqual(s.errors,[]);
 });

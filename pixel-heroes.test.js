@@ -83,3 +83,18 @@ test('each new instrument has its own hit-spark palette and all ordinary attack 
   }
   assert.equal(new Set(palettes).size,4,'hit attribution stays visible through distinct colors');
 });
+
+test('new flute and sax skill kinds each draw their own pixel art, not the accordion fallback',()=>{
+  const samples={
+    orbit:{x:10,y:20,n:3,ring:60,spin:4,a0:.4,r:9},feather:{x:10,y:20,vx:200,vy:50},twister:{x:10,y:20,r:50,range:90},
+    gust:{x:10,y:20,dir:.2,split:.45,w:1.2,r:100},blast:{x:10,y:20,r:80},fireball:{x:10,y:20,vx:300,vy:20,aoe:60,ex:-1},
+    smokering:{x:10,y:20,r:50},bounce:{x:10,y:20,px:-60,py:-30,left:2},puddle:{x:10,y:20,r:46}};
+  const render=(f)=>{const {ph,calls,ctx}=harness();ph.fxFrame();assert.equal(ph.drawInstrumentFx(ctx,{...f,age:.2,life:1},2),true);
+    assert.equal(calls.filter(c=>c.name==='save').length,calls.filter(c=>c.name==='restore').length);return JSON.stringify(calls.map(c=>[c.name,c.args.filter(n=>typeof n==='number'),c.color]));};
+  const bellows=render({kind:'bellows',x:10,y:20,r:80,maxR:100,delay:.4}),seen=new Set();
+  for(const [kind,o] of Object.entries(samples)){
+    const out=render({kind,...o});assert.ok(out.length>50,kind+' paints');assert.notEqual(out,bellows,kind+' is not bellows');seen.add(out);
+  }
+  assert.equal(seen.size,Object.keys(samples).length);
+  const {ph,ctx}=harness();ph.fxFrame();assert.equal(ph.drawInstrumentFx(ctx,{kind:'fireball',x:0,y:0,vx:1,vy:0,aoe:60,ex:.1,age:.3,life:.6},2),true);
+});

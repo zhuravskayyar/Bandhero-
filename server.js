@@ -15,6 +15,7 @@ const ASSETS = new Map([
   ['/game-effects.css', ['game-effects.css', 'text/css; charset=utf-8']],
   ['/i18n.js', ['i18n.js', 'text/javascript; charset=utf-8']],
   ['/pixel-heroes.js', ['pixel-heroes.js', 'text/javascript; charset=utf-8']],
+  ['/pixel-icons.js', ['pixel-icons.js', 'text/javascript; charset=utf-8']],
   ['/assets/expansion-audio.js', ['assets/expansion-audio.js', 'text/javascript; charset=utf-8']],
   ['/assets/sf2-bank.js', ['assets/sf2-bank.js', 'text/javascript; charset=utf-8']],
   ['/assets/soundfonts/A320U.sf2', ['assets/soundfonts/A320U.sf2', 'application/octet-stream']],
