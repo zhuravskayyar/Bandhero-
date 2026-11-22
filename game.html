@@ -105,13 +105,13 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
   <div id="cards" class="cards"></div>
   <div class="keys" aria-hidden="true"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> рух</span><span><kbd>P</kbd> пауза</span></div>
   <p class="controls-note">Тягни пальцем або рухайся WASD / стрілками. Чудик атакує сам, у ритм музики. Кожен забіг — нова пісня.</p>
-  <div class="menu-foot"><button class="btn s" id="multiplayer">♫ Грати з друзями по Wi-Fi</button><div id="lang-switch" class="chips" aria-label="Language"></div></div>
+  <div class="menu-foot"><button class="btn s" id="multiplayer">♫ Грати з друзями онлайн</button><div id="lang-switch" class="chips" aria-label="Language"></div></div>
   <details class="credits"><summary>Про звук і шрифти</summary><p>Семпли: FluidR3 GM (Frank Wen), CC BY 3.0, gleitz/midi-js-soundfonts. Ударні: Pearl Master Studio (enoe, CC BY 3.0, oramics/sampled), teropa/drumkit (DWDS CC BY, тарілки й томи CC0). Шрифти Rubik, Russo One і Pixelify Sans (логотип): SIL Open Font License. Ефекти: BDragon1727, Effect and FX Pixel (безкоштовна версія). Семпли кешуються; без мережі працює синтез.</p></details>
 </div>
 
 <div id="lobby" class="ov hide">
   <h1>Збираємо гурт · 2–4 гравці</h1>
-  <p>Відкрийте цю адресу на пристроях в одній Wi-Fi мережі. Кожен бере свій інструмент. Пісня, вороги й досвід спільні; партії та педалі — власні.</p>
+  <p>Надішли друзям посилання на цю кімнату. Через публічний сервер можна грати з різних мереж; локальна адреса працює лише в одній Wi-Fi мережі. Кожен бере свій інструмент.</p>
   <input id="invite" readonly aria-label="Адреса гри для друзів">
   <div id="net-status" role="status" aria-live="polite"></div>
   <div id="roster"></div>
@@ -1910,7 +1910,7 @@ function drawAttack(o,kind){
 }
 
 let G=null,charKey=null,running=false,paused=false,choosing=false,audioOK=false,runId=0;
-const net={active:false,ws:null,id:null,host:null,roster:[],phase:'lobby',match:null,loaded:new Set(),pending:new Map(),entity:0,renderedChoice:null,lastInput:0,lastState:0,lastHeard:0,rtt:0,
+const net={active:false,ws:null,id:null,host:null,room:null,inviteOrigin:null,ignoreRoomLink:false,roster:[],phase:'lobby',match:null,loaded:new Set(),pending:new Map(),entity:0,renderedChoice:null,lastInput:0,lastState:0,lastHeard:0,rtt:0,
   get isHost(){return !!this.id&&this.id===this.host;}};
 let simT=0;const now=()=>net.active?performance.now()/1000:audioOK?ctx.currentTime:simT;
 const seq={step:0,nextTime:0};
@@ -3053,17 +3053,20 @@ function connectBand(){
   if(!/^https?:$/.test(location.protocol)){$('#menu-notice').textContent=T('Для гри з друзями запусти node server.js і відкрий адресу, яку він покаже.');return;}
   stopRun();hideScreens();$('#menu-notice').textContent='';$('#lobby').classList.remove('hide');
   net.active=true;net.id=null;net.host=null;net.roster=[];net.phase='lobby';net.renderedChoice=null;
-  $('#invite').value=location.origin+'/?band=1';bandStatus(T('Підключаюся до гурту…'));
+  const link=new URLSearchParams(location.search);
+  net.room=net.ignoreRoomLink?null:(link.get('room')||(link.has('band')?'0000000000':null));net.inviteOrigin=location.origin;
+  $('#invite').value='';bandStatus(T('Підключаюся до гурту…'));
   if(['localhost','127.0.0.1','[::1]'].includes(location.hostname))fetch('/api/addresses').then(r=>r.json()).then(d=>{
-    if(net.active&&d.urls&&d.urls.length)$('#invite').value=d.urls[0]+'/?band=1';
+    if(net.active&&d.urls&&d.urls.length){net.inviteOrigin=d.urls[0];updateBandInvite();}
   }).catch(()=>{});
   net.token=null;openBandSocket();
 }
+function updateBandInvite(){if(net.room)$('#invite').value=net.inviteOrigin+'/?band=1&room='+encodeURIComponent(net.room);}
 // Обрив зв’язку гостя не викидає його з забігу: сервер тримає місце, а гра перепідключається з тим самим токеном.
 const RECONNECT_MS=28000;
 function openBandSocket(){
-  const resume=net.reconnecting&&net.token?'?resume='+encodeURIComponent(net.token):'';
-  const ws=net.ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws'+resume);
+  const params=new URLSearchParams();if(net.room)params.set('room',net.room);if(net.reconnecting&&net.token)params.set('resume',net.token);
+  const ws=net.ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws'+(params.size?'?'+params:''));
   let rejected='';net.lastServer=performance.now();
   // спроба, що зависла на з’єднанні, не повинна тягнутися довше за сам ліміт очікування
   if(net.reconnecting){clearTimeout(net.connectTimer);net.connectTimer=setTimeout(()=>{if(net.ws===ws&&ws.readyState===WebSocket.CONNECTING)bandDropped('');},3000);}
@@ -3072,7 +3075,7 @@ function openBandSocket(){
     let m;try{m=JSON.parse(e.data);}catch{return;}
     net.lastServer=performance.now();
     if(m.t==='pong')return;
-    if(m.t==='full'||m.t==='busy'||m.t==='expired'){rejected=m.t==='full'?T('У гурті вже четверо.'):m.t==='expired'?T('Зв’язок не відновився вчасно, забіг продовжився без тебе. Приєднайся, коли гурт повернеться в лобі.'):T('Забіг уже триває. Приєднайся, коли гурт повернеться в лобі.');return;}
+    if(['full','busy','expired','missing','serverFull'].includes(m.t)){rejected=m.t==='full'?T('У гурті вже четверо.'):m.t==='expired'?T('Зв’язок не відновився вчасно, забіг продовжився без тебе. Приєднайся, коли гурт повернеться в лобі.'):m.t==='missing'?T('Кімната вже закрита. Створи новий гурт із головної сторінки.'):m.t==='serverFull'?T('Сервер зараз заповнений. Спробуй пізніше.'):T('Забіг уже триває. Приєднайся, коли гурт повернеться в лобі.');if(m.t==='missing')net.ignoreRoomLink=true;return;}
     if(m.t==='welcome'){
       if(net.reconnecting){net.reconnecting=false;clearTimeout(net.retry);clearTimeout(net.connectTimer);net.lastHeard=performance.now();
         net.triedOnce=false;net.renderedChoice=null; // вибір покращення перемалюється: клік під час обриву міг загубитися
@@ -3084,7 +3087,7 @@ function openBandSocket(){
         else if(m.id!==net.id||m.phase==='lobby'){stopRun();net.match=null;net.pending.clear();hideScreens();$('#lobby').classList.remove('hide');}
         else if(!loading&&G&&m.phase==='ended')showBandOver(); // обрив на екрані результатів: лишаємося на ньому
         else if(loading||!running){hideScreens();$('#lobby').classList.remove('hide');if(loading)bandStatus(T('Завантажуємо інструменти. Чекаємо всіх учасників…'));}}
-      net.token=m.token||null;
+      net.token=m.token||null;net.room=m.room||net.room;updateBandInvite();
     }
     if(m.t==='welcome'||m.t==='roster'){
       if(m.id)net.id=m.id;net.host=m.host;net.roster=m.players;net.phase=m.phase;chosenGenre=m.genre;
@@ -3120,7 +3123,7 @@ function openBandSocket(){
     }
   };
   ws.onclose=()=>{if(net.ws===ws)bandDropped(rejected);};
-  ws.onerror=()=>{if(!rejected&&!net.id)rejected=T('Не вдалося з’єднатися. Відкрий гру через node server.js і перевір адресу сервера.');};
+  ws.onerror=()=>{if(!rejected&&!net.id)rejected=T('Не вдалося з’єднатися. Перевір адресу сервера та інтернет.');};
 }
 function bandDropped(rejected){
   const ws=net.ws;net.ws=null;if(ws){ws.onclose=null;ws.onmessage=null;try{ws.close();}catch{}}
@@ -3134,13 +3137,13 @@ function bandDropped(rejected){
       else bandStatus(T('Зв’язок перервався. Повертаюся в гурт…'));
       clearTimeout(net.retry);net.retry=setTimeout(()=>{if(net.active&&net.reconnecting)openBandSocket();},net.triedOnce?1000:300);net.triedOnce=true;return;
     }
-    rejected=T('Не вдалося відновити зв’язок із сервером. Перевір Wi-Fi і зайди в гурт знову.');
+    rejected=T('Не вдалося відновити зв’язок із сервером. Перевір інтернет і зайди в гурт знову.');
   }
   leaveBand(true);$('#menu-notice').textContent=rejected||T('З’єднання із сервером втрачено. Можна знову зайти в гурт.');
 }
 function leaveBand(dropped){
   const ws=net.ws;net.ws=null;net.active=false;net.match=null;net.pending.clear();clearTimeout(net.loadTimeout);
-  clearTimeout(net.retry);clearTimeout(net.connectTimer);clearTimeout(net.stateTimer);net.stateTimer=0;net.stateBox=null;net.reconnecting=false;net.autoPaused=false;net.triedOnce=false;net.waitingHost=false;net.token=null;net.prepared=null;net.hist=[];
+  clearTimeout(net.retry);clearTimeout(net.connectTimer);clearTimeout(net.stateTimer);net.stateTimer=0;net.stateBox=null;net.reconnecting=false;net.autoPaused=false;net.triedOnce=false;net.waitingHost=false;net.token=null;net.room=null;net.inviteOrigin=null;net.prepared=null;net.hist=[];
   if(ws){if(dropped!==true&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({t:'bye'}));ws.onclose=null;ws.close();}
   stopRun();hideScreens();buildCards();$('#menu').classList.remove('hide');
   $('#resume').classList.remove('hide');$('#again').disabled=false;$('#again').textContent=T('Ще раз (нова пісня)');$('#pause-title').textContent=T('Пауза');

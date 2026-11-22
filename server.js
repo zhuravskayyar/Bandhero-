@@ -1,4 +1,4 @@
-// Band Hero — локальний сервер для гри по Wi-Fi.
+// Band Hero — HTTP і WebSocket сервер для локальної гри та публічних кімнат.
 // Запуск: node server.js   (порт можна змінити: PORT=9000 node server.js)
 // Без сторонніх пакетів: HTTP роздає game.html, WebSocket (/ws) з'єднує гравців.
 // Сервер — лише «поштар»: пересилає повідомлення й тримає список гравців. Гру рахує браузер хоста.
@@ -49,8 +49,17 @@ const ASSETS = new Map([
 const MAX_PLAYERS = 4;
 const MAX_MSG = 512 * 1024; // захист від завеликих повідомлень
 const CHARS = ['guitar', 'drums', 'bass', 'piano', 'flute', 'violin', 'sax', 'accordion'];
-let phase = 'lobby';
-let genre = 'rand';
+const rooms = new Map();
+const MAX_ROOMS = 100;
+const LEGACY_ROOM = '0000000000'; // старі посилання /?band=1 лишаються спільним гуртом
+function newRoom(code) {
+  if (!code) {
+    do { code = crypto.randomBytes(5).toString('hex').toUpperCase(); } while (rooms.has(code) || code === LEGACY_ROOM);
+  }
+  const room = { code, clients: new Map(), hostId: null, phase: 'lobby', genre: 'rand' };
+  rooms.set(code, room);
+  return room;
+}
 
 // ---------- Лічильник відвідувань (Neon Postgres через HTTP, без пакетів) ----------
 const DB_URL = process.env.DATABASE_URL || '';
@@ -92,7 +101,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.method === 'GET' && url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify({ ok: true, players: clients.size, phase }));
+    res.end(JSON.stringify({ ok: true, rooms: rooms.size, players: [...rooms.values()].reduce((n, room) => n + room.clients.size, 0) }));
     return;
   }
   if (req.method === 'GET' && (url === '/' || url === '/game.html')) {
@@ -109,9 +118,7 @@ const server = http.createServer((req, res) => {
 });
 
 // ---------- WebSocket (RFC 6455), мінімальна реалізація ----------
-const clients = new Map(); // id -> {sock, id, char, joined}
 let nextId = 1;
-let hostId = null;
 
 function frame(text) {
   const payload = Buffer.from(text, 'utf8');
@@ -135,32 +142,33 @@ function sendRaw(c, buf, droppable) {
   c.sock.write(buf);
 }
 function send(c, obj) { sendRaw(c, frame(JSON.stringify(obj))); }
-function broadcast(obj, exceptId, droppable) { const f = frame(JSON.stringify(obj)); for (const c of clients.values()) if (c.id !== exceptId) sendRaw(c, f, droppable); }
-function roster() { return [...clients.values()].map(c => ({ id: c.id, char: c.char || null, ready: c.ready, host: c.id === hostId })); }
-function pushRoster() { broadcast({ t: 'roster', host: hostId, players: roster(), phase, genre }); }
+function broadcast(room, obj, exceptId, droppable) { const f = frame(JSON.stringify(obj)); for (const c of room.clients.values()) if (c.id !== exceptId) sendRaw(c, f, droppable); }
+function roster(room) { return [...room.clients.values()].map(c => ({ id: c.id, char: c.char || null, ready: c.ready, host: c.id === room.hostId })); }
+function pushRoster(room) { broadcast(room, { t: 'roster', host: room.hostId, players: roster(room), phase: room.phase, genre: room.genre }); }
 
 // гурт повернувся в лобі: місця для тих, хто зараз без зв’язку, більше не тримаємо.
 // Повернувшись, вони зайдуть у лобі як нові учасники й побачать його, а не завислий забіг.
-function dropAway() {
-  for (const p of [...clients.values()]) if (!p.sock) {
-    clearTimeout(p.graceTimer); clients.delete(p.id);
-    log(`- ${p.id} прибраний (гурт повернувся в лобі, поки він був без зв’язку). Гравців: ${clients.size}`);
+function dropAway(room) {
+  for (const p of [...room.clients.values()]) if (!p.sock) {
+    clearTimeout(p.graceTimer); room.clients.delete(p.id);
+    log(`- ${p.id} прибраний (гурт повернувся в лобі, поки він був без зв’язку). Гравців: ${room.clients.size}`);
   }
 }
 // остаточно прибрати гравця (вийшов сам, не повернувся вчасно або це хост)
 function removeClient(c, why) {
+  const room = c.room, clients = room.clients;
   if (clients.get(c.id) !== c) return;
   clearTimeout(c.graceTimer);
   clients.delete(c.id);
   log(`- ${c.id} відключився (${why}). Гравців: ${clients.size}`);
-  if (hostId === c.id) { // хост пішов — новим хостом стає найстаріший гравець; гру треба почати заново
-    phase = 'lobby'; dropAway();
-    hostId = clients.size ? [...clients.keys()][0] : null;
+  if (room.hostId === c.id) { // хост пішов — новим хостом стає найстаріший гравець; гру треба почати заново
+    room.phase = 'lobby'; dropAway(room);
+    room.hostId = clients.size ? [...clients.keys()][0] : null;
     for (const peer of clients.values()) peer.ready = false;
-    broadcast({ t: 'hostLeft', host: hostId });
-  } else if (hostId) send(clients.get(hostId), { t: 'left', id: c.id });
-  pushRoster();
-  if (!clients.size) { phase = 'lobby'; genre = 'rand'; }
+    broadcast(room, { t: 'hostLeft', host: room.hostId });
+  } else if (room.hostId) send(clients.get(room.hostId), { t: 'left', id: c.id });
+  if (clients.size) pushRoster(room);
+  else rooms.delete(room.code);
 }
 
 server.on('upgrade', (req, sock, head) => {
@@ -172,6 +180,17 @@ server.on('upgrade', (req, sock, head) => {
   sock.setNoDelay(true);
   sock.setKeepAlive(true, 5000);
   const ip = req.socket.remoteAddress;
+  const requested = new URLSearchParams(query).get('room');
+  const code = requested && /^[A-F0-9]{10}$/i.test(requested) ? requested.toUpperCase() : null;
+  let room;
+  if (!requested) room = rooms.size < MAX_ROOMS ? newRoom() : null;
+  else if (code) room = rooms.get(code) || (code === LEGACY_ROOM && rooms.size < MAX_ROOMS ? newRoom(code) : null);
+  if (!room) {
+    sendRaw({ sock }, frame(JSON.stringify({ t: requested ? 'missing' : 'serverFull' })));
+    sock.end(Buffer.from([0x88, 0]));
+    return;
+  }
+  const clients = room.clients;
 
   // повернення після обриву: той самий гравець, той самий персонаж
   const token = new URLSearchParams(query).get('resume');
@@ -181,18 +200,18 @@ server.on('upgrade', (req, sock, head) => {
     clearTimeout(c.graceTimer); c.graceTimer = null;
     c.sock = sock; c.alive = true; c.dropped = 0;
     if (old && !old.destroyed) { c.reason = null; old.destroy(); } // старе «напівмертве» з’єднання телефона
-    send(c, { t: 'welcome', id: c.id, token: c.token, resumed: true, host: hostId, players: roster(), phase, genre });
-    if (hostId && hostId !== c.id) send(clients.get(hostId), { t: 'back', id: c.id });
-    else if (hostId === c.id) broadcast({ t: 'hostBack' }, c.id);
+    send(c, { t: 'welcome', id: c.id, token: c.token, resumed: true, room: room.code, host: room.hostId, players: roster(room), phase: room.phase, genre: room.genre });
+    if (room.hostId && room.hostId !== c.id) send(clients.get(room.hostId), { t: 'back', id: c.id });
+    else if (room.hostId === c.id) broadcast(room, { t: 'hostBack' }, c.id);
     log(`↻ ${c.id} повернувся (${ip}).`);
   } else {
     if (clients.size >= MAX_PLAYERS) { sendRaw({ sock }, frame(JSON.stringify({ t: 'full' }))); sock.end(Buffer.from([0x88, 0])); return; }
-    if (phase !== 'lobby') { sendRaw({ sock }, frame(JSON.stringify({ t: token ? 'expired' : 'busy' }))); sock.end(Buffer.from([0x88, 0])); return; }
-    c = { sock, id: 'p' + (nextId++), token: crypto.randomBytes(12).toString('hex'), char: null, ready: false, alive: true };
+    if (room.phase !== 'lobby') { sendRaw({ sock }, frame(JSON.stringify({ t: token ? 'expired' : 'busy' }))); sock.end(Buffer.from([0x88, 0])); return; }
+    c = { sock, room, id: 'p' + (nextId++), token: crypto.randomBytes(12).toString('hex'), char: null, ready: false, alive: true };
     clients.set(c.id, c);
-    if (!hostId) hostId = c.id;
-    send(c, { t: 'welcome', id: c.id, token: c.token, host: hostId, players: roster(), phase, genre });
-    pushRoster();
+    if (!room.hostId) room.hostId = c.id;
+    send(c, { t: 'welcome', id: c.id, token: c.token, room: room.code, host: room.hostId, players: roster(room), phase: room.phase, genre: room.genre });
+    pushRoster(room);
     log(`+ ${c.id} підключився (${ip}). Гравців: ${clients.size}`);
   }
 
@@ -239,10 +258,10 @@ server.on('upgrade', (req, sock, head) => {
     c.reason = null;
     // гравець посеред забігу (зокрема хост): тримаємо місце й персонажа, поки він перепідключається.
     // Свідомий вихід («bye») прибирає одразу.
-    if (!c.leaving && phase !== 'lobby' && clients.get(c.id) === c) {
+    if (!c.leaving && room.phase !== 'lobby' && clients.get(c.id) === c) {
       log(`… ${c.id} втратив зв’язок (${why}${c.dropped ? `, пропущено знімків: ${c.dropped}` : ''}). Чекаємо ${GRACE_MS / 1000} с.`);
       c.graceTimer = setTimeout(() => removeClient(c, 'не повернувся вчасно'), GRACE_MS);
-      if (c.id === hostId) broadcast({ t: 'hostAway' }, c.id); // гості одразу зупиняються, а не бігають у застиглому світі
+      if (c.id === room.hostId) broadcast(room, { t: 'hostAway' }, c.id); // гості одразу зупиняються, а не бігають у застиглому світі
       return;
     }
     removeClient(c, c.leaving ? 'вийшов сам' : why);
@@ -252,38 +271,39 @@ server.on('upgrade', (req, sock, head) => {
 });
 
 function onMessage(c, text) {
+  const room = c.room, clients = room.clients;
   let m; try { m = JSON.parse(text); } catch { return; }
   if (!m || typeof m !== 'object') return;
   if (m.t === 'ping') { send(c, { t: 'pong' }); return; } // клієнт перевіряє, чи живий сам сервер
   if (m.t === 'bye') { c.leaving = true; return; }       // свідомий вихід — без очікування повернення
   if (m.t === 'pick') {               // вибір інструмента: один інструмент — один гравець
-    if (phase !== 'lobby') return;
+    if (room.phase !== 'lobby') return;
     const want = CHARS.includes(m.char) ? m.char : null;
     if (want && [...clients.values()].some(o => o.id !== c.id && o.char === want)) { send(c, { t: 'taken', char: want }); return; }
-    c.char = want; c.ready = false; pushRoster(); return;
+    c.char = want; c.ready = false; pushRoster(room); return;
   }
-  if (m.t === 'ready' && phase === 'lobby') { c.ready = !!m.ready && !!c.char; pushRoster(); return; }
-  if (m.t === 'genre' && c.id === hostId && phase === 'lobby' && typeof m.genre === 'string') {
+  if (m.t === 'ready' && room.phase === 'lobby') { c.ready = !!m.ready && !!c.char; pushRoster(room); return; }
+  if (m.t === 'genre' && c.id === room.hostId && room.phase === 'lobby' && typeof m.genre === 'string') {
     if (!['rand', 'lofi', 'pop', 'rock', 'newwave', 'metal', 'jazz', 'chanson', 'chanson_ua', 'reggae', 'industrial', 'funk', 'synthwave', 'folkrock', 'blues', 'dnb'].includes(m.genre)) return;
-    genre = m.genre; pushRoster(); return;
+    room.genre = m.genre; pushRoster(room); return;
   }
-  if (m.t === 'begin' && c.id === hostId && phase === 'lobby') {
+  if (m.t === 'begin' && c.id === room.hostId && room.phase === 'lobby') {
     if (clients.size < 2 || [...clients.values()].some(p => !p.char || !p.ready)) { send(c, { t: 'notReady' }); return; }
-    phase = 'loading'; broadcast({ t: 'begin' }); pushRoster(); return;
+    room.phase = 'loading'; broadcast(room, { t: 'begin' }); pushRoster(room); return;
   }
-  if (m.t === 'phase' && c.id === hostId && ['lobby', 'playing', 'ended'].includes(m.phase)) {
-    phase = m.phase;
-    if (phase === 'lobby') { dropAway(); for (const peer of clients.values()) peer.ready = false; }
-    pushRoster(); return;
+  if (m.t === 'phase' && c.id === room.hostId && ['lobby', 'playing', 'ended'].includes(m.phase)) {
+    room.phase = m.phase;
+    if (room.phase === 'lobby') { dropAway(room); for (const peer of clients.values()) peer.ready = false; }
+    pushRoster(room); return;
   }
-  if (m.t === 'toHost') { if (hostId && hostId !== c.id) send(clients.get(hostId), { t: 'fromPeer', from: c.id, d: m.d }); return; }
-  if (m.t === 'toAll') { if (c.id === hostId) broadcast({ t: 'fromHost', d: m.d }, c.id, m.drop === 1); return; } // лише хост розсилає стан
-  if (m.t === 'toPeer') { if (c.id === hostId && clients.has(m.to)) send(clients.get(m.to), { t: 'fromHost', d: m.d }); return; }
+  if (m.t === 'toHost') { if (room.hostId && room.hostId !== c.id) send(clients.get(room.hostId), { t: 'fromPeer', from: c.id, d: m.d }); return; }
+  if (m.t === 'toAll') { if (c.id === room.hostId) broadcast(room, { t: 'fromHost', d: m.d }, c.id, m.drop === 1); return; } // лише хост розсилає стан
+  if (m.t === 'toPeer') { if (c.id === room.hostId && clients.has(m.to)) send(clients.get(m.to), { t: 'fromHost', d: m.d }); return; }
 }
 
 function log(s) { console.log(new Date().toLocaleTimeString() + '  ' + s); }
 setInterval(() => {
-  for (const c of clients.values()) {
+  for (const room of rooms.values()) for (const c of room.clients.values()) {
     if (!c.sock) continue; // гість у режимі очікування повернення
     if (!c.alive) { c.reason = 'не відповідав 20 с'; c.sock.destroy(); continue; }
     c.alive = false; sendRaw(c, Buffer.from([0x89, 0]));

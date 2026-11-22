@@ -96,6 +96,7 @@ function session(origin, audio = false, audioFixture = {}) {
     close() { if (context.__game.net.ws) context.__game.net.ws.close(); for (const id of timers) { clearTimeout(id); clearInterval(id); } },
   };
 }
+const roomUrl = (origin, host) => origin + '/?band=1&room=' + host.game.net.room;
 
 test('Wi-Fi band: lobby, four actors, shared combat, upgrades, pause and host handover', async t => {
   const server = spawn(process.execPath, ['server.js'], { cwd: __dirname, env: { ...process.env, PORT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -116,10 +117,10 @@ test('Wi-Fi band: lobby, four actors, shared combat, upgrades, pause and host ha
   const harmonics=await fetch(origin+'/assets/guitar-harmonics.js');assert.equal(harmonics.status,200);assert.match(await harmonics.text(),/MIDI\.Soundfont\.guitar_harmonics/);
   const host = session(origin, true); sessions.push(host); await host.click('#multiplayer');
   await until(() => host.game.net.id, 'host welcome');
-  for (let i = 1; i < 4; i++) { const s = session(origin, i < 3); sessions.push(s); await s.click('#multiplayer'); await until(() => s.game.net.id, 'peer welcome'); }
+  for (let i = 1; i < 4; i++) { const s = session(roomUrl(origin, host), i < 3); sessions.push(s); await s.click('#multiplayer'); await until(() => s.game.net.id, 'peer welcome'); }
   await until(() => host.game.net.roster.length === 4, 'roster of four');
   const [a, b, c, d] = sessions;
-  const full = session(origin); t.after(() => full.close()); await full.click('#multiplayer');
+  const full = session(roomUrl(origin, host)); t.after(() => full.close()); await full.click('#multiplayer');
   await until(() => full.elements.get('#menu-notice')?.textContent.includes('четверо'), 'fifth player rejected');
   await a.pick('guitar'); await until(() => b.game.net.roster[0].char === 'guitar', 'first pick');
   b.game.net.ws.send(JSON.stringify({ t: 'pick', char: 'guitar' })); await delay(80);
@@ -202,7 +203,7 @@ test('Wi-Fi band: lobby, four actors, shared combat, upgrades, pause and host ha
   for (const s of [a, b, c]) await s.elements.get('#opts').children[0].onclick();
   await until(() => !a.game.choosing && !b.game.choosing, 'departed player does not block upgrades');
   assert.ok(a.game.running, 'other players continue');
-  const busy = session(origin); t.after(() => busy.close()); await busy.click('#multiplayer');
+  const busy = session(roomUrl(origin, host)); t.after(() => busy.close()); await busy.click('#multiplayer');
   await until(() => busy.elements.get('#menu-notice')?.textContent.includes('Забіг уже триває'), 'late join rejected during run');
   await a.click('#leave-band');
   await until(() => b.game.net.isHost && b.game.net.phase === 'lobby' && !b.game.running, 'host departure resets lobby');
@@ -520,14 +521,84 @@ async function startServer(t, env = {}) {
   return box;
 }
 async function bandOfTwo(t, origin) {
-  const a = session(origin, true), b = session(origin, true); t.after(() => { a.close(); b.close(); });
+  const a = session(origin, true); t.after(() => a.close());
   await a.click('#multiplayer'); await until(() => a.game.net.id, 'host welcome');
+  const b = session(roomUrl(origin, a), true); t.after(() => b.close());
   await b.click('#multiplayer'); await until(() => b.game.net.id, 'guest welcome');
   await a.pick('guitar'); await b.pick('drums'); await until(() => a.game.net.roster.every(p => p.char), 'picks');
   await a.click('#ready'); await b.click('#ready'); await until(() => a.game.net.roster.every(p => p.ready), 'ready');
   await a.click('#start-band'); await until(() => a.game.running && b.game.running, 'both playing');
   return [a, b];
 }
+
+test('public rooms keep separate bands, invites and game state', async t => {
+  const srv = await startServer(t);
+  const first = session(srv.origin, true), second = session(srv.origin, true);
+  t.after(() => { first.close(); second.close(); });
+  await first.click('#multiplayer'); await until(() => first.game.net.room, 'first room');
+  await second.click('#multiplayer'); await until(() => second.game.net.room, 'second room');
+  assert.notEqual(first.game.net.room, second.game.net.room);
+  assert.match(first.elements.get('#invite').value, new RegExp('room=' + first.game.net.room));
+  const guest = session(roomUrl(srv.origin, first), true); t.after(() => guest.close());
+  await guest.click('#multiplayer'); await until(() => guest.game.net.id, 'invited guest');
+  assert.equal(first.game.net.roster.length, 2);
+  assert.equal(second.game.net.roster.length, 1);
+  first.game.net.ws.send(JSON.stringify({ t: 'genre', genre: 'rock' }));
+  await until(() => guest.game.net.roster.length === 2 && guest.game.net.phase === 'lobby', 'same room roster');
+  assert.equal(second.game.net.roster.length, 1, 'another room cannot see players');
+  assert.equal(second.game.net.host, second.game.net.id, 'another room has its own host');
+  await first.pick('guitar'); await guest.pick('drums');
+  await until(() => first.game.net.roster.every(p => p.char) && guest.game.net.roster.every(p => p.char), 'both instruments selected');
+  await first.click('#ready'); await guest.click('#ready');
+  await until(() => first.game.net.roster.every(p => p.ready), 'first band ready');
+  await first.click('#start-band'); await until(() => first.game.running && guest.game.running, 'first band playing');
+  assert.equal(second.game.net.phase, 'lobby', 'another room stays in its lobby');
+  assert.equal(second.game.running, false);
+  const health = await (await fetch(srv.origin + '/health')).json();
+  assert.equal(health.rooms, 2); assert.equal(health.players, 3);
+  await first.click('#leave-band'); await guest.click('#leave-band');
+  let remaining;
+  for (let i = 0; i < 50; i++) {
+    remaining = (await (await fetch(srv.origin + '/health')).json()).rooms;
+    if (remaining === 1) break;
+    await delay(20);
+  }
+  assert.equal(remaining, 1, 'empty room removed');
+  assert.equal(second.game.net.roster.length, 1);
+});
+
+test('an expired invite explains the closed room and can start a new band', async t => {
+  const srv = await startServer(t);
+  const host = session(srv.origin); t.after(() => host.close());
+  await host.click('#multiplayer'); await until(() => host.game.net.room, 'host room');
+  const oldRoom = host.game.net.room, invite = roomUrl(srv.origin, host);
+  await host.click('#leave-band');
+  let roomsAfterLeave;
+  for (let i = 0; i < 50; i++) {
+    roomsAfterLeave = (await (await fetch(srv.origin + '/health')).json()).rooms;
+    if (roomsAfterLeave === 0) break;
+    await delay(20);
+  }
+  assert.equal(roomsAfterLeave, 0, 'host departure closes empty room');
+  const visitor = session(invite); t.after(() => visitor.close());
+  await visitor.click('#multiplayer');
+  await until(() => !visitor.game.net.active, 'closed room rejected');
+  assert.match(visitor.elements.get('#menu-notice').textContent, /Кімната вже закрита/);
+  await visitor.click('#multiplayer'); await until(() => visitor.game.net.room, 'new room after expired invite');
+  assert.notEqual(visitor.game.net.room, oldRoom);
+});
+
+test('old band links without a room code still reach the same band', async t => {
+  const srv = await startServer(t), oldLink = srv.origin + '/?band=1';
+  const a = session(oldLink), b = session(oldLink);
+  t.after(() => { a.close(); b.close(); });
+  await a.click('#multiplayer'); await until(() => a.game.net.id, 'first old-link player');
+  await b.click('#multiplayer'); await until(() => b.game.net.id, 'second old-link player');
+  assert.equal(a.game.net.room, '0000000000');
+  assert.equal(b.game.net.room, a.game.net.room);
+  await until(() => a.game.net.roster.length === 2, 'old-link band roster');
+  assert.equal(a.game.net.roster.length, 2);
+});
 
 test('a guest whose connection drops mid-run comes back as the same musician', async t => {
   const srv = await startServer(t);
@@ -565,7 +636,7 @@ test('a stalled guest is not disconnected: periodic snapshots are skipped, event
   const net = require('node:net');
   const raw = net.connect({ port: srv.port, host: '127.0.0.1' }); t.after(() => raw.destroy());
   await new Promise(r => raw.once('connect', r));
-  raw.write('GET /ws HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n');
+  raw.write('GET /ws?room='+a.game.net.room+' HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n');
   let got = ''; raw.on('data', b => { got += b.toString('latin1'); });
   await until(() => a.game.net.roster.length === 2, 'raw guest joined');
   raw.pause(); // гість «завис»: нічого не читає
@@ -951,7 +1022,7 @@ test('four new instruments join a real Wi-Fi band, sound on each device and shar
   const server=await startServer(t),sessions=[];t.after(()=>sessions.forEach(s=>s.close()));
   const instruments=['flute','violin','sax','accordion'];
   for(const inst of instruments){
-    const s=session(server.origin,true);sessions.push(s);await s.click('#multiplayer');await until(()=>s.game.net.id,'new player welcome');await s.pick(inst);
+    const s=session(sessions.length?roomUrl(server.origin,sessions[0]):server.origin,true);sessions.push(s);await s.click('#multiplayer');await until(()=>s.game.net.id,'new player welcome');await s.pick(inst);
   }
   const host=sessions[0];await until(()=>host.game.net.roster.every(p=>p.char),'new band picks');
   for(const genre of ['funk','synthwave','folkrock','blues','dnb']){

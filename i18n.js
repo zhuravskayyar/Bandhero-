@@ -1515,6 +1515,15 @@ for(const [uk,en,de,ru] of [
   ['Касото','Cassotto','Cassotto','Кассото'],['М’якший закритий тембр','Softer enclosed tone','Weicherer gedeckter Klang','Более мягкий закрытый тембр'],['Теплий тембр','Warm tone','Warmer Klang','Тёплый тембр'],['Дуже м’який тембр','Very soft tone','Sehr weicher Klang','Очень мягкий тембр'],
   ['Струс міхів','Bellows shake','Balgschütteln','Встряска мехов'],['Тремоло міхів 6 Гц','6 Hz bellows tremolo','Balgtremolo mit 6 Hz','Тремоло мехов 6 Гц'],['Глибше тремоло міхів','Deeper bellows tremolo','Tieferes Balgtremolo','Более глубокое тремоло мехов'],['Сильне тремоло міхів','Strong bellows tremolo','Starkes Balgtremolo','Сильное тремоло мехов']
 ]){window.I18N_DICT.en[uk]=en;window.I18N_DICT.de[uk]=de;window.I18N_DICT.ru[uk]=ru;}
+// Публічні кімнати для кооперативу.
+for(const [uk,en,de,ru] of [
+  ['♫ Грати з друзями онлайн','♫ Play with friends online','♫ Online mit Freunden spielen','♫ Играть с друзьями онлайн'],
+  ['Надішли друзям посилання на цю кімнату. Через публічний сервер можна грати з різних мереж; локальна адреса працює лише в одній Wi-Fi мережі. Кожен бере свій інструмент.','Send friends the link to this room. A public server lets you play from different networks; a local address works only on the same Wi-Fi. Everyone picks an instrument.','Schick Freunden den Link zu diesem Raum. Über einen öffentlichen Server könnt ihr aus verschiedenen Netzen spielen; eine lokale Adresse funktioniert nur im selben WLAN. Jeder wählt ein Instrument.','Отправь друзьям ссылку на эту комнату. Через публичный сервер можно играть из разных сетей; локальный адрес работает только в одной Wi-Fi сети. Каждый выбирает инструмент.'],
+  ['Кімната вже закрита. Створи новий гурт із головної сторінки.','This room is closed. Start a new band from the home page.','Dieser Raum ist geschlossen. Gründe auf der Startseite eine neue Band.','Комната уже закрыта. Создай новую группу с главной страницы.'],
+  ['Сервер зараз заповнений. Спробуй пізніше.','The server is full right now. Try again later.','Der Server ist gerade voll. Versuch es später erneut.','Сервер сейчас заполнен. Попробуй позже.'],
+  ['Не вдалося з’єднатися. Перевір адресу сервера та інтернет.','Could not connect. Check the server address and your internet connection.','Verbindung fehlgeschlagen. Prüfe die Serveradresse und deine Internetverbindung.','Не удалось соединиться. Проверь адрес сервера и интернет.'],
+  ['Не вдалося відновити зв’язок із сервером. Перевір інтернет і зайди в гурт знову.','Could not reconnect to the server. Check your internet connection and join the band again.','Die Verbindung zum Server konnte nicht wiederhergestellt werden. Prüfe deine Internetverbindung und tritt der Band erneut bei.','Не удалось восстановить связь с сервером. Проверь интернет и зайди в группу снова.']
+]){window.I18N_DICT.en[uk]=en;window.I18N_DICT.de[uk]=de;window.I18N_DICT.ru[uk]=ru;}
 // Завершальні набори гітари, барабанів, баса й клавіш.
 for(const [uk,en,de,ru] of [
   ['Гострі струни','Sharp strings','Scharfe Saiten','Острые струны'],
