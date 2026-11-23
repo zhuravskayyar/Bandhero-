@@ -2709,3 +2709,214 @@ test('co-op: the guest sees the boss phase, invulnerability, shield, ring and si
   guest.draw(); host.draw();
   assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
 });
+
+/* ================= Режими забігу, рекорди й відкриття ================= */
+const modeRun = async (t, mode, store, char = 'guitar') => {
+  const fixture = store === undefined ? {} : { localStorage: store };
+  const s = session('http://127.0.0.1:8080', false, fixture); t.after(() => s.close());
+  if (mode) s.game.setMode(mode); await s.game.pick(char); return s;
+};
+const dieNow = async s => { s.game.G.mobs = []; s.game.G.p.hp = 0; await until(() => !s.game.running, 'game over'); };
+const nextRun = async s => { await s.click('#again'); await until(() => s.game.running, 'new run'); };
+const winConcert = async s => { // перемога в «Концерті»: фінальний бос
+  const g = s.game; g.G.mobs = []; g.G.p.hp = g.G.p.max; g.G.t = 899.98; g.G.bossNext = 2;
+  await until(() => g.G.mobs.some(m => m.type === 'boss3'), 'final boss'); g.G.mobs.find(m => m.type === 'boss3').hp = 0;
+  await until(() => !g.running, 'victory'); assert.equal(g.G.won, true);
+};
+
+test('modes: every mode has its own boss schedule; the default stays 5/10/15 minutes', t => {
+  const s = session('http://127.0.0.1:8080', false), g = s.game; t.after(() => s.close());
+  assert.deepEqual([...g.MODE_KEYS], ['set', 'concert', 'marathon']);
+  const plan = (mode, n) => Array.from({ length: n }, (_, i) => g.bossPlan(i, mode));
+  assert.deepEqual(plan('concert', 3).map(p => [p.at, p.type, p.hpK]), [[300, 'boss1', 1], [600, 'boss2', 1], [900, 'boss3', 1]]);
+  assert.equal(g.bossPlan(3, 'concert'), null);
+  assert.deepEqual(plan('set', 1).map(p => [p.at, p.type]), [[360, 'boss1']]); assert.equal(g.bossPlan(1, 'set'), null);
+  const m = plan('marathon', 8);
+  assert.deepEqual(m.slice(0, 3).map(p => [p.at, p.type]), [[300, 'boss1'], [600, 'boss2'], [900, 'boss3']]);
+  assert.deepEqual(m.map(p => p.at), [300, 600, 900, 1200, 1500, 1800, 2100, 2400], 'a boss every 5 minutes, endlessly');
+  assert.deepEqual(m.slice(3, 6).map(p => p.type), ['boss1', 'boss2', 'boss3'], 'bosses repeat in turn');
+  for (let i = 4; i < 8; i++) assert.ok(m[i].hpK > m[i - 1].hpK, 'HP keeps rising'); assert.ok(m[3].hpK > 1);
+  assert.equal(g.chosenMode, 'concert', 'the default mode is the old 15-minute concert');
+  assert.equal(g.BOSS_AT, undefined);
+  assert.deepEqual(s.errors, []);
+});
+
+test('modes: defaults under test are unchanged (concert, nothing locked, same need/threat)', async t => {
+  const s = await modeRun(t, null), g = s.game;
+  assert.equal(g.G.mode, 'concert'); assert.equal(g.metaStore, false, 'no working storage in the default test sandbox');
+  for (const k of Object.keys(g.CHARS)) assert.equal(g.charLocked(k), false, k); assert.equal(g.modeLocked('marathon'), false);
+  assert.equal(g.need(10), 54); assert.equal(g.need(30), 4 + 150 + Math.round(1.5 * 25));
+  g.G.t = 600; g.G.level = 1; const th = g.threat();
+  assert.equal(th.hp, (1 + 600 / 150) * 1 * (1 + 300 / 2500)); assert.equal(th.rate, 4); assert.equal(th.dmg, 1.5);
+  g.G.t = 3000; assert.equal(g.threat().rate, 4); assert.equal(g.threat().dmg, 1.5, 'concert threat has no late-game growth');
+  assert.deepEqual(s.errors, []);
+});
+
+test('Сет: one boss at 6:00, Фонограма is final and its kill is a victory; the hint warns by the set schedule', async t => {
+  const store = memoryStore(), s = await modeRun(t, 'set', store), g = s.game;
+  assert.equal(g.G.mode, 'set'); assert.equal(g.need(10), Math.round(54 * .85));
+  g.G.t = 1; g.hints.tick(); g.hints.expire(); g.hints.tick(); g.G.t = 290; g.hints.tick(); assert.equal(g.hints.current, null, 'no warning at 4:50: the boss comes at 6:00');
+  g.G.t = 345; g.hints.tick(); assert.equal(g.hints.current, 'boss'); assert.equal(g.hints.text, 'Скоро бос!');
+  g.G.t = 300.02; g.G.bossNext = 0; await delay(120); assert.ok(!g.G.mobs.some(m => m.type === 'boss1'), 'nothing at 5:00 in a set');
+  g.G.t = 359.98; await until(() => g.G.mobs.some(m => m.type === 'boss1'), 'set boss');
+  const b = g.G.mobs.find(m => m.type === 'boss1'); assert.equal(g.G.bossNext, 1); assert.ok(b.max > g.MOBS.boss1.hp, 'the only boss is beefier');
+  assert.equal(g.bossIsFinal(b), true); g.G.p.hp = g.G.p.max; g.draw();
+  g.G.t = 1000; await delay(150); assert.equal(g.G.mobs.filter(m => m.type.startsWith('boss')).length, 1, 'no second boss in a set');
+  b.hp = 0; await until(() => !g.running, 'final boss ends the set');
+  assert.equal(g.G.won, true); assert.match(s.elements.get('#over h1').textContent, /Перемога/); assert.match(s.elements.get('#sum').textContent, /Фонограму/);
+  assert.equal(g.G.bossReward || 0, 0, 'no reward pick after the final boss');
+  assert.equal(g.meta.modes.set.wins, 1); assert.deepEqual(s.errors, []);
+});
+
+test('Концерт: boss 1 and 2 give a reward and the run goes on, boss 3 wins', async t => {
+  const s = await modeRun(t, 'concert'), g = s.game;
+  g.G.t = 299.98; await until(() => g.G.mobs.some(m => m.type === 'boss1'), 'boss1');
+  const b = g.G.mobs.find(m => m.type === 'boss1'); assert.equal(g.bossIsFinal(b), false);
+  const lv = g.G.level; g.G.p.hp = g.G.p.max; b.hp = 0; await until(() => !g.G.mobs.includes(b), 'boss dies'); await takeBossReward([s], lv);
+  assert.ok(g.running); assert.equal(g.G.won, false);
+  await winConcert(s); assert.match(s.elements.get('#sum').textContent, /Диригента Тиші/); assert.deepEqual(s.errors, []);
+});
+
+test('Марафон: the run continues after the 3rd boss, bosses repeat every 5 minutes at higher HP, threat rises, it ends only in death', async t => {
+  const s = await modeRun(t, 'marathon'), g = s.game, G = g.G;
+  assert.equal(G.mode, 'marathon');
+  G.t = 899.98; G.bossNext = 2; await until(() => G.mobs.some(m => m.type === 'boss3'), 'boss3');
+  let b = G.mobs.find(m => m.type === 'boss3'); assert.equal(g.bossIsFinal(b), false, 'no final boss in a marathon');
+  let lv = G.level; G.p.hp = G.p.max; b.hp = 0; await until(() => !G.mobs.includes(b), 'boss3 dies'); await takeBossReward([s], lv);
+  assert.equal(G.won, false); assert.ok(g.running, 'no victory: the run goes on'); assert.equal(G.bossNext, 3);
+  const th900 = (G.t = 900, g.threat()), th2000 = (G.t = 2000, g.threat()), th3000 = (G.t = 3000, g.threat());
+  assert.ok(th2000.hp > th900.hp * 2 && th3000.hp > th2000.hp, 'enemy HP grows'); assert.ok(th2000.rate > 4 && th3000.rate > th2000.rate, 'more enemies');
+  assert.ok(th3000.dmg > 1.5, 'enemy damage grows beyond the concert cap'); assert.equal(g.MOBS.boss1.hp, 9400);
+  G.mobs = []; G.p.hp = G.p.max; G.t = 1199.98; await until(() => G.mobs.some(m => m.type === 'boss1'), 'repeat boss at 20:00');
+  b = G.mobs.find(m => m.type === 'boss1'); assert.ok(Math.abs(b.max - 9400 * 1.4) < 1e-6, 'repeat boss has more HP'); assert.equal(G.bossNext, 4);
+  G.t = 1499.98; await delay(150); assert.equal(G.mobs.filter(m => m.type.startsWith('boss')).length, 1, 'the next boss waits while one is alive');
+  G.p.hp = G.p.max; lv = G.level; b.hp = 0; await until(() => !G.mobs.includes(b), 'repeat boss dies'); await takeBossReward([s], lv);
+  G.p.hp = G.p.max; await until(() => G.mobs.some(m => m.type === 'boss2'), 'boss2 repeats at 25:00'); assert.equal(G.bossNext, 5);
+  G.mobs = []; G.t = 1500; G.p.hp = 0; await until(() => !g.running, 'death ends the marathon');
+  assert.equal(G.won, false); assert.match(s.elements.get('#over h1').textContent, /заглушили/);
+  const r = g.runRecap(); assert.equal(r.mode, 'marathon'); assert.equal(r.time, 1500); assert.ok(stripTags(s.elements.get('#recap').innerHTML).includes('25:00'), 'recap shows the time');
+  assert.equal(g.meta.modes.marathon.time, 1500); assert.deepEqual(s.errors, []);
+});
+
+test('modes: the host picks the mode in the lobby, guests see it and it reaches every game world', async t => {
+  const srv = await startServer(t);
+  const a = session(srv.origin, true); t.after(() => a.close()); await a.click('#multiplayer'); await until(() => a.game.net.id, 'host welcome');
+  const b = session(roomUrl(srv.origin, a), true); t.after(() => b.close()); await b.click('#multiplayer'); await until(() => b.game.net.id, 'guest welcome');
+  const btn = (s, m) => s.elements.get('#lobby-modes').children.find(e => e.dataset.m === m);
+  assert.equal(a.game.chosenMode, 'concert'); assert.ok(btn(a, 'concert').classList.contains('on'));
+  assert.ok(!btn(a, 'set').disabled, 'host can choose'); assert.ok(btn(b, 'set').disabled, 'a guest cannot');
+  btn(b, 'set').onclick(); await delay(150); assert.equal(a.game.chosenMode, 'concert', 'a guest click changes nothing');
+  b.game.net.ws.send(JSON.stringify({ t: 'mode', mode: 'set' })); await delay(150); assert.equal(a.game.chosenMode, 'concert', 'the server ignores a guest');
+  await btn(a, 'marathon').onclick(); await until(() => b.game.chosenMode === 'marathon' && a.game.chosenMode === 'marathon', 'mode reaches the guest');
+  assert.ok(btn(b, 'marathon').classList.contains('on')); assert.match(b.elements.get('#lobby-mode-note').textContent, /Без кінця/);
+  a.game.net.ws.send(JSON.stringify({ t: 'mode', mode: 'nonsense' })); await delay(100); assert.equal(b.game.chosenMode, 'marathon', 'unknown modes are rejected');
+  await btn(a, 'set').onclick(); await until(() => b.game.chosenMode === 'set', 'set reaches the guest');
+  // пізній гість отримує режим у welcome
+  const c = session(roomUrl(srv.origin, a), true); t.after(() => c.close()); await c.click('#multiplayer'); await until(() => c.game.net.id, 'third welcome'); assert.equal(c.game.chosenMode, 'set');
+  c.game.leaveBand();
+  await a.pick('guitar'); await b.pick('drums'); await until(() => a.game.net.roster.filter(p => p.char).length === 2, 'picks');
+  await a.click('#ready'); await b.click('#ready'); await until(() => a.game.net.roster.every(p => p.ready), 'ready');
+  await a.click('#start-band'); await until(() => a.game.running && b.game.running, 'both playing');
+  assert.equal(a.game.G.mode, 'set'); assert.equal(b.game.G.mode, 'set', 'the guest runs the same schedule');
+  a.game.G.t = 359.98; await until(() => a.game.G.mobs.some(m => m.type === 'boss1'), 'set boss on the host');
+  await until(() => b.game.G.mobs.some(m => m.type === 'boss1'), 'guest sees the boss');
+  for (const p of a.game.G.players) p.p.hp = p.p.max;
+  a.game.G.mobs.find(m => m.type === 'boss1').hp = 0;
+  await until(() => !b.game.running && b.game.G.won, 'the guest sees the victory of the set');
+  assert.match(b.elements.get('#sum').textContent, /Фонограму/); assert.match(stripTags(b.elements.get('#recap').innerHTML), /Сет/);
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+test('records: best time, level, victories and runs are saved per mode, "new record" shows only for a real improvement', async t => {
+  const store = memoryStore(), s = await modeRun(t, 'concert', store), g = s.game;
+  assert.equal(g.metaStore, true); assert.ok(/Рекорди/.test(s.elements.get('#records-body').innerHTML) || s.elements.get('#records-body').innerHTML.includes('Забігів: 0'));
+  g.G.t = 100; g.G.level = 4; await dieNow(s);
+  assert.equal(g.meta.runs, 1); assert.equal(g.meta.modes.concert.time, 100); assert.equal(g.meta.modes.concert.level, 4);
+  assert.ok(!stripTags(s.elements.get('#recap').innerHTML).includes('Новий рекорд'), 'the very first run has nothing to beat');
+  assert.deepEqual(JSON.parse(store.m.get('bandhero.meta')).modes.concert, { runs: 1, wins: 0, time: 100, level: 4, fast: 0 });
+  await nextRun(s); g.G.t = 60; g.G.level = 2; await dieNow(s);
+  assert.ok(!stripTags(s.elements.get('#recap').innerHTML).includes('Новий рекорд'), 'worse run, no flag'); assert.equal(g.meta.modes.concert.time, 100); assert.equal(g.meta.runs, 2);
+  await nextRun(s); g.G.t = 150; g.G.level = 3; await dieNow(s);
+  assert.ok(stripTags(s.elements.get('#recap').innerHTML).includes('Новий рекорд!'), 'longer survival is a record');
+  assert.equal(g.meta.modes.concert.time, 150); assert.equal(g.meta.modes.concert.level, 4, 'level record is kept'); assert.ok(/class="rnew"/.test(s.elements.get('#recap').innerHTML));
+  g.renderRecords(); assert.ok(stripTags(s.elements.get('#records-body').innerHTML).includes('2:30'), 'records are listed in the menu'); assert.ok(s.elements.get('#records-body').innerHTML.includes('Забігів: 3'));
+  assert.ok(!(g.meta.modes.set), 'other modes are untouched');
+  // перемога: прапорець «рекорд» за першу перемогу, найшвидша перемога запам'ятовується
+  await nextRun(s); await winConcert(s); assert.equal(g.meta.modes.concert.wins, 1); assert.equal(g.meta.modes.concert.fast, 900);
+  assert.ok(stripTags(s.elements.get('#recap').innerHTML).includes('Новий рекорд!'), 'first victory is a record');
+  // нова сторінка з тим самим сховищем бачить збережене
+  const s2 = await modeRun(t, 'concert', store); assert.equal(s2.game.meta.runs, 4); assert.equal(s2.game.meta.modes.concert.wins, 1);
+  assert.ok(stripTags(s2.elements.get('#records-body').innerHTML).includes('15:00'));
+  assert.deepEqual(s.errors, []); assert.deepEqual(s2.errors, []);
+});
+
+test('unlocks: instruments after the first boss kill, Марафон after the first Концерт victory; locked items state the condition; co-op uses each own progress', async t => {
+  const store = memoryStore(), s = await modeRun(t, null, store, 'guitar'), g = s.game;
+  await dieNow(s); await s.click('#other'); // у меню
+  const card = k => s.elements.get('#cards').children.find(e => e.dataset.k === k), mode = k => s.elements.get('#modes').children.find(e => e.dataset.m === k);
+  assert.ok(g.metaStore); assert.ok(g.charLocked('flute') && g.charLocked('sax') && g.charLocked('violin') && g.charLocked('accordion'));
+  for (const k of ['guitar', 'drums', 'bass', 'piano']) assert.equal(g.charLocked(k), false);
+  assert.ok(card('flute').disabled); assert.ok(!card('guitar').disabled); assert.match(s.elements.get('#cards').innerHTML, /Переможи першого боса/);
+  await card('flute').onclick(); assert.equal(g.running, false, 'a locked instrument cannot be picked'); await g.pick('flute'); assert.equal(g.running, false);
+  assert.ok(mode('marathon').disabled); assert.match(s.elements.get('#mode-note').textContent, /Переможи в режимі «Концерт»/); assert.ok(!mode('set').disabled);
+  mode('marathon').onclick(); assert.equal(g.chosenMode, 'concert', 'a locked mode cannot be chosen');
+  // перший бос → інструменти
+  await card('guitar').onclick(); await until(() => g.running, 'run');
+  g.G.t = 299.98; await until(() => g.G.mobs.some(m => m.type === 'boss1'), 'boss1'); const b = g.G.mobs.find(m => m.type === 'boss1'); b.hp = 0;
+  await until(() => !g.G.mobs.includes(b), 'boss dies'); await takeBossReward([s], g.G.level - 1); await dieNow(s);
+  assert.equal(g.meta.bosses, 1); assert.match(stripTags(s.elements.get('#recap').innerHTML), /Відкрито: усі інструменти/);
+  assert.equal(g.charLocked('flute'), false); assert.ok(g.modeLocked('marathon'), 'the boss alone does not open the marathon');
+  await s.click('#other'); assert.ok(!card('flute').disabled); assert.ok(mode('marathon').disabled);
+  // перемога в Сеті не відкриває Марафон, а в Концерті — відкриває
+  await card('guitar').onclick(); await until(() => g.running, 'run 2'); mode('set'); g.setMode('set'); await nextRun(s);
+  g.G.t = 359.98; await until(() => g.G.mobs.some(m => m.type === 'boss1'), 'set boss'); g.G.mobs.find(m => m.type === 'boss1').hp = 0; await until(() => !g.running, 'set won');
+  assert.equal(g.meta.modes.set.wins, 1); assert.ok(g.modeLocked('marathon'), 'a Set victory is not a Concert victory');
+  g.setMode('concert'); await nextRun(s); await winConcert(s);
+  assert.match(stripTags(s.elements.get('#recap').innerHTML), /Відкрито режим «Марафон»/); assert.equal(g.modeLocked('marathon'), false);
+  await s.click('#other'); assert.ok(!mode('marathon').disabled); mode('marathon').onclick(); assert.equal(g.chosenMode, 'marathon');
+  assert.deepEqual(JSON.parse(store.m.get('bandhero.meta')).bosses >= 3, true);
+  // скидання: друге натискання, прогрес і відкриття зникають
+  await s.click('#meta-reset'); assert.equal(s.elements.get('#meta-reset').textContent, 'Точно? Натисни ще раз'); assert.equal(g.meta.runs > 0, true, 'first click only asks');
+  await s.click('#meta-reset'); assert.equal(g.meta.runs, 0); assert.equal(store.m.has('bandhero.meta'), false); assert.equal(s.elements.get('#meta-reset').textContent, 'Скинути прогрес');
+  assert.ok(g.charLocked('flute') && g.modeLocked('marathon')); assert.ok(card('flute').disabled); assert.equal(g.chosenMode, 'concert', 'a now locked mode falls back to the concert');
+  assert.match(s.elements.get('#menu-notice').textContent, /Прогрес скинуто/); assert.deepEqual(s.errors, []);
+});
+
+test('unlocks: in co-op a locked instrument cannot be taken in the lobby, and the host mode lock applies to the mode choice', async t => {
+  const srv = await startServer(t), hostStore = memoryStore();
+  const a = session(srv.origin, true, { localStorage: hostStore }); t.after(() => a.close()); await a.click('#multiplayer'); await until(() => a.game.net.id, 'host welcome');
+  const b = session(roomUrl(srv.origin, a), true); t.after(() => b.close()); await b.click('#multiplayer'); await until(() => b.game.net.id, 'guest welcome');
+  const lobbyCard = (s, k) => s.elements.get('#lobby-cards').children.find(e => e.dataset.k === k);
+  assert.ok(a.game.metaStore && !b.game.metaStore);
+  assert.ok(lobbyCard(a, 'sax').disabled, 'the host has sax locked'); assert.match(lobbyCard(a, 'sax').textContent, /Переможи першого боса/); assert.ok(!lobbyCard(b, 'sax').disabled, 'the guest has no storage: everything is open');
+  await a.pick('sax'); await delay(100); assert.ok(!a.game.net.roster.find(p => p.id === a.game.net.id).char, 'the locked pick did not reach the server');
+  await b.pick('sax'); await until(() => a.game.net.roster.some(p => p.char === 'sax'), 'guest takes sax');
+  const mbtn = k => a.elements.get('#lobby-modes').children.find(e => e.dataset.m === k);
+  assert.ok(mbtn('marathon').disabled && !mbtn('set').disabled); mbtn('marathon').onclick(); await delay(120); assert.equal(b.game.chosenMode, 'concert');
+  assert.match(a.elements.get('#lobby-mode-note').textContent, /Переможи в режимі «Концерт»/); assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+test('meta-progress: throwing or missing storage never crashes anything and nothing is locked', async t => {
+  const boom = () => { throw new Error('storage blocked'); };
+  for (const store of [{ getItem: boom, setItem: boom, removeItem: boom }, null, { getItem: () => '{broken json', setItem() {} }, { getItem: () => '{"runs":"x","bosses":-4,"modes":{"set":5,"marathon":{"time":"9"}}}', setItem() {} }]) {
+    const s = await modeRun(t, 'set', store), g = s.game;
+    assert.equal(g.charLocked('flute'), false); assert.equal(g.modeLocked('marathon'), false); assert.ok(g.running);
+    g.G.t = 70; g.G.level = 3; await dieNow(s); assert.ok(g.meta.runs >= 1, 'records still live in memory'); assert.ok(s.elements.get('#recap').innerHTML.length > 0);
+    await nextRun(s); g.G.t = 359.98; await until(() => g.G.mobs.some(m => m.type === 'boss1'), 'boss'); g.G.p.hp = g.G.p.max; g.G.mobs.find(m => m.type === 'boss1').hp = 0; await until(() => !g.running, 'victory');
+    await s.click('#other'); await s.click('#meta-reset'); await s.click('#meta-reset'); g.renderRecords();
+    assert.ok(g.meta.runs === 0 && g.meta.bosses === 0); assert.deepEqual(s.errors, []);
+  }
+  // повреджені дані очищаються до чисел
+  const s = await modeRun(t, null, memoryStore({ 'bandhero.meta': '{"runs":"x","bosses":-4,"modes":{"set":5,"marathon":{"time":"9"}}}' }));
+  assert.equal(s.game.meta.runs, 0); assert.equal(s.game.meta.bosses, 0); assert.equal(s.game.meta.modes.marathon.time, 9); assert.equal(s.game.meta.modes.set, undefined);
+  assert.deepEqual(s.errors, []);
+});
+
+test('modes and records have translations in every language', () => {
+  for (const lang of ['en', 'de', 'ru']) for (const w of ['Сет', 'Концерт', 'Марафон', 'Режим забігу', 'Рекорди', 'Скинути прогрес', 'Новий рекорд!', 'Режим', 'Забігів: {0}', 'рів.',
+    'Переможи першого боса', 'Переможи в режимі «Концерт»', 'Відкрито: усі інструменти', 'Відкрито режим «Марафон»', 'Прогрес скинуто: рекорди й відкриття стерто.',
+    'Коротко, ~7 хвилин: один бос о 6:00 — і перемога.', '15 хвилин і три боси. Фінальний бос — перемога.',
+    'Без кінця: після трьох босів вороги міцнішають, а бос приходить кожні 5 хвилин. Закінчується лише смертю.',
+    '{0}. {1} переміг Фонограму за {2}: {3} рівень, {4} ворогів.', 'Фонограму переможено за {0}: {1} рівень гурту, {2} ворогів.'])
+    assert.ok(dictionary[lang][w], lang + ': ' + w);
+});

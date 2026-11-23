@@ -56,7 +56,7 @@ function newRoom(code) {
   if (!code) {
     do { code = crypto.randomBytes(5).toString('hex').toUpperCase(); } while (rooms.has(code) || code === LEGACY_ROOM);
   }
-  const room = { code, clients: new Map(), hostId: null, phase: 'lobby', genre: 'rand', fsq: 0 };
+  const room = { code, clients: new Map(), hostId: null, phase: 'lobby', genre: 'rand', mode: 'concert', fsq: 0 };
   rooms.set(code, room);
   return room;
 }
@@ -190,7 +190,7 @@ function onAck(c, q) {
 function send(c, obj) { sendRaw(c, frame(JSON.stringify(obj))); }
 function broadcast(room, obj, exceptId, droppable) { const f = frame(JSON.stringify(obj)); for (const c of room.clients.values()) if (c.id !== exceptId) sendRaw(c, f, droppable); }
 function roster(room) { return [...room.clients.values()].map(c => ({ id: c.id, char: c.char || null, ready: c.ready, host: c.id === room.hostId })); }
-function pushRoster(room) { broadcast(room, { t: 'roster', host: room.hostId, players: roster(room), phase: room.phase, genre: room.genre }); }
+function pushRoster(room) { broadcast(room, { t: 'roster', host: room.hostId, players: roster(room), phase: room.phase, genre: room.genre, mode: room.mode }); }
 
 // гурт повернувся в лобі: місця для тих, хто зараз без зв’язку, більше не тримаємо.
 // Повернувшись, вони зайдуть у лобі як нові учасники й побачать його, а не завислий забіг.
@@ -246,7 +246,7 @@ server.on('upgrade', (req, sock, head) => {
     clearTimeout(c.graceTimer); c.graceTimer = null;
     c.sock = sock; c.alive = true; c.dropped = 0; flowReset(c);
     if (old && !old.destroyed) { c.reason = null; old.destroy(); } // старе «напівмертве» з’єднання телефона
-    send(c, { t: 'welcome', id: c.id, token: c.token, resumed: true, room: room.code, host: room.hostId, players: roster(room), phase: room.phase, genre: room.genre });
+    send(c, { t: 'welcome', id: c.id, token: c.token, resumed: true, room: room.code, host: room.hostId, players: roster(room), phase: room.phase, genre: room.genre, mode: room.mode });
     if (room.hostId && room.hostId !== c.id) send(clients.get(room.hostId), { t: 'back', id: c.id });
     else if (room.hostId === c.id) broadcast(room, { t: 'hostBack' }, c.id);
     log(`↻ ${c.id} повернувся (${ip}).`);
@@ -256,7 +256,7 @@ server.on('upgrade', (req, sock, head) => {
     c = { sock, room, id: 'p' + (nextId++), token: crypto.randomBytes(12).toString('hex'), char: null, ready: false, alive: true };
     clients.set(c.id, c);
     if (!room.hostId) room.hostId = c.id;
-    send(c, { t: 'welcome', id: c.id, token: c.token, room: room.code, host: room.hostId, players: roster(room), phase: room.phase, genre: room.genre });
+    send(c, { t: 'welcome', id: c.id, token: c.token, room: room.code, host: room.hostId, players: roster(room), phase: room.phase, genre: room.genre, mode: room.mode });
     pushRoster(room);
     log(`+ ${c.id} підключився (${ip}). Гравців: ${clients.size}`);
   }
@@ -332,6 +332,9 @@ function onMessage(c, text) {
   if (m.t === 'genre' && c.id === room.hostId && room.phase === 'lobby' && typeof m.genre === 'string') {
     if (!['rand', 'lofi', 'pop', 'rock', 'newwave', 'metal', 'jazz', 'chanson', 'chanson_ua', 'reggae', 'industrial', 'funk', 'synthwave', 'folkrock', 'blues', 'dnb', 'rockfast'].includes(m.genre)) return;
     room.genre = m.genre; pushRoster(room); return;
+  }
+  if (m.t === 'mode' && c.id === room.hostId && room.phase === 'lobby' && ['set', 'concert', 'marathon'].includes(m.mode)) {
+    room.mode = m.mode; pushRoster(room); return;   // режим забігу обирає хост; сервер лише передає його гуртові
   }
   if (m.t === 'begin' && c.id === room.hostId && room.phase === 'lobby') {
     if (clients.size < 2 || [...clients.values()].some(p => !p.char || !p.ready)) { send(c, { t: 'notReady' }); return; }
