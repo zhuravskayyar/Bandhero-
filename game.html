@@ -3065,7 +3065,9 @@ function update(dt){
       for(let i=0;i<14;i++){const a=i/14*6.283;G.gems.push({x:m.x+Math.cos(a)*40,y:m.y+Math.sin(a)*40,v:MOBS[m.type].xp,mag:false});}
       if(MOBS[m.type].boss.final)G.won=true;
     }
-    else if(G.gems.length<400)G.gems.push({x:m.x,y:m.y,v:m.gen?1:MOBS[m.type].xp,mag:false});
+    else{const v=m.gen?1:MOBS[m.type].xp;
+      if(G.gems.length<400)G.gems.push({x:m.x,y:m.y,v,mag:false});
+      else G.gems[0].v+=v;} // ліміт кристалів на карті: понад нього XP додається до найстаршого кристала, а не губиться
     dropHearts(m,killer);
     for(let i=0;i<6&&G.fx.length<300;i++){const a=Math.random()*6.28,v=40+Math.random()*90;G.fx.push({x:m.x,y:m.y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,age:0,col:MOBS[m.type].col});}
   }
