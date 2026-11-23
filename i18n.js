@@ -1922,3 +1922,17 @@ for(const [uk,en,de,ru] of [
   ['Нота {0} — {1}/{2} до акорду {3}: остання, акорд долучиться до пісні (такт {4} з 4).','Note {0} — {1}/{2} toward chord {3}: the last one, the chord joins the song (bar {4} of 4).','Note {0} — {1}/{2} zum Akkord {3}: die letzte, der Akkord kommt in den Song (Takt {4} von 4).','Нота {0} — {1}/{2} к аккорду {3}: последняя, аккорд присоединится к песне (такт {4} из 4).'],
   ['Нота {0} — {1}/{2} до акорду {3} (такт {4} з 4).','Note {0} — {1}/{2} toward chord {3} (bar {4} of 4).','Note {0} — {1}/{2} zum Akkord {3} (Takt {4} von 4).','Нота {0} — {1}/{2} к аккорду {3} (такт {4} из 4).'],
 ]){window.I18N_DICT.en[uk]=en;window.I18N_DICT.de[uk]=de;window.I18N_DICT.ru[uk]=ru;}
+// Підказки першого забігу.
+for(const [uk,en,de,ru] of [
+  ['Атакуєш автоматично — просто рухайся (WASD / стрілки / джойстик)','You attack automatically — just move (WASD / arrows / joystick)','Du greifst automatisch an — beweg dich einfach (WASD / Pfeiltasten / Joystick)','Атакуешь автоматически — просто двигайся (WASD / стрелки / джойстик)'],
+  ['Атакуєш автоматично — просто рухайся: тягни пальцем по екрану','You attack automatically — just move: drag your finger on the screen','Du greifst automatisch an — beweg dich einfach: zieh den Finger über den Bildschirm','Атакуешь автоматически — просто двигайся: води пальцем по экрану'],
+  ['Збирай кристали — це досвід','Collect the crystals — they are experience','Sammle die Kristalle — sie geben Erfahrung','Собирай кристаллы — это опыт'],
+  ['Q / E — вибір, Пробіл — взяти. Картки: партії, спорядження й ноти.','Q / E to choose, Space to take. Cards are parts, gear and notes.','Q / E zum Wählen, Leertaste zum Nehmen. Karten sind Stimmen, Ausrüstung und Noten.','Q / E — выбор, Пробел — взять. Карточки: партии, снаряжение и ноты.'],
+  ['Торкнись картки, щоб узяти. Картки: партії, спорядження й ноти.','Tap a card to take it. Cards are parts, gear and notes.','Tippe auf eine Karte, um sie zu nehmen. Karten sind Stimmen, Ausrüstung und Noten.','Коснись карточки, чтобы взять. Карточки: партии, снаряжение и ноты.'],
+  ['Ноти складаються в акорди — акорд додає шкоди й звучить у пісні','Notes combine into chords — a chord adds damage and plays in the song','Noten ergeben Akkorde — ein Akkord macht mehr Schaden und erklingt im Song','Ноты складываются в аккорды — аккорд добавляет урон и звучит в песне'],
+  ['Скоро бос!','Boss incoming!','Bald kommt ein Boss!','Скоро босс!'],
+  ['Підказки: увімк','Hints: on','Tipps: an','Подсказки: вкл'],
+  ['Підказки: вимк','Hints: off','Tipps: aus','Подсказки: выкл'],
+  ['Скинути підказки','Reset hints','Tipps zurücksetzen','Сбросить подсказки'],
+  ['Підказки скинуто — з’являться знову в наступному забігу.','Hints reset — they will show again next run.','Tipps zurückgesetzt — sie erscheinen im nächsten Lauf wieder.','Подсказки сброшены — появятся снова в следующем забеге.'],
+]){window.I18N_DICT.en[uk]=en;window.I18N_DICT.de[uk]=de;window.I18N_DICT.ru[uk]=ru;}

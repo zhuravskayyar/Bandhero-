@@ -81,6 +81,9 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
 #recap .rv{font-size:12px;color:#a9a592}
 @media(max-width:620px){#recap .rstats{grid-template-columns:repeat(3,minmax(0,1fr))}#recap .rstat b{font-size:15px}}
 @media(max-width:620px){.card .ic{flex-basis:48px;width:48px;height:48px}#opts .card{gap:11px}#layers .hic,#layers .hic svg{width:24px;height:24px;flex-basis:24px}}
+#hint{position:fixed;left:50%;top:128px;transform:translateX(-50%);max-width:min(92vw,460px);z-index:7;padding:8px 14px;border:1px solid #f1dba066;border-radius:8px;background:#0b1928ee;color:#f1dba0;font:600 13px/1.35 Rubik,sans-serif;text-align:center;pointer-events:none;box-shadow:0 2px 10px #0008}
+#lvl-hint{color:#f1dba0!important;font-weight:600}
+.hints-row{margin-top:2px}
 </style>
 <link rel="stylesheet" href="game-effects.css">
 <script src="i18n.js"></script>
@@ -112,6 +115,7 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
   <div id="team"></div>
 </div>
 <div id="load"></div>
+<div id="hint" class="hide" role="status" aria-live="polite"></div>
 <div id="snd"><button id="mute" type="button" aria-label="Вимкнути звук">♪</button><input id="vol" type="range" min="0" max="100" step="5" value="100" aria-label="Гучність"></div>
 
 <div id="menu" class="ov">
@@ -126,6 +130,7 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
   <div class="keys" aria-hidden="true"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> рух</span><span><kbd>P</kbd> пауза</span></div>
   <p class="controls-note">Тягни пальцем або рухайся WASD / стрілками. Чудик атакує сам, у ритм музики. Кожен забіг — нова пісня.</p>
   <div class="menu-foot"><button class="btn s" id="multiplayer">♫ Грати з друзями онлайн</button><div id="lang-switch" class="chips" aria-label="Language"></div></div>
+  <div class="menu-foot hints-row"><button class="btn s" id="hints-toggle" type="button"></button><button class="btn s" id="hints-reset" type="button">Скинути підказки</button></div>
   <details class="credits"><summary>Про звук і шрифти</summary><p>Семпли: FluidR3 GM (Frank Wen), CC BY 3.0, gleitz/midi-js-soundfonts. Ударні: Pearl Master Studio (enoe, CC BY 3.0, oramics/sampled), teropa/drumkit (DWDS CC BY, тарілки й томи CC0). Скрипка й сопілка: VSCO-2 CE (Sam Gossner, Simon Dalzell), CC0. Шрифти Rubik, Russo One і Pixelify Sans (логотип): SIL Open Font License. Ефекти: BDragon1727, Effect and FX Pixel (безкоштовна версія). Семпли кешуються; без мережі працює синтез.</p></details>
 </div>
 
@@ -146,6 +151,7 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
 <div id="lvl" class="ov hide">
   <h1 id="lvlT">Новий рівень</h1>
   <p id="gear-hint">Обери, що додати у свою партію.</p>
+  <p id="lvl-hint" class="hide"></p>
   <div id="opts" class="cards"></div>
   <div class="keys" aria-hidden="true"><span><kbd>Q</kbd><kbd>E</kbd> вибір</span><span><kbd>Пробіл</kbd> взяти</span></div>
 </div>
@@ -2580,10 +2586,10 @@ addEventListener('keydown',e=>{
 });
 addEventListener('keyup',e=>keys.delete(e.code));
 addEventListener('blur',()=>keys.clear());
-let joy=null;
+let joy=null,touchSeen=false;
 /* Плаваючий джойстик: з'являється під пальцем. Дотик чи мишка — будь-де на полотні (кнопки DOM лежать над ним). */
 const JOY_R=60,JOY_DZ=10;
-cv.addEventListener('pointerdown',e=>{if(!running||paused||joy)return;
+cv.addEventListener('pointerdown',e=>{if(e.pointerType==='touch')touchSeen=true;if(!running||paused||joy)return;
   joy={id:e.pointerId,x0:e.clientX,y0:e.clientY,x:e.clientX,y:e.clientY,touch:e.pointerType==='touch'};cv.setPointerCapture(e.pointerId);if(e.preventDefault)e.preventDefault();});
 cv.addEventListener('pointermove',e=>{if(joy&&e.pointerId===joy.id){joy.x=e.clientX;joy.y=e.clientY;
   if(joy.touch){const dx=joy.x-joy.x0,dy=joy.y-joy.y0,l=Math.hypot(dx,dy);if(l>JOY_R*1.5){const k=(l-JOY_R*1.5)/l;joy.x0+=dx*k;joy.y0+=dy*k;}} // база «тягнеться» за пальцем, щоб розвернутись швидко
@@ -2742,7 +2748,7 @@ function optionIcon(o){return o.hp?ICON.heal():o.xpb||o.note?ICON.chord(false):o
 function renderChoices(opts,submit){
   $('#lvlT').textContent=TF('Рівень {0}',G.level);
   $('#gear-hint').textContent=TF('{0} · тримаєш до 5 скілів кожного типу',CHARS[charKey].name);
-  $('#opts').innerHTML='';
+  $('#opts').innerHTML='';hintLevelScreen();
   const col=CHARS[charKey].col;
   for(const o of opts){
     const b=document.createElement('button');b.className='card';b.style.setProperty('--c',o.pd?'#8fd0ff':o.note?CHORD_FN[chordFnId(SONG.prog[o.slot].off)].col:o.hp?'#ff6a85':o.rhythm||o.voicing||o.xpb?'#ffd76a':col);
@@ -2766,6 +2772,7 @@ function renderChoices(opts,submit){
     b.onclick=async()=>{
       if(!choosing||levelBusy)return;levelBusy=true;
       try{
+      if(o.note)hintWant('note'); // перша нота: підказка про акорди з’явиться, щойно вибір закриється
       if(submit){submit(opts.indexOf(o));return;}
       applyUpgrade(o);
       if(o.note||o.voicing){
@@ -3419,6 +3426,50 @@ function hud(){
       +(Object.keys(G.pedals).length?'<span class="sep"></span>'+PEDALS.filter(p=>G.pedals[p.id]).map(p=>`<span class="hic" title="${p.name}">${ICON.gear(p)}<i>${G.pedals[p.id]}</i></span>`).join(''):'');}
   $('#team').textContent=net.active?G.players.map(a=>CHARS[a.char].glyph+' '+(a.id===net.id?T('Ти'):CHARS[a.char].name)+': '+(a.p.hp>0?Math.ceil(a.p.hp)+' HP':T('підніметься з новим рівнем'))).join(' · '):'';
 }
+
+/* ================= ПІДКАЗКИ ПЕРШОГО ЗАБІГУ =================
+   Локальні для кожного клієнта (без мережі): і гість, і хост дивляться на власний стан (G зі знімка). Кожна підказка — один раз, прапорці в localStorage
+   (усі звернення в try/catch; якщо сховище недоступне — працює в межах сторінки). Не модальні: банер угорі, гра йде далі. */
+const HINT_ON_KEY='bandhero.hints',HINT_SEEN_KEY='bandhero.hintsSeen',HINT_MS=5200;
+let hintOn=true;const hintSeen=new Set(),hintPending=new Set();let hintCur=null,hintUntil=0;
+try{hintOn=localStorage.getItem(HINT_ON_KEY)!=='0';}catch(e){}
+try{const v=localStorage.getItem(HINT_SEEN_KEY);if(v)v.split(',').forEach(k=>k&&hintSeen.add(k));}catch(e){}
+function hintSave(){try{localStorage.setItem(HINT_ON_KEY,hintOn?'1':'0');localStorage.setItem(HINT_SEEN_KEY,[...hintSeen].join(','));}catch(e){}}
+function hintTouch(){if(touchSeen)return true;try{return !!(matchMedia&&matchMedia('(pointer: coarse)').matches);}catch(e){return false;}}
+const hintText=k=>k==='start'?T(hintTouch()?'Атакуєш автоматично — просто рухайся: тягни пальцем по екрану':'Атакуєш автоматично — просто рухайся (WASD / стрілки / джойстик)')
+  :k==='gem'?T('Збирай кристали — це досвід')
+  :k==='note'?T('Ноти складаються в акорди — акорд додає шкоди й звучить у пісні')
+  :k==='boss'?T('Скоро бос!'):'';
+function hintShow(k){
+  hintSeen.add(k);hintPending.delete(k);hintSave();hintCur=k;hintUntil=performance.now()+HINT_MS;
+  const el=$('#hint');el.textContent=hintText(k);el.classList.remove('hide');
+}
+function hintHide(){hintCur=null;try{$('#hint').classList.add('hide');}catch(e){}}
+function hintWant(k){if(hintOn&&!hintSeen.has(k))hintPending.add(k);}
+function hintLevelScreen(){ // додатковий рядок на екрані вибору картки — лише вперше
+  const el=$('#lvl-hint');
+  if(hintOn&&!hintSeen.has('level')){hintSeen.add('level');hintSave();el.textContent=T(hintTouch()?'Торкнись картки, щоб узяти. Картки: партії, спорядження й ноти.':'Q / E — вибір, Пробіл — взяти. Картки: партії, спорядження й ноти.');el.classList.remove('hide');}
+  else el.classList.add('hide');
+}
+function hintTick(){
+  try{
+    const t=performance.now();
+    if(hintCur&&(t>=hintUntil||!hintOn||!G||!running))hintHide();
+    if(!hintOn||!G||!running||paused||choosing)return;
+    const bt=BOSS_AT[0];
+    if(!hintSeen.has('boss')&&(G.bossNext||0)===0&&G.t>=bt-20&&G.t<bt){hintShow('boss');return;} // «Скоро бос!» — з пріоритетом
+    if(hintCur)return;
+    if(!hintSeen.has('start')&&G.t>=.3){hintShow('start');return;}
+    if(hintPending.has('note')){hintShow('note');return;}
+    if(!hintSeen.has('gem')&&G.t>=3&&G.p&&(G.gems||[]).some(gm=>Math.hypot(gm.x-G.p.x,gm.y-G.p.y)<280)){hintShow('gem');return;}
+  }catch(e){}
+}
+function hintsLabel(){$('#hints-toggle').textContent=T(hintOn?'Підказки: увімк':'Підказки: вимк');}
+function setHintsOn(v){hintOn=!!v;if(!hintOn){hintHide();hintPending.clear();}hintSave();hintsLabel();}
+function resetHints(){hintSeen.clear();hintPending.clear();hintOn=true;hintSave();hintHide();hintsLabel();}
+$('#hints-toggle').onclick=()=>setHintsOn(!hintOn);
+$('#hints-reset').onclick=()=>{resetHints();$('#menu-notice').textContent=T('Підказки скинуто — з’являться знову в наступному забігу.');};
+hintsLabel();
 let last=performance.now();
 let measuredFrames=0,measurementTime=last;
 function loop(ts){
@@ -3431,7 +3482,7 @@ function loop(ts){
   if(net.stateBox)flushState(); // найсвіжіший знімок хоста — раз на кадр (і до перевірки running: саме перший знімок запускає забіг гостя)
   if(running&&!paused&&G){if(net.active&&!net.isHost)interpolateWorld(dt);else update(dt);musicReact(dt);}
   else if(bossDrone)setBossDrone(false); // кінець забігу, пауза чи вибір покращення (у гурті звук не зупиняється) — гул вимикаємо; повернеться з боєм
-  draw();hud();measuredFrames++;
+  draw();hud();hintTick();measuredFrames++;
   if(ts-measurementTime>=1000){
     cv.dataset.fps=String(Math.round(measuredFrames*1000/(ts-measurementTime)));cv.dataset.shots=String(G?G.shots.length:0);
     cv.dataset.vfx=String(renderStats.spriteFX);cv.dataset.enemyHp=String(renderStats.hpBars);cv.dataset.worldTime=G?G.t.toFixed(1):'';
@@ -3592,7 +3643,7 @@ function gameOver(){
   $('#sum').textContent=TF('{0}. {1} протримався {2}, дійшов до {3} рівня і переміг {4} ворогів.',GENRES[SONG.genre].name,CHARS[charKey].name,`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`,G.level,G.kills);
   showRecap();$('#over').classList.remove('hide');$('#hud').classList.add('hide');
 }
-function stopRun(){running=false;paused=false;net.pausedBy=null;choosing=false;loading=false;runId++;G=null;atkQ=[];bossQ=[];joy=null;keys.clear();clearAttackFX();
+function stopRun(){hintHide();hintPending.clear();running=false;paused=false;net.pausedBy=null;choosing=false;loading=false;runId++;G=null;atkQ=[];bossQ=[];joy=null;keys.clear();clearAttackFX();
   endNoteTails();
   $('#load').textContent='';$('#audio-resume').classList.add('hide');
   $('#over h1').textContent=T('Тебе заглушили');$('#other').textContent=T('Інший персонаж');$('#quit').textContent=T('У меню');$('#pause-title').textContent=T('Пауза');
@@ -4096,7 +4147,7 @@ window.__game={need,threat,SPAWN_SHIELD,GEM_MAGNET,hurtPlayer,bossEnraged,bossNo
   sectionAt,phraseName,hookPhrase,directorStep,fullChordAt,patOf,P,SEC_NAME,
   logNotes(on){NOTE_LOG=on?[]:null;},get notes(){return NOTE_LOG;},setSong(s){SONG=s;},
   playBuffered,fire,reqBuf,warmLayer,endNoteTails,get voices(){return slot.voices;},
-  runRecap,recapHtml,noteCardText,get running(){return running;},get paused(){return paused;},get choosing(){return choosing;},get net(){return net;},
+  runRecap,recapHtml,noteCardText,hints:{get on(){return hintOn;},get seen(){return [...hintSeen];},tick:hintTick,setOn:setHintsOn,reset:resetHints,want:hintWant,get text(){return hintCur?$('#hint').textContent:'';},get current(){return hintCur;},expire(){hintUntil=0;}},get running(){return running;},get paused(){return paused;},get choosing(){return choosing;},get net(){return net;},
   receiveHost,interpolateWorld,sampleAt,flushState,wireReplacer,CHORD_KEYS};
 if(new URLSearchParams(location.search).has('band'))connectBand();
 })();

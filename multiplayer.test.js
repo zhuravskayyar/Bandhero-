@@ -75,6 +75,8 @@ function session(origin, audio = false, audioFixture = {}) {
     document: { querySelector: get, createElement: () => new Element(), hidden: false, addEventListener() {} },
     innerWidth: 390, innerHeight: 844, devicePixelRatio: 1, performance, URL, URLSearchParams, Blob, atob,
     ...(audioFixture.sessionStorage ? { sessionStorage: audioFixture.sessionStorage } : {}),
+    // Підказки першого забігу в тестах вимкнено, якщо тест сам не дає сховище (audioFixture.localStorage).
+    localStorage: 'localStorage' in audioFixture ? audioFixture.localStorage : { getItem: k => k === 'bandhero.hints' ? '0' : null, setItem() {} },
     WebSocket, location: new URL(origin), setTimeout: later, clearTimeout, setInterval: interval,
     Image: class { constructor() { this.complete = true; this.naturalWidth = 1254; this.naturalHeight = 1254; } },
     // SoundFont-банк (.sf2) не тягнемо з мережі: тест не має залежати від того, чи запущено сервер на 8080.
@@ -2464,4 +2466,85 @@ test('note cards say how far the note takes the next chord', async t => {
   for (const key of ['Нота {0} — {1}/{2} до акорду {3} (такт {4} з 4).', 'Нота {0} — {1}/{2} до акорду {3}: остання, акорд долучиться до пісні (такт {4} з 4).'])
     for (const lang of ['en', 'de', 'ru']) assert.ok(dictionary[lang][key], lang + ' translation');
   assert.deepEqual(s.errors, []);
+});
+
+const memoryStore = (init = {}) => { const m = new Map(Object.entries(init)); return { m, getItem: k => m.has(k) ? m.get(k) : null, setItem: (k, v) => { m.set(k, String(v)); }, removeItem: k => { m.delete(k); } }; };
+const hintsRun = async (t, store, char = 'guitar') => { const s = session('http://127.0.0.1:8080', false, { localStorage: store }); t.after(() => s.close()); await s.game.pick(char); return s; };
+
+test('first-run hints: start, gem, level-up, note and boss each show once and the flag persists', async t => {
+  const store = memoryStore(), s = await hintsRun(t, store), g = s.game, h = g.hints, banner = { classList: { contains: c => s.elements.get('#hint').classList.contains(c) } };
+  assert.ok(h.on); assert.ok(g.running);
+  g.G.t = 1; h.tick(); assert.equal(h.current, 'start');
+  assert.match(h.text, /Атакуєш автоматично/); assert.ok(!banner.classList.contains('hide'), 'banner visible, game not paused');
+  assert.equal(g.paused, false); assert.equal(g.choosing, false);
+  h.tick(); assert.equal(h.current, 'start', 'one hint at a time');
+  h.expire(); h.tick(); assert.equal(h.current, null); assert.ok(banner.classList.contains('hide'), 'auto-hides');
+  g.G.gems.push({ x: g.G.p.x + 100, y: g.G.p.y, v: 1, mag: false }); g.G.t = 4; h.tick();
+  assert.equal(h.current, 'gem'); assert.match(h.text, /кристали/); h.expire(); h.tick();
+  // екран вибору: додатковий рядок лише вперше
+  g.G.t = 10; g.G.xp = g.need(g.G.level); g.levelUp();
+  if (g.choosing) { assert.ok(!s.elements.get('#lvl-hint').classList.contains('hide')); await s.elements.get('#opts').children[0].onclick(); }
+  assert.ok(h.seen.includes('level') || !g.choosing, 'level hint is marked seen');
+  g.applyUpgrade(g.noteCards()[0]); h.want('note'); g.G.t = 11; h.tick();
+  assert.equal(h.current, 'note'); assert.match(h.text, /акорди/); h.expire(); h.tick();
+  g.G.t = 290; g.G.bossNext = 0; h.tick(); assert.equal(h.current, 'boss'); assert.equal(h.text, 'Скоро бос!'); h.expire(); h.tick();
+  for (const k of ['start', 'gem', 'note', 'boss']) assert.ok(h.seen.includes(k), k);
+  for (let i = 0; i < 3; i++) { g.G.t = 291 + i; h.tick(); assert.equal(h.current, null, 'no repeats'); h.expire(); }
+  assert.match(store.m.get('bandhero.hintsSeen'), /start/); assert.equal(store.m.get('bandhero.hints'), '1');
+  assert.deepEqual(s.errors, []);
+  // новий забіг у новій сторінці з тим самим сховищем: підказки вже не показуються
+  const s2 = await hintsRun(t, store); s2.game.G.t = 1; s2.game.hints.tick(); assert.equal(s2.game.hints.current, null);
+  // скидання повертає їх
+  s2.game.hints.reset(); s2.game.G.t = 1; s2.game.hints.tick(); assert.equal(s2.game.hints.current, 'start');
+  assert.deepEqual(s2.errors, []);
+});
+
+test('first-run hints: the level-up screen explains the cards once and the menu toggle/reset work', async t => {
+  const store = memoryStore(), s = await hintsRun(t, store), g = s.game, lvl = { get textContent() { return s.elements.get('#lvl-hint').textContent; }, classList: { contains: c => s.elements.get('#lvl-hint').classList.contains(c) } };
+  assert.equal(s.elements.get('#hints-toggle').textContent, 'Підказки: увімк');
+  g.G.t = 20; g.G.xp = g.need(g.G.level); g.levelUp();
+  if (g.choosing) { assert.ok(!lvl.classList.contains('hide')); assert.match(lvl.textContent, /Q \/ E/); assert.match(lvl.textContent, /ноти/); assert.ok(g.hints.seen.includes('level')); await s.elements.get('#opts').children[0].onclick(); }
+  else assert.ok(g.hints.seen.includes('level') === false, 'auto-level skips the card screen');
+  // вимкнення з меню гасить усе й запам’ятовується
+  await s.click('#hints-toggle'); assert.equal(g.hints.on, false); assert.equal(s.elements.get('#hints-toggle').textContent, 'Підказки: вимк');
+  assert.equal(store.m.get('bandhero.hints'), '0');
+  g.G.t = 1; g.hints.tick(); assert.equal(g.hints.current, null); assert.ok(s.elements.get('#hint').classList.contains('hide'));
+  g.hints.want('note'); g.hints.tick(); assert.equal(g.hints.current, null, 'wanted hints are ignored while off');
+  await s.click('#hints-reset'); assert.equal(g.hints.on, true); assert.equal(g.hints.seen.length, 0);
+  assert.match(s.elements.get('#menu-notice').textContent, /Підказки скинуто/);
+  g.G.t = 1; g.hints.tick(); assert.equal(g.hints.current, 'start');
+  assert.deepEqual(s.errors, []);
+});
+
+test('first-run hints: persisted off flag is respected and throwing storage never crashes the game', async t => {
+  const off = await hintsRun(t, memoryStore({ 'bandhero.hints': '0' })); off.game.G.t = 1; off.game.hints.tick();
+  assert.equal(off.game.hints.on, false); assert.equal(off.game.hints.current, null);
+  const boom = () => { throw new Error('storage blocked'); };
+  for (const store of [{ getItem: boom, setItem: boom }, null]) {
+    const s = await hintsRun(t, store), h = s.game.hints;
+    assert.equal(h.on, true, 'works without storage'); s.game.G.t = 1; h.tick(); assert.equal(h.current, 'start');
+    h.expire(); h.tick(); s.game.G.t = 2; h.tick(); assert.equal(h.current, null, 'still once per page without storage');
+    h.setOn(false); h.reset(); await s.click('#hints-toggle'); await s.click('#hints-reset');
+    assert.deepEqual(s.errors, []);
+  }
+});
+
+test('first-run hints: a co-op guest gets them from its own snapshot state', async t => {
+  const server = spawn(process.execPath, ['server.js'], { cwd: __dirname, env: { ...process.env, PORT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = ''; server.stdout.on('data', b => output += b); server.stderr.on('data', b => output += b);
+  const sessions = []; t.after(() => { sessions.forEach(s => s.close()); server.kill(); });
+  await until(() => output.includes('http://localhost:'), 'server startup');
+  const origin = 'http://127.0.0.1:' + output.match(/http:\/\/localhost:(\d+)/)[1];
+  const store = memoryStore();
+  const host = session(origin, true); sessions.push(host); await host.click('#multiplayer'); await until(() => host.game.net.id, 'host welcome');
+  const guest = session(roomUrl(origin, host), true, { localStorage: store }); sessions.push(guest); await guest.click('#multiplayer'); await until(() => guest.game.net.id, 'guest welcome');
+  await host.pick('guitar'); await until(() => guest.game.net.roster[0].char === 'guitar', 'host pick'); await guest.pick('drums');
+  await until(() => host.game.net.roster.every(p => p.char), 'both picked');
+  await host.click('#ready'); await guest.click('#ready'); host.game.net.ws.send(JSON.stringify({ t: 'begin' }));
+  await until(() => guest.game.running && guest.game.G, 'guest running', 15000);
+  await until(() => guest.game.G.t > 0.4, 'snapshot time');
+  await until(() => { guest.game.hints.tick(); return guest.game.hints.current === 'start'; }, 'guest start hint');
+  assert.match(guest.game.hints.text, /Атакуєш автоматично/);
+  assert.equal(host.game.hints.current, null, 'host has hints off here and nothing was sent over the wire');
+  assert.deepEqual(guest.errors, []);
 });
