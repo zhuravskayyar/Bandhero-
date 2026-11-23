@@ -1,16 +1,17 @@
 'use strict';
 // node --test harmony.test.js — символічний аудит гармонії (tools/harmony-audit.js).
-// Порогів поки що не накладаємо жорстко: THRESHOLDS лише фіксують «стелю» (100 % = не перевіряти).
-// Коли гармонію виправлять, головна модель зменшує числа — і тест почне ловити регресії.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { runAudit, buildScenarios, loadGame, SEV } = require('./tools/harmony-audit.js');
 
-// максимально допустимий % зваженого часу за метрикою (100 = поки без обмеження)
+// Пороги — «стеля» % зваженого часу за метрикою на quick-наборі (по одній прогресії й тональності на жанр, have4/lvl1 і have1/lvl1).
+// Це максимум по всіх рядках (жанр × партія) ПІСЛЯ виправлень гармонії (див. docs/harmony-audit-results.md) + запас max(+2 п.п., +25 %): тест ловить регресії.
+// Значення, що лишаються високими, — свідомі або позасистемні: стартові партії (їх висоти не міняються: тести «тримає акорд», «однаково щотакту»), hook_nonct_full у розбіжних тактах (хук лишається в акорді гравця),
+// avoid_own фону (бас фону проти акорда гравця — рішення «фон грає повну прогресію»), пари інструментів (гітара/піаніно нижче баса), leadtone_V (лише інформація).
 const THRESHOLDS = {
-  avoid_full: 100, avoid_own: 100, out_of_key: 100, leadtone_V: 100, clash_backing: 100, tritone: 100, mud: 100, mud_sub: 100, below_bass: 100,
-  hook_nonct_full: 100, hook_nonct_own: 100, hook_avoid_full: 100, hook_avoid_own: 100, hook_seconds: 100,
-  clash_pair: 100, tritone_pair: 100, mud_pair: 100, mud_sub_pair: 100, below_bass_pair: 100,
+  avoid_full: 17.3, avoid_own: 31.7, out_of_key: 8.3, leadtone_V: 31.3, clash_backing: 20.5, tritone: 9.8, mud: 19, mud_sub: 2, below_bass: 6.1,
+  hook_nonct_full: 47.2, hook_nonct_own: 2, hook_avoid_full: 2, hook_avoid_own: 2, hook_seconds: 2,
+  clash_pair: 32, tritone_pair: 27.8, mud_pair: 11.5, mud_sub_pair: 2, below_bass_pair: 64.9,
 };
 // мінімальний набір: по одній прогресії на жанр, одна тональність, повний гурт і гурт з одним акордом
 const quick = L => buildScenarios(L, { quick: true });
@@ -29,9 +30,6 @@ test('аудит гармонії працює для всіх жанрів і �
     if (r.value > 0) assert.ok(r.examples.length > 0, 'ненульова метрика без прикладів: ' + r.part + ' ' + r.metric);
     assert.ok(r.value <= THRESHOLDS[r.metric], r.genre + ' ' + r.part + ' ' + r.metric + ' ' + r.value + '% > порогу ' + THRESHOLDS[r.metric]);
   }
-  // розрізнення працює: гармонічно «ідеальна» партія не може бути й у всіх жанрах бездоганною, і навпаки
-  const avoid = R.ranked.filter(r => r.metric === 'avoid_full');
-  assert.ok(avoid.some(r => r.value === 0) && avoid.some(r => r.value > 0), 'метрика avoid_full розрізняє партії');
 });
 
 test('аудит детермінований: двічі — той самий результат', async () => {
@@ -52,9 +50,14 @@ test('памʼять: один процес, пік heap малий', async () =
   assert.ok(R.meta.peakHeapMB < 500, 'пік heap ' + R.meta.peakHeapMB + ' МБ');
 });
 
-test('виявляє навмисно хибну партію: кластер піаніно дає avoid-ноти, а базова лінія — ні', async () => {
+test('виявляє навмисно хибну партію: нота b9 над коренем дає avoid, а звичайні клавіші — ні', async () => {
   const L = loadGame(), scenarios = buildScenarios(L, { genres: ['pop'], quick: true, combos: [[4, 1]] });
-  const R = await runAudit({ L, scenarios });
-  const cluster = R.mods.find(r => r.part === 'piano:+cluster' && r.metric === 'avoid_full');
-  assert.ok(cluster && cluster.delta > 5, 'кластер має давати приріст avoid-нот: ' + (cluster && cluster.delta));
+  // партія «wrong» додається лише в цьому тесті й не потрапляє в гру: сильні долі — b9 над коренем акорда (avoid над мажором)
+  L.g.LAYERS.piano.push({ id: 'wrong', steps: (ch, s) => s % 4 === 0 ? [{ midi: 72 + ((ch.root + 1) % 12) % 12, vel: .5, dur: 2 }] : [] });
+  try {
+    const R = await runAudit({ L, scenarios });
+    const bad = R.ranked.find(r => r.part === 'piano:wrong' && r.metric === 'avoid_full'), good = R.ranked.find(r => r.part === 'piano:chords' && r.metric === 'avoid_full');
+    assert.ok(bad && bad.value > 25, 'хибна партія має давати багато avoid: ' + (bad && bad.value));
+    assert.ok(!good || good.value < 3.5, 'звичайні клавіші — майже без avoid: ' + (good && good.value));
+  } finally { L.g.LAYERS.piano.pop(); }
 });

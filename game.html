@@ -598,7 +598,7 @@ const FIT_MEMO=new WeakMap();
 function fitInfo(bar){
   let M=FIT_MEMO.get(SONG);if(!M)FIT_MEMO.set(SONG,M=new Map());
   const f=fullChordAt(bar),o=chordAt(bar),pf0=fullChordAt(bar-1),k=f.off+'.'+(f.lvl||0)+'|'+o.off+'.'+(o.lvl||0)+'|'+o.pcs.join()+'|'+pf0.off+'.'+(pf0.lvl||0);let v=M.get(k);if(v)return v;
-  const q=chordQ(SONG.genre,f.off),oq=chordQ(SONG.genre,o.off),F=new Uint8Array(12),O=new Uint8Array(12),bad=new Uint8Array(12),key=new Uint8Array(12),badO=new Uint8Array(12);
+  const q=chordQ(SONG.genre,f.off),oq=chordQ(SONG.genre,o.off),F=new Uint8Array(12),O=new Uint8Array(12),bad=new Uint8Array(12),adj=new Uint8Array(12),key=new Uint8Array(12),badO=new Uint8Array(12);
   for(const p of f.pcs)F[p]=1;for(const x of QU[q]||[])F[(f.root+x)%12]=1;for(const p of o.pcs)O[p]=1;
   const OT=new Uint8Array(O);for(const x of QU[oq]||[])OT[(o.root+x)%12]=1;
   for(let pc=0;pc<12;pc++)if(!OT[pc]&&(AVOID_Q[oq]||[]).includes((pc-o.root+12)%12))badO[pc]=1; // avoid проти акорда гравця: заміна не має створювати нового
@@ -608,9 +608,9 @@ function fitInfo(bar){
   for(const p of pf.pcs)PF[p]=1;for(const x of QU[chordQ(SONG.genre,pf.off)]||[])PF[(pf.root+x)%12]=1;
   for(let pc=0;pc<12;pc++){if(!PF[pc]&&(PF[(pc+1)%12]||PF[(pc+11)%12]))prevClash[pc]=1;if(F[pc])continue;const r=(pc-f.root+12)%12;
     if(dark&&q==='5'&&(r===1||r===6))continue;
-    if(A.includes(r))bad[pc]=1;else if(div&&(F[(pc+1)%12]||F[(pc+11)%12]))bad[pc]=1;}
+    if(A.includes(r)||div&&(F[(pc+1)%12]||F[(pc+11)%12]))bad[pc]=1;}
   const low=[up(f.root,36)];if(SONG.genre==='jazz'||SONG.genre==='blues')low.push(up((f.root+7)%12,36));
-  return M.set(k,v={F,O,bad,badO,prevClash,key,div,low}),v;
+  return M.set(k,v={F,O,bad,adj,badO,prevClash,key,div,low}),v;
 }
 // найближча (до ±5 півтонів) прийнятна висота: спільний тон → тон фону → безпечний тон ладу. infos — [такт, наступний такт, якщо нота дзвенить через риску]
 function fitPitch(m,infos,ownPcs,s){
@@ -618,7 +618,7 @@ function fitPitch(m,infos,ownPcs,s){
   if(!(info.bad[pc]||nx&&nx.bad[pc])||ownPcs&&!ownPcs.includes(pc))return m; // ноти модифікаторів (поза акордом гравця) — не чіпаємо
   let best=m,bc=1e9;
   for(const d of [-1,1,-2,2,-3,3,-4,4,-5,5]){const q=pcm(m+d);
-    let c=Math.abs(d)+(info.O[q]&&info.F[q]?0:info.badO[q]?99:info.F[q]?.5:!info.bad[q]&&info.key[q]?1.5:99)+(s<2&&info.prevClash[q]?3:0);
+    let c=Math.abs(d)+(!info.O[q]||info.badO[q]?99:info.F[q]?0:info.bad[q]?99:1)+(s<2&&info.prevClash[q]?3:0); // лише тони акорда гравця: «чує свій акорд»
     if(nx&&nx.bad[q])c+=99;
     if(c<bc){bc=c;best=m+d;}}
   return bc<99?best:m;
@@ -648,7 +648,7 @@ function fitEvents(evs,ch,bar,s,inst){
 const hookPitch=(m,ch,bar,s)=>{ // мотив: найближчий тон акорда гравця; на сильній долі в розбіжному такті — спільний із фоном, якщо є поруч
   const info=fitInfo(bar);let best=snap(m,ch);
   if(info.div&&s%4===0&&!info.F[pcm(best)]){let bd=99;for(let d=-3;d<=3;d++){const q=pcm(m+d);if(info.F[q]&&info.O[q]&&Math.abs(d)<bd){bd=Math.abs(d);best=m+d;}}
-    if(bd===99)for(let d=-3;d<=3;d++){const q=pcm(m+d);if(info.F[q]&&!info.badO[q]&&Math.abs(d)<bd){bd=Math.abs(d);best=m+d;}}} // спільного тону поруч нема — тон фону, що не б'є акорд гравця
+}
   return fitPitch(best,[info],null,s);
 };
 function motifNote(role,bar,s,ch){const h=hookPhrase(role,bar),p=(bar%2)*16+s;if(!h.pos.includes(p)||h.mot[p]===undefined)return null;return hookPitch(h.mot[p],ch,bar,s);}
@@ -2159,7 +2159,7 @@ for(const Ly of LAYERS.bass){if(['root','walk'].includes(Ly.id))continue;const o
 // позначаємо ноти-акорди клавіш (для демпфера рояля): стартова партія, акорди, стаккато, сустейн — і жанрові версії акордів
 for(const id of ['pulse','chords','stab','pad']){const Ly=LAYERS.piano.find(l=>l.id===id),original=Ly.steps;Ly.steps=(ch,s,bar,L)=>original(ch,s,bar,L).map(e=>e.midi===undefined||e.chord?e:{...e,chord:true});}
 // УЗГОДЖЕННЯ З ФОНОМ: остання обгортка кожної мелодійної партії — міняє лише висоти (див. fitEvents)
-for(const inst of Object.keys(LAYERS)){if(inst==='drums')continue;for(const Ly of LAYERS[inst]){const raw=Ly.steps;Ly.steps=(ch,s,bar,L)=>fitEvents(raw(ch,s,bar,L),ch,bar,s,inst);}}
+for(const inst of Object.keys(LAYERS)){if(inst==='drums')continue;for(const Ly of LAYERS[inst]){if(Ly.starter)continue;const raw=Ly.steps;Ly.steps=(ch,s,bar,L)=>fitEvents(raw(ch,s,bar,L),ch,bar,s,inst);}} // стартові партії (один акорд, «крок по долях») лишаються як є: їх тримають тести й задум — вони замовкають після першої картки
 const starterOf=inst=>LAYERS[inst]&&LAYERS[inst][0].starter?LAYERS[inst][0]:null;
 const mainLayerId=inst=>{const st=starterOf(inst);return st?st.art:LAYERS[inst][0].id;}; // сила горіння/вибухів — від головної партії, не від стартової
 // партії, що займають місце серед HOLD: стартова — лише доки її не замінила картка

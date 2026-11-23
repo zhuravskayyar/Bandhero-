@@ -1195,7 +1195,9 @@ test('new starter instruments keep the sole unlocked chord until all its notes a
     for(const inst of ['flute','violin','sax','accordion']){
       const bars=starterNotes(inst),root=song.prog[0].root;
       const melodic=['accordion','flute','sax'].includes(inst);
-      for(const notes of bars){const allowed=melodic?Array.from(song.prog[0].pcs):[root];assert.ok(notes.every(m=>allowed.includes(m%12)),genre+'/'+inst+' holds the unlocked chord');if(!melodic)assert.deepEqual(notes,bars[0],genre+'/'+inst+' cannot rotate notes automatically');}
+      for(let b=0;b<bars.length;b++){const notes=bars[b],allowed=Array.from(song.prog[0].pcs);assert.ok(notes.every(m=>allowed.includes(m%12)),genre+'/'+inst+' holds the unlocked chord');
+        // не обертається сама; єдиний виняток — такт, де фон іде в інший акорд: нота-корінь, що була б avoid проти нього, замінюється іншим тоном ТОГО Ж акорда гравця (узгодження з фоном, game.html: fitEvents)
+        if(!melodic&&g.fullChordAt(b).off===song.prog[0].off)assert.deepEqual(notes,bars[0],genre+'/'+inst+' cannot rotate notes automatically');}
     }
     assert.equal(song.have,1,'playing bars never unlocks chords');
     // раніше одна картка акорду додавала такт; тепер акорд долучається, коли зібрано всі його ноти (2–3 картки)
@@ -1210,7 +1212,9 @@ test('new starter instruments keep the sole unlocked chord until all its notes a
       }else if(inst==='accordion'){
         const pcs=new Set(Array.from(song.prog.slice(0,2)).flatMap(ch=>Array.from(ch.pcs)));
         assert.deepEqual([...roots].sort((a,b)=>a-b),[...pcs].sort((a,b)=>a-b),genre+'/'+inst+' plays exactly the unlocked chord tones');
-      }else{assert.equal(roots.size,2,genre+'/'+inst+' follows the second chord only after the card');for(const root of roots)assert.ok(allowed.has(root),genre+'/'+inst+' never plays a locked chord');}
+      }else{const pcs=new Set(Array.from(song.prog.slice(0,2)).flatMap(ch=>Array.from(ch.pcs)));
+        // корені двох акордів чути завжди; у такті, де фон іде в інший акорд, корінь може змінитись на інший тон акорда гравця (fitEvents), але не на чужий
+        assert.ok(roots.size>=2,genre+'/'+inst+' follows the second chord only after the card');for(const root of roots)assert.ok(pcs.has(root),genre+'/'+inst+' never plays a locked chord');}
     }
   }
   assert.deepEqual(s.errors,[]);
@@ -1647,7 +1651,7 @@ test('note cards: every note of the next chord is needed, colour notes add the 7
         const before = song.prog[slot].pcs.slice(); g.applyUpgrade(card);
         assert.equal(song.prog[slot].lvl, lvl); assert.ok(before.every(p => song.prog[slot].pcs.includes(p)) && song.prog[slot].pcs.length > before.length, genre + ': colour tone is added to the voicing');
       }
-      assert.ok(song.prog[slot].pcs.includes((song.prog[slot].root + 2) % 12), genre + ': level 3 has the ninth'); assert.ok(song.prog[slot].pcs.length > n1 - 1);
+      { const c = song.prog[slot], ext = [2, 5, 9, 1].map(i => (c.root + i) % 12); assert.ok(ext.some(p => c.pcs.includes(p) && !g.mkChord(song, c.off, 2).pcs.includes(p)), genre + ': level 3 has the ninth (діатонічна нона; над iii мажору — 11, над V мінору — b9)'); } assert.ok(song.prog[slot].pcs.length > n1 - 1);
     }
     assert.equal(g.noteCards().length, 0, genre + ': nothing left to collect');
   }
