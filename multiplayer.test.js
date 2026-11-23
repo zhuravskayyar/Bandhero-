@@ -852,6 +852,7 @@ test('new enemies behave: ranged notes hurt, swarms come in groups, echoes split
   s.game.setGenre('lofi'); await s.game.pick('drums');
   const g = s.game, G = g.G;
   G.layers = {}; // беззбройний, щоб вороги дожили
+  G.t = 9; // стартовий щит (перші 8 с) уже згас
   const p = G.p;
   const strel = g.addMob('strel', p.x + 200, p.y); strel.cd = 0;
   const taran = g.addMob('taran', p.x - 250, p.y); taran.cd = 0;
@@ -893,6 +894,77 @@ test('bosses arrive at 5, 10 and 15 minutes; killing the last one wins the run (
   await until(() => !b2.game.running && b2.game.G.won, 'guest receives the victory');
   assert.match(b2.elements.get('#over h1').textContent, /переміг/);
   assert.deepEqual(a.errors, []); assert.deepEqual(b2.errors, []);
+});
+
+// усе куплено й прокачано: пул карток порожній, лишаються лише «▲» повтори або взагалі нічого
+function maxOutBuild(g, pl, inst) {
+  for (const l of g.LAYERS[inst]) if (!l.starter) pl.layers[l.id] = 3;
+  for (const p of g.PEDALS) pl.pedals[p.id] = 3;
+  for (const id of Object.keys(g.VOICINGS[inst] || {})) pl.layers['$v_' + id] = 1;
+  pl.layers.$hp = 5; g.SONG.prog.forEach(c => { c.lvl = 3; }); g.SONG.have = g.SONG.prog.length;
+}
+
+test('balance: late levels are slower, bosses are tanky and enrage below 35% HP, the opening is shielded, the XP magnet is wider', async t => {
+  const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
+  s.game.setGenre('pop'); await s.game.pick('guitar');
+  const g = s.game, G = g.G;
+  // темп: до 25-го рівня стара крива, далі швидко дорожчає
+  assert.equal(g.need(10), 54); assert.equal(g.need(25), 129); assert.ok(g.need(45) > 3 * (4 + 5 * 45) / 2); assert.ok(g.need(40) > g.need(39));
+  let cum = 0, lv = 1; while (cum + g.need(lv) <= 10985) cum += g.need(lv++);
+  assert.ok(lv >= 40 && lv <= 52, 'повний забіг бота закінчується на ~40–50 рівні, а не 66: ' + lv);
+  G.level = 60; G.t = 900; const late = g.threat().hp; G.t = 300; assert.ok(late > g.threat().hp * 2.5, 'вороги в кінці забігу не слабшають');
+  // боси: HP від ~10 до ~58 тис., у парі ×1.6
+  for (const [k, min] of [['boss1', 9000], ['boss2', 14000], ['boss3', 50000]]) assert.ok(g.MOBS[k].hp >= min, k);
+  // лють нижче 35% HP: з'являються додаткові залпи, є видима мітка в HUD
+  g.addMob('boss1', G.p.x + 300, G.p.y, { age: 5 }); const b = G.mobs.find(m => m.type === 'boss1'); b.hp = b.max = 10600;
+  assert.equal(g.bossEnraged(b), false); b.hp = b.max * .4; assert.equal(g.bossEnraged(b), false);
+  const burstsAt = (m, steps) => steps.filter(st => { const n = g.bossNotes(m, st, { off: 0 }); return n && n.atk && n.atk.k === 'burst'; }).length;
+  const calm = burstsAt(b, [0, 4, 8, 12]); b.hp = b.max * .3; assert.equal(g.bossEnraged(b), true);
+  assert.ok(burstsAt(b, [0, 4, 8, 12]) > calm, 'enraged boss fires extra bursts');
+  g.draw(); // HUD з міткою люті малюється без помилок
+  assert.equal(dictionary.en['У ЛЮТІ!'], 'ENRAGED!'); assert.ok(dictionary.de['Авто: {0}'] && dictionary.ru['Авто: {0}']);
+  b.hp = 0; G.mobs = G.mobs.filter(m => m !== b);
+  // стартовий щит: перші 8 с герой невразливий, потім ні
+  G.mobs.length = 0; G.t = 3; const a = G.players && G.players[0] || { p: G.p, pedals: G.pedals, char: 'guitar' };
+  const hp0 = G.p.hp; g.hurtPlayer(a, 30); assert.equal(G.p.hp, hp0, 'shield absorbs damage'); g.draw();
+  G.t = g.SPAWN_SHIELD + .01; g.hurtPlayer(a, 30); assert.ok(G.p.hp < hp0, 'shield is gone after 8 s');
+  assert.equal(g.GEM_MAGNET, 120);
+  assert.deepEqual(s.errors, []);
+});
+
+test('late level-ups with no meaningful choice apply a small bonus instead of pausing (solo)', async t => {
+  const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
+  s.game.setGenre('pop'); await s.game.pick('guitar');
+  const g = s.game, G = g.G, layer = Object.keys(G.layers)[0] || g.LAYERS.guitar[0].id;
+  const grow = { l: g.LAYERS.guitar.find(l => l.id === layer) || g.LAYERS.guitar[0], isNew: false };
+  assert.equal(g.noChoice([grow, grow, grow], 30), true, 'all repeats late → no choice');
+  assert.equal(g.noChoice([grow, grow, grow], 5), false, 'early levels always show cards');
+  assert.equal(g.noChoice([grow, { hp: true }, grow], 30), false, 'one real option keeps the screen');
+  assert.equal(g.noChoice([{ hp: true }], 3), true, 'a single option is not a choice');
+  assert.equal(g.noChoice([{ xpb: true }], 3), true);
+  // повний «пізній» стан: усі слоти й картки на максимумі → пул порожній → автобонус, гра не стає на паузу
+  maxOutBuild(g, G, 'guitar');
+  G.layers.$hp = 5; G.level = 40; G.xp = g.need(40); G.p.hp = G.p.max * .5;
+  const hp = G.p.hp, lvl = G.level, before = G.texts.length;
+  g.levelUp();
+  assert.equal(G.level, lvl + 1); assert.equal(g.choosing, false); assert.equal(s.elements.get('#lvl').classList.contains('hide'), true, 'level screen stays closed');
+  assert.ok(G.p.hp > hp, 'small heal'); assert.ok(G.texts.length > before && G.texts.some(x => x.toast), 'toast shown');
+  assert.deepEqual(s.errors, []);
+});
+
+test('band: the host auto-applies a level-up with no real choice for that player only; the others still choose', async t => {
+  const srv = await startServer(t);
+  const [a, b] = await bandOfTwo(t, srv.origin);
+  const g = a.game, G = g.G, guitar = G.players.find(x => x.char === 'guitar'), drums = G.players.find(x => x.char === 'drums');
+  maxOutBuild(g, guitar, 'guitar'); guitar.p.hp = guitar.p.max * .5; drums.p.hp = drums.p.max * .5; const hp = guitar.p.hp;
+  G.t = 20; G.level = 40; G.xp = g.need(40);
+  await until(() => G.level === 41, 'host levels up');
+  assert.ok(guitar.p.hp > hp, 'the maxed guitarist got the small heal automatically');
+  assert.equal(g.net.pending.has(guitar.id), false, 'no card screen for the maxed player');
+  await until(() => b.game.G.level === 41 && b.game.G.players.find(x => x.char === 'guitar').p.hp > hp - 1, 'guest sees the same level and heal');
+  if (g.net.pending.size) assert.equal(g.paused, true, 'the run waits only while somebody still has a real choice');
+  else assert.equal(g.paused, false, 'nobody has a choice: the run does not pause');
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
 });
 
 test('every part, piece of gear, chord and rest card has its own code-drawn picture', async t => {

@@ -2177,11 +2177,11 @@ const MOBS={
   dilka:{name:T('Відлуння'),hp:42,spd:52,r:16,dmg:12,col:'#6fbf73',xp:3,sprite:'fal',tint:'hue-rotate(250deg) saturate(1.2)',split:2},
   taran:{name:T('Фідбек'),hp:64,spd:46,r:18,dmg:22,col:'#e0604f',xp:4,sprite:'glush',tint:'hue-rotate(300deg) saturate(1.5)',charge:{range:330,wind:.7,dash:560,time:.55,rest:2.6}},
   // боси: 5, 10 і 15 хвилина. Фінальний бос — перемога й кінець забігу.
-  boss1:{name:T('Фонограма'),hp:3800,spd:48,r:44,dmg:42,col:'#f2b84b',xp:12,sprite:'glush',tint:'hue-rotate(-45deg) saturate(1.7) brightness(1.1)',
+  boss1:{name:T('Фонограма'),hp:10600,spd:48,r:44,dmg:42,col:'#f2b84b',xp:12,sprite:'glush',tint:'hue-rotate(-45deg) saturate(1.7) brightness(1.1)',
     boss:{n:1,burst:{every:3.2,n:12,speed:165,dmg:17},summon:{every:7,type:'shum',n:7}}},
-  boss2:{name:T('Автотюн'),hp:7000,spd:70,r:40,dmg:44,col:'#ff7ad9',xp:18,sprite:'fal',tint:'hue-rotate(55deg) saturate(1.9) brightness(1.05)',
+  boss2:{name:T('Автотюн'),hp:15400,spd:70,r:40,dmg:44,col:'#ff7ad9',xp:18,sprite:'fal',tint:'hue-rotate(55deg) saturate(1.9) brightness(1.05)',
     charge:{range:430,wind:.9,dash:600,time:.7,rest:4.2},boss:{n:2,spiral:{every:.13,speed:175,dmg:12,on:3,off:2.5,arms:2},summon:{every:9,type:'strel',n:4}}},
-  boss3:{name:T('Диригент Тиші'),hp:13000,spd:58,r:54,dmg:55,col:'#b9a6ff',xp:0,sprite:'glush',tint:'grayscale(.55) hue-rotate(210deg) brightness(.95) saturate(1.4)',
+  boss3:{name:T('Диригент Тиші'),hp:58500,spd:58,r:54,dmg:55,col:'#b9a6ff',xp:0,sprite:'glush',tint:'grayscale(.55) hue-rotate(210deg) brightness(.95) saturate(1.4)',
     charge:{range:400,wind:.85,dash:620,time:.65,rest:5},boss:{n:3,final:true,burst:{every:2.7,n:16,speed:170,dmg:18},spiral:{every:.16,speed:160,dmg:11,on:2.5,off:4,arms:3},summon:{every:7,type:'dilka',n:4}}}
 };
 const BOSS_AT=[300,600,900]; // секунди забігу
@@ -2388,10 +2388,11 @@ function beatPos(){
   return {beat:((bi%4)+4)%4,ph:b-bi,step:s}; // step — дробовий крок пісні (для міхів акордеона: фраза = phraseBars тактів)
 }
 let atkQ=[],bossQ=[]; // bossQ — атаки босів на нотах їхніх партій
-const need=l=>4+l*5;
+// після 25-го рівня вимога росте квадратично: повний 15-хвилинний забіг бота закінчується ~47-м рівнем, а не 66-м
+const need=l=>4+l*5+(l>25?Math.round(1.5*(l-25)*(l-25)):0);
 // Загроза: вороги ростуть переважно з часом і трохи — з твоїм рівнем (до 30-го), щоб сила йшла плюс-мінус нарівні.
 function threat(){const lv=Math.min(G.level,30)-1;
-  return {hp:(1+G.t/150)*(1+.04*lv),rate:Math.min(4,1.9+G.t/150+.03*lv),dmg:1+Math.min(.5,G.t/900),heavy:G.t<45?0:Math.min(.16,.06+G.t/6000)};}
+  return {hp:(1+G.t/150)*(1+.04*lv)*(1+Math.max(0,G.t-300)/2500),rate:Math.min(4,1.9+G.t/150+.03*lv),dmg:1+Math.min(.5,G.t/900),heavy:G.t<45?0:Math.min(.16,.06+G.t/6000)};}
 
 /* Баланс: різні жанри б'ють з різною частотою (реґі — 2 удари на такт, метал — 16) і по-різному густіють з рівнями.
    Для КОЖНОГО шару й КОЖНОГО рівня малюнка (1–3) рахуємо удари за секунду і підганяємо шкоду так, щоб
@@ -2674,11 +2675,29 @@ function applyUpgrade(o){
     G.layers[o.l.id]=Math.min(MAXL,(G.layers[o.l.id]||0)+1);}
 }
 // рівень більше не лікує й не збільшує здоров'я: максимум росте карткою «+10% макс. HP», лікують лише серця з ворогів
+// Пізні рівні без справжнього вибору (єдина картка, або всі картки — лише «▲» повтори вже взятого) не зупиняють гру:
+// хост застосовує випадкову з них + 15% здоров'я й показує короткий напис. У ко-опі рішення приймає хост окремо для кожного гравця.
+const AUTO_LEVEL=20,AUTO_HEAL=.15;
+const weakOption=o=>!!o&&(o.l&&!o.isNew&&!o.variant||o.pd&&!o.isNew||o.xpb);
+function noChoice(opts,level=G.level){return opts.length>0&&((opts.length===1&&(weakOption(opts[0])||!!opts[0].hp))||(level>=AUTO_LEVEL&&opts.every(weakOption)));}
+function optionName(o){return o.hp?T('♥ +10% макс. HP'):o.xpb?T('♪ Репетиція'):o.l?o.l.name:o.pd?o.pd.name:'';}
+// застосувати «нічого вибирати» поточним (withPlayer) героєм; повертає напис
+function autoLevel(opts){
+  const o=pickR(opts.filter(weakOption).length?opts.filter(weakOption):opts),q=G.p;
+  if(o.xpb)G.xp+=Math.round(need(G.level)*.25);else applyUpgrade(o);
+  if(q.hp>0)q.hp=Math.min(q.max,q.hp+q.max*AUTO_HEAL);
+  const v=TF('Авто: {0}',optionName(o));
+  if(G.texts.length<60)G.texts.push({x:q.x,y:q.y-58,v,age:0,toast:true,life:1.6});
+  packFX('star',q.x,q.y);
+  return v;
+}
 function levelUp(){
   G.xp-=need(G.level);G.level++;
   if(net.active){netLevelUp();return;}
   packFX('star',G.p.x,G.p.y,'solo');
-  renderChoices(levelOptions());
+  const opts=levelOptions();
+  if(opts.length&&noChoice(opts)){autoLevel(opts);return;}
+  renderChoices(opts);
   choosing=true;setPause(true,true);
 }
 /* ================= ІКОНКИ СКІЛІВ =================
@@ -2754,6 +2773,8 @@ function chooseKey(e){
 }
 
 /* ================= ОНОВЛЕННЯ ================= */
+const GEM_MAGNET=120; // радіус автопритягання XP-кристалів, px (було 80)
+const SPAWN_SHIELD=8; // перші секунди забігу всі герої невразливі (м’який старт для 85-HP інструментів); лише G.t — гість рахує те саме зі знімка
 const OPEN_WAVES=[[.6,5],[5,4]]; // [секунда забігу, скільки Фальшивок] — стартові хвилі ближче за spawnDist()
 function spawnDist(){return Math.hypot(W,H)/2/zoom+50;}
 function spawnMob(){
@@ -2773,7 +2794,7 @@ function addMob(type,x,y,extra){
 }
 // удар по гравцю: і дотик ворога, і снаряди, і атаки боса йдуть через одне місце (захист від педалі guard)
 function hurtPlayer(a,amount){
-  const q=a.p;if(q.hp<=0)return;
+  const q=a.p;if(q.hp<=0||G.t<SPAWN_SHIELD)return;
   const pd=net.active?pedalEffects(a.pedals,a.char):pedalEffects();
   q.hp=Math.max(0,q.hp-amount*(1-.08*(pd.guard||0)));q.hurt=.15;
 }
@@ -2791,7 +2812,7 @@ function bossAlive(){return G.mobs.find(m=>MOBS[m.type].boss&&m.hp>0);}
 function spawnBoss(i){
   const type='boss'+(i+1),a=Math.random()*Math.PI*2,p=pickR(players().filter(a=>a.p.hp>0)).p,d=spawnDist()*.9;
   const m=addMob(type,p.x+Math.cos(a)*d,p.y+Math.sin(a)*d,{age:0,bt:2,ut:5});
-  // HP боса фіксоване (не росте з часом, як у звичайних): виміряно ~40/60/90 с бою для середньої збірки соло
+  // HP боса фіксоване (не росте з часом, як у звичайних): ціль ~60–90 с бою для збірки відповідного рівня (бот-плейтест давав 25/35/15 с при 3800/7000/13000)
   m.spd=MOBS[type].spd;m.hp=m.max=MOBS[type].hp*(net.active?1+.6*(G.players.length-1):1);
 }
 // Що бос зараз «грає» — для анімації: 1 замах перед віялом, 2 спіраль, 3 виклик підмоги, 0 нічого.
@@ -2800,7 +2821,7 @@ function bossCast(m,B){
   if(m.castAt===undefined)return 0;const d=m.castAt-now();return d>-.1&&d<.6?m.castK:0;
 }
 // Атаки босів тепер на нотах їхніх партій (bossStep → bossFire); тут лишився тільки лічильник віку
-function bossAct(m,M,th,dt){m.age=(m.age||0)+dt;if(M.boss.summon)m.ut=(m.ut??5)-dt;} // таймер підмоги (сам виклик — на першу долю)
+function bossAct(m,M,th,dt){m.age=(m.age||0)+dt;if(bossEnraged(m)&&!m.enr){m.enr=1;m.spd=M.spd*1.2;}if(M.boss.summon)m.ut=(m.ut??5)-dt;} // таймер підмоги (сам виклик — на першу долю)
 /* ================= ПАРТІЇ БОСІВ =================
    Кожен бос «грає» свою партію в пісні, і його атаки летять на її нотах — бій із босом можна передбачити на слух.
    Ноти рахуються з кроку секвенсера, акорду й HP боса (усе синхронізоване), тож гості чують те саме; атакує лише хост.
@@ -2813,16 +2834,18 @@ const bossVoice={last:null};let bossBus=null;
 // скільки давали старі таймери (виміряно: Фонограма ~3.75/с, Автотюн ~8.4/с, Диригент ~13.1/с), у будь-якому жанрі.
 // RAGE — підсилення після половини HP: ×1.45 для всіх, як було (у партіях лють додає нот по-різному, тож вирівнюємо).
 const BOSS_TEMPO={boss1:84.9,boss2:168,boss3:126.8},BOSS_RAGE={boss1:.76,boss2:1.09,boss3:1.23};
-const bossK=m=>1.2*(BOSS_TEMPO[m.type]||110)/Math.max(40,SONG.bpm)*(m.hp<m.max*.5?BOSS_RAGE[m.type]||1:1);
+const ENRAGE_AT=.35; // нижче 35% HP бос «розлючується»: додаткові залпи, частіша підмога, швидший рух (лише з hp/max — гість виводить стан сам, окремого прапора в знімку нема)
+const bossEnraged=m=>m.hp>0&&m.hp<m.max*ENRAGE_AT;
+const bossK=m=>1.2*(BOSS_TEMPO[m.type]||110)/Math.max(40,SONG.bpm)*(m.hp<m.max*.5?BOSS_RAGE[m.type]||1:1)*(bossEnraged(m)?1.15:1);
 const summonDue=(m,s)=>s===0&&(m.ut??5)<=0; // підмога — за старим таймером, але на першу долю такту (таймер є лише в хоста)
 function bossNotes(m,step,ch){
-  const s=step&15,bar=step>>4,rage=m.hp<m.max*.5;
+  const s=step&15,bar=step>>4,rage=m.hp<m.max*.5,enr=bossEnraged(m);
   if(m.type==='boss1'){
-    const atk=summonDue(m,s)?{k:'summon'}:s===0?{k:'burst',n:12}:rage&&s===8?{k:'burst',n:10}:null;
+    const atk=summonDue(m,s)?{k:'summon'}:s===0?{k:'burst',n:12}:rage&&s===8?{k:'burst',n:10}:enr&&(s===4||s===12)?{k:'burst',n:8}:null;
     return {replay:true,atk};
   }
   if(m.type==='boss2'){
-    const run=bar%2===0?s>=8:[0,3,6,10].includes(s)||(rage&&s>=12);
+    const run=(enr&&s%2===0)||(bar%2===0?s>=8:[0,3,6,10].includes(s)||(rage&&s>=12));
     if(summonDue(m,s))return {atk:{k:'summon'}};
     if(!run)return null;const t=tones(ch,72,5),i=[0,1,2,3,4,3,2,1][s%8];
     return {midi:t[i],atk:{k:'spiral'}};
@@ -2832,7 +2855,7 @@ function bossNotes(m,step,ch){
     if(ferm)return {fermata:s===8,atk:{k:'spiral'}};
     if(summonDue(m,s))return {stab:true,atk:{k:'summon'}};
     if(s===0)return {stab:true,atk:{k:'burst',n:16}};
-    if((bar%2===1&&(s===6||s===10))||(rage&&s===12))return {stab:true,atk:{k:'burst',n:6}};
+    if((bar%2===1&&(s===6||s===10))||(rage&&s===12)||(enr&&(s===4||s===12)))return {stab:true,atk:{k:'burst',n:enr?8:6}};
     return null;
   }
   return null;
@@ -2852,7 +2875,7 @@ function bossFire(m,A){
   else if(A.k==='spiral'){if(m.mode==='dash')return; // під час ривка спіраль мовчить, як і раніше
     const S=B.spiral||{speed:160,dmg:9,arms:3},arms=S.arms||3;m.sb=(m.sb||0)+K; // накопичувач: у повільній пісні — кілька витків на ноту, у швидкій — пропуски
     while(m.sb>=1){m.sb-=1;m.sa=(m.sa||0)+.42;for(let k=0;k<arms;k++){const a=m.sa+k/arms*6.283;shootE(m,Math.cos(a),Math.sin(a),S.speed,S.dmg*th.dmg,M.col,7);}}}
-  else if(A.k==='summon'&&B.summon){m.ut=B.summon.every;if(G.mobs.length+B.summon.n<=240)
+  else if(A.k==='summon'&&B.summon){m.ut=B.summon.every*(bossEnraged(m)?.65:1);if(G.mobs.length+B.summon.n<=240)
     for(let i=0;i<B.summon.n;i++){const a=i/B.summon.n*6.283;addMob(B.summon.type,m.x+Math.cos(a)*(m.r+30),m.y+Math.sin(a)*(m.r+30));}}
 }
 // Фермата заздалегідь розписує master.gain; якщо бос зник (чи новий забіг) посеред неї — повертаємо гучність одразу
@@ -3084,7 +3107,7 @@ function update(dt){
     const q=alive.reduce((a,b)=>(a.p.x-gm.x)**2+(a.p.y-gm.y)**2<(b.p.x-gm.x)**2+(b.p.y-gm.y)**2?a:b).p;
     const dx=q.x-gm.x,dy=q.y-gm.y,d=Math.hypot(dx,dy)||1;
     const collector=net.active?G.players.find(a=>a.p===q):null,pd=collector?pedalEffects(collector.pedals,collector.char):pedalEffects();
-    if(d<80+30*(pd.magnet||0))gm.mag=true;
+    if(d<GEM_MAGNET+30*(pd.magnet||0))gm.mag=true;
     if(gm.mag){const v=Math.max(250,500-d);gm.x+=dx/d*v*dt;gm.y+=dy/d*v*dt;}
     if(d<q.r+6){G.xp+=gm.v;gm.v=0;}
   }
@@ -3095,7 +3118,7 @@ function update(dt){
   G.fx=G.fx.filter(f=>f.age<.45);
   if(G.pfx){for(const f of G.pfx)f.age+=dt;G.pfx=G.pfx.filter(f=>f.age<PACK_LIFE[f.k]);}
   for(const t of G.texts)t.age+=dt;
-  G.texts=G.texts.filter(t=>t.age<.6);
+  G.texts=G.texts.filter(t=>t.age<(t.life||.6));
 
   if(G.won){gameOver();return;}
   if(net.active){if(G.players.every(a=>a.p.hp<=0)){gameOver();return;}}
@@ -3186,6 +3209,10 @@ function drawHero(a){
     g2.fillStyle='#13202a';g2.font='600 18px Rubik, sans-serif';g2.textAlign='center';g2.fillText(C.glyph,p.x,p.y+5);
   }
   g2.globalAlpha=1;
+  if(p.hp>0&&G.t<SPAWN_SHIELD){ // стартовий щит: блакитна бульбашка, у останні 1.5 с блимає
+    const left=SPAWN_SHIELD-G.t,blink=left<1.5?(Math.sin(G.t*20)>0?1:.35):1;
+    g2.globalAlpha=.22*blink;g2.fillStyle='#7fd8ff';g2.beginPath();g2.arc(p.x,p.y-p.r*.3,p.r*2.1,0,Math.PI*2);g2.fill();
+    g2.globalAlpha=.75*blink;g2.strokeStyle='#bff0ff';g2.lineWidth=2;g2.stroke();g2.globalAlpha=1;}
   if(pedalEffects(a.pedals||G.pedals,a.char).familiar){const t=G.t*2,fx=p.x+Math.cos(t)*31,fy=p.y-25+Math.sin(t)*13; // фамільяр: фіолетова куля з пакета, без атласу — старий спрайт
     if(!paintPack(10+PACK_ATK.orb.s*4+3,2+Math.floor(G.t*8)%2,fx,fy,32,.9))paintEffect('piano',4,1+Math.floor(G.t*8)%4,fx,fy,25,25,0,.9);}
   if(net.active){
@@ -3236,8 +3263,8 @@ function draw(){
   for(const m of mobs)drawMobHealth(m);
   g2.textAlign='center';g2.textBaseline='middle';g2.lineWidth=3;g2.strokeStyle='#0b1825';
   for(const n of G.texts){
-    g2.globalAlpha=Math.max(0,1-n.age/.6);g2.font=(n.accent?'700 22px':n.crit?'400 17px':'500 12px')+' "Rubik", sans-serif';
-    const text=n.crit?n.v+'!':String(n.v),y=n.y-n.age*43;g2.strokeText(text,n.x,y);g2.fillStyle=n.accent?'#ff8a3a':n.heal?'#b4e6a7':n.crit?'#ffd28a':'#eae8d8';g2.fillText(text,n.x,y);
+    const life=n.life||.6;g2.globalAlpha=Math.max(0,Math.min(1,(life-n.age)/(n.toast?.4:.6)));g2.font=(n.toast?'600 14px':n.accent?'700 22px':n.crit?'400 17px':'500 12px')+' "Rubik", sans-serif';
+    const text=n.crit?n.v+'!':String(n.v),y=n.y-n.age*(n.toast?18:43);g2.strokeText(text,n.x,y);g2.fillStyle=n.toast?'#9fe3ff':n.accent?'#ff8a3a':n.heal?'#b4e6a7':n.crit?'#ffd28a':'#eae8d8';g2.fillText(text,n.x,y);
   }
   g2.globalAlpha=1;g2.setTransform(DPR,0,0,DPR,0,0);
   if(joy){
@@ -3265,9 +3292,11 @@ function drawBossHud(p){
   // смуга HP унизу екрана
   const w=Math.min(420,W-(W<520?130:170)),x=(W-w)/2-(W<520?30:0),y=H-34;
   g2.fillStyle='#06101bd8';g2.fillRect(x-3,y-17,w+6,29);
-  g2.fillStyle='#2b3a40';g2.fillRect(x,y,w,8);g2.fillStyle=M.col;g2.fillRect(x,y,w*Math.max(0,b.hp/b.max),8);
+  const enr=bossEnraged(b),pulse=enr?.5+.5*Math.sin(G.t*9):0;
+  g2.fillStyle='#2b3a40';g2.fillRect(x,y,w,8);g2.fillStyle=enr?(pulse>.5?'#ff4a3a':M.col):M.col;g2.fillRect(x,y,w*Math.max(0,b.hp/b.max),8);
+  if(enr){g2.strokeStyle='#ff4a3a';g2.globalAlpha=.5+.5*pulse;g2.lineWidth=2;g2.strokeRect(x-4,y-18,w+8,31);g2.globalAlpha=1;}
   g2.font='600 11px "Rubik", sans-serif';g2.textAlign='left';g2.textBaseline='bottom';g2.fillStyle=M.col;
-  g2.fillText(TF('БОС · {0}',M.name)+(b.hp<b.max*.5?' · '+T('лютує'):''),x,y-3);
+  g2.fillText(TF('БОС · {0}',M.name)+(enr?' · '+T('У ЛЮТІ!'):b.hp<b.max*.5?' · '+T('лютує'):''),x,y-3);
   // поява: великий напис на 3 секунди
   if((b.age||0)<3){g2.globalAlpha=Math.min(1,(3-b.age)*1.5);g2.font='400 '+(W<520?26:36)+'px "Russo One", Rubik, sans-serif';g2.textAlign='center';g2.textBaseline='middle';
     g2.lineWidth=5;g2.strokeStyle='#08111c';const t=M.boss.final?TF('ФІНАЛЬНИЙ БОС: {0}',M.name):TF('БОС: {0}',M.name);g2.strokeText(t,W/2,H*.32);g2.fillStyle=M.col;g2.fillText(t,W/2,H*.32);g2.globalAlpha=1;}
@@ -3939,8 +3968,14 @@ function netPause(v,by){
   updateBandScreens({});sendSnapshot();
 }
 function netLevelUp(){
+  const todo=new Map();
+  for(const a of G.players){packFX('star',a.p.x,a.p.y,a.id);if(a.p.hp<=0){a.p.hp=a.p.max*.4;packFX('lotus',a.p.x,a.p.y,a.id);}
+    const opts=withPlayer(a,levelOptions);
+    if(opts.length&&noChoice(opts))withPlayer(a,()=>autoLevel(opts)); // хост застосовує «без вибору» сам — гості бачать результат у знімку
+    else todo.set(a.id,opts);}
+  if(!todo.size){sendSnapshot();return;} // ніхто нічого не обирає: гра не зупиняється
   choosing=true;paused=true;atkQ=[];bossQ=[];keys.clear();joy=null;net.pending.clear();
-  for(const a of G.players){packFX('star',a.p.x,a.p.y,a.id);if(a.p.hp<=0){a.p.hp=a.p.max*.4;packFX('lotus',a.p.x,a.p.y,a.id);}net.pending.set(a.id,withPlayer(a,levelOptions));}
+  for(const [id,opts] of todo)net.pending.set(id,opts);
   updateBandScreens(Object.fromEntries([...net.pending].map(([id,opts])=>[id,opts.map(serializeOption)])));sendSnapshot();
 }
 function chooseBandUpgrade(id,index,level){
@@ -3997,7 +4032,7 @@ window.addEventListener('error',e=>{$('#load').textContent=TF('Помилка: {
 buildCards();
 
 // для тестів і налагодження
-window.__game={MIX,CFG,get beatState(){return {BK,BP,ok:beat.ok};},hitsPerSec,MUSIC_REACT,reactState:id=>({...reactOf(id)}),get reactWorld(){return {...REACT_W};},reactNotes,get bossDrone(){return !!bossDrone;},get userSound(){return {vol:userVol,muted:userMuted,gain:userGain};},setUserSound,get masterReact(){return {lp:masterLP,mood:masterMood,master};},get sampled(){return Object.keys(SF);},get cache(){return [...bufCache.keys()];},get G(){return G;},get SONG(){return SONG;},
+window.__game={need,threat,SPAWN_SHIELD,GEM_MAGNET,hurtPlayer,bossEnraged,bossNotes,noChoice,autoLevel,MIX,CFG,get beatState(){return {BK,BP,ok:beat.ok};},hitsPerSec,MUSIC_REACT,reactState:id=>({...reactOf(id)}),get reactWorld(){return {...REACT_W};},reactNotes,get bossDrone(){return !!bossDrone;},get userSound(){return {vol:userVol,muted:userMuted,gain:userGain};},setUserSound,get masterReact(){return {lp:masterLP,mood:masterMood,master};},get sampled(){return Object.keys(SF);},get cache(){return [...bufCache.keys()];},get G(){return G;},get SONG(){return SONG;},
   get ctx(){return ctx;},get audioOK(){return audioOK;},tileAt,pick,setPause,levelUp,addMob,spawnMob,hurtMob,MOBS,CHARS,ICON,makeSong,voicing,LAYERS,layerNotes,strum,chordAt,backingEvents,songLabel,songPartLabel,instrumentExpansion,genreExpansion,update,cleanState,unpackMobs,
   leaveBand,GENRES,synergy,hitsPerSec,balanceK,balanceTable,mkChord,noteCards,applyNote,chordTint,chordFnId,CHORD_FN,chordStamp,chordTones,dropHearts,pickHearts,HEART_LIFE,drawHeart,checkSongEvent,get attackChord(){return attackChord;},PEDALS,GEAR,VARIANTS,VOICINGS,voiced,availableGear,pedalEffects,levelOptions,applyUpgrade,serializeOption,deserializeOption,withPlayer,withAttack,driveCurve,bellowsBar,bellowsStrokes,bellowsStroke,
   backingSkip,now,doPlayerStep,processQueues,qInsert,get atkQ(){return atkQ;},set atkQ(v){atkQ=v;},get walkSide(){return walkSide;},get walkLast(){return walkLast;},get runId(){return runId;},get buses(){return buses;},get backingVoices(){return backingSlot?.voices.length||0;},get renderStats(){return {...renderStats};},FX_PROFILES,VISUAL_ASSETS,draw,setChar(k){charKey=k;},setGenre(k){chosenGenre=k;},

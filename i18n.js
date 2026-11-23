@@ -1886,6 +1886,8 @@ for(const [uk,en,de,ru] of [
   ['Максимум і поточне здоров’я +{0}. Лікують лише серця з ворогів.','Max and current health +{0}. Only hearts dropped by enemies heal you.','Maximale und aktuelle Gesundheit +{0}. Nur Herzen von Gegnern heilen.','Максимум и текущее здоровье +{0}. Лечат только сердца с врагов.'],
   ['здоров’я · {0} з {1}','health · {0} of {1}','Gesundheit · {0} von {1}','здоровье · {0} из {1}'],
   ['♪ Репетиція','♪ Rehearsal','♪ Probe','♪ Репетиция'],
+  ['Авто: {0}','Auto: {0}','Auto: {0}','Авто: {0}'],
+  ['У ЛЮТІ!','ENRAGED!','IN WUT!','В ЯРОСТИ!'],
   ['+50% досвіду до наступного рівня.','+50% of the experience for the next level.','+50 % der Erfahrung für die nächste Stufe.','+50% опыта до следующего уровня.'],
   ['🎼 Нота {0} ({1})','🎼 Note {0} ({1})','🎼 Note {0} ({1})','🎼 Нота {0} ({1})'],
   ['септима','seventh','Septime','септима'],['нона','ninth','None','нона'],
