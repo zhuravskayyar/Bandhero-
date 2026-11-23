@@ -62,6 +62,24 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
 #layers .hic svg{width:24px;height:24px;display:block;image-rendering:pixelated}
 #layers .hic i{position:absolute;right:-3px;bottom:-4px;font:600 9px Rubik,sans-serif;font-style:normal;color:#e7dfc6;background:#0b1928;border:1px solid #466262;border-radius:6px;padding:0 3px;line-height:12px}
 #layers .sep{width:1px;height:22px;background:#466262;margin:0 3px}
+/* підсумок забігу на екрані кінця */
+#recap{width:100%;max-width:640px;display:flex;flex-direction:column;gap:10px;text-align:left}
+#recap:empty{display:none}
+#recap .rstats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+#recap .rstat{background:#0b1928cc;border:1px solid #466262;border-radius:8px;padding:6px 4px;text-align:center;min-width:0}
+#recap .rstat b{display:block;font-size:17px;color:#f1dba0;white-space:nowrap}
+#recap .rstat span{display:block;font-size:11px;color:#a9a592;margin-top:2px}
+#recap .rsong,#recap .rp{background:#0b1928cc;border:1px solid #466262;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+#recap .rh{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px;color:#e7dfc6}
+#recap .rh span{color:#a9a592}
+#recap .rchips{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+#recap .chip{border:1px solid currentColor;border-radius:10px;padding:1px 8px;font-size:12px}
+#recap .hic{position:relative;width:24px;height:24px;flex:0 0 24px}
+#recap .hic svg{width:24px;height:24px;display:block;image-rendering:pixelated}
+#recap .hic i{position:absolute;right:-3px;bottom:-4px;font:600 9px Rubik,sans-serif;font-style:normal;color:#e7dfc6;background:#0b1928;border:1px solid #466262;border-radius:6px;padding:0 3px;line-height:12px}
+#recap .sep{width:1px;height:22px;background:#466262;margin:0 3px}
+#recap .rv{font-size:12px;color:#a9a592}
+@media(max-width:620px){#recap .rstats{grid-template-columns:repeat(3,minmax(0,1fr))}#recap .rstat b{font-size:15px}}
 @media(max-width:620px){.card .ic{flex-basis:48px;width:48px;height:48px}#opts .card{gap:11px}#layers .hic,#layers .hic svg{width:24px;height:24px;flex-basis:24px}}
 </style>
 <link rel="stylesheet" href="game-effects.css">
@@ -141,6 +159,7 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
 <div id="over" class="ov hide">
   <h1>Тебе заглушили</h1>
   <p id="sum"></p>
+  <div id="recap"></div>
   <button class="btn" id="again">Ще раз (нова пісня)</button>
   <button class="btn s" id="other">Інший персонаж</button>
 </div>
@@ -564,6 +583,14 @@ function noteCards(){
     for(const pc of rnd2(chordTones(have,1).filter(p=>!got.includes(p))))out.push({note:true,slot:have,pc,lvl:1,w:3});}
   const up=[];for(let i=0;i<have;i++){const l=SONG.prog[i].lvl||1;if(l<3)up.push({note:true,slot:i,pc:chordTones(i,l+1)[0],lvl:l+1,w:1.6});}
   return out.concat(rnd2(up));
+}
+// опис картки ноти мовою акордів: скільки нот уже є й скільки лишилось до акорду, який долучиться до пісні
+function noteCardText(o){
+  const ch=SONG.prog[o.slot],tgt=mkChord(SONG,ch.off,o.lvl);
+  if(o.lvl>1)return TF('Нота {0} — {1} до акорду {2}: він стане {3} і зазвучить багатше.',NN[o.pc],o.lvl===2?T('септима'):T('нона'),ch.name,tgt.name);
+  const got=(SONG.notes&&SONG.notes[o.slot]||[]).filter(x=>x!==o.pc).length+1,need=chordTones(o.slot,1).length;
+  return got>=need?TF('Нота {0} — {1}/{2} до акорду {3}: остання, акорд долучиться до пісні (такт {4} з 4).',NN[o.pc],got,need,tgt.name,o.slot+1)
+    :TF('Нота {0} — {1}/{2} до акорду {3} (такт {4} з 4).',NN[o.pc],got,need,tgt.name,o.slot+1);
 }
 function applyNote(o){
   const n=SONG.prog.length,have=Math.min(n,SONG.have||n);if(!SONG.notes)SONG.notes=[[],[],[],[]];
@@ -2430,7 +2457,7 @@ function newRun(){
   G={seed:(Math.random()*1e9)|0,t:0,kills:0,xp:0,level:1,
     layers:{[LAYERS[charKey][0].id]:1},pedals:{},syn:synergy(songOffs(),SONG.genre).bonus,
     p:{x:0,y:0,r:15,hp:C.hp,max:C.hp,spd:C.spd*HERO_SPEED,fx:1,fy:0,pulse:0,hurt:0},
-    mobs:[],eshots:[],shots:[],rings:[],cones:[],zaps:[],gems:[],hearts:[],fx:[],texts:[],spawnAcc:0,bossNext:0,won:false};
+    mobs:[],eshots:[],shots:[],rings:[],cones:[],zaps:[],gems:[],hearts:[],fx:[],texts:[],spawnAcc:0,bossNext:0,won:false,bosses:0,dmgTotal:0};
   SONG.label=songLabel(); // підпис — уже з шарами нового забігу (на старті гітара: «Удар униз»)
   restoreMaster();atkQ=[];bossQ=[];walkSide=1;walkLast=null;slot.strings=[];slot.voices=[];slot.drumv={};slot.lastKick=undefined;applyPedalAudio();beat.ok=false;
 }
@@ -2722,9 +2749,9 @@ function renderChoices(opts,submit){
     if(o.hp)b.innerHTML=`<b>${T('♥ +10% макс. HP')}</b><small>${TF('Максимум і поточне здоров’я +{0}. Лікують лише серця з ворогів.',Math.round(CHARS[charKey].hp*.1*10)/10)}</small><span class="st">${TF('здоров’я · {0} з {1}',hpCount()+1,MAXHPCARD)}</span>`;
     else if(o.xpb)b.innerHTML=`<b>${T('♪ Репетиція')}</b><small>${T('+50% досвіду до наступного рівня.')}</small>`;
     else if(o.note){const ch=SONG.prog[o.slot],tgt=mkChord(SONG,ch.off,o.lvl),k=chordFnId(ch.off),fn=CHORD_FN[k],fx=`<span style="color:${fn.col}">${fn.name}: ${chordFxText(k,Math.max(o.lvl,ch.lvl||1))}</span>`;
-      if(o.lvl>1)b.innerHTML=`<b>${TF('🎼 Нота {0} ({1})',NN[o.pc],o.lvl===2?T('септима'):T('нона'))}</b><small>${TF('Акорд {0} стане {1} і зазвучить багатше.',ch.name,tgt.name)} ${fx}</small><span class="st">${TF('акорд · рівень {0} → {1}',o.lvl-1,o.lvl)}</span>`;
-      else{const got=(SONG.notes&&SONG.notes[o.slot]||[]).length,need=chordTones(o.slot,1).length,have=Math.min(SONG.prog.length,SONG.have||SONG.prog.length);
-        b.innerHTML=`<b>${TF('🎼 Нота {0}',NN[o.pc])}</b><small>${TF('Для акорда {0} (такт {1} з 4): нот {2} з {3}.',tgt.name,o.slot+1,got+1,need)} ${fx}</small><span class="st">${TF('акорди: {0} з 4',have)}</span>`;}}
+      if(o.lvl>1)b.innerHTML=`<b>${TF('🎼 Нота {0} ({1})',NN[o.pc],o.lvl===2?T('септима'):T('нона'))}</b><small>${noteCardText(o)} ${fx}</small><span class="st">${TF('акорд · рівень {0} → {1}',o.lvl-1,o.lvl)}</span>`;
+      else{const have=Math.min(SONG.prog.length,SONG.have||SONG.prog.length);
+        b.innerHTML=`<b>${TF('🎼 Нота {0}',NN[o.pc])}</b><small>${noteCardText(o)} ${fx}</small><span class="st">${TF('акорди: {0} з 4',have)}</span>`;}}
     else if(o.rhythm){const F=DRUM_FIGS[o.fig],was=SONG.dfig&&SONG.dfig[o.slot],n=(SONG.dfig||[]).filter(Boolean).length;
       b.innerHTML=`<b>${o.add?'＋':''}🥁 ${TF('Ритм: {0}',F.name)}</b><small>${F.desc} ${o.add?TF('Такт {0} з 4 у фразі.',o.slot+1):TF('У такт {0} замість «{1}».',o.slot+1,DRUM_FIGS[was].name)}</small>${synText(o)}<span class="st">${o.add?TF('ритм-фраза: {0} → {1} з 4',n,n+1):T('ритм-фраза')}</span>`;}
     else if(o.voicing){const v=VOICINGS[charKey][o.voicing];b.innerHTML=`<b>＋ ${T(v.name)}</b><small>${T(v.desc)}</small><span class="st">${T('Акорд')} · ${Object.keys(VOICINGS[charKey]).filter(id=>G.layers['$v_'+id]).length+1} / ${MAXVOICING}</span>`;}
@@ -2903,6 +2930,9 @@ function bossSound(b,n,at,step){
 const KB_SCALE=.35; // загальний множник відкидання ворогів (було ×1): відкидання — це те, що збирають педалями, а не дефолт
 const REFL_CAP=2; // скільки нот одна хвиля (кільце/конус) може відбити; звичайні снаряди не відбивають зовсім
 const HERO_DMG=1.15; // загальний множник шкоди героїв (+15%); крутити баланс — тут
+// підсумок забігу: лічильники шкоди (загалом і по гравцю) та вбивств рахує лише хост — гості отримують їх у знімку
+const stOf=a=>a.st||(a.st={dmg:0,kills:0});
+function addDmg(v,a){G.dmgTotal=(G.dmgTotal||0)+v;if(a)stOf(a).dmg+=v;}
 function hurtMob(m,dmg,kx,ky){
   const pd=pedalEffects();let crit=false;
   dmg*=HERO_DMG*G.syn*(1+.1*(pd.overdrive||0)+.12*(pd.sticks||0)+.12*(pd.octave||0)+.15*(pd.hammers||0));
@@ -2930,6 +2960,7 @@ function hurtMob(m,dmg,kx,ky){
   if(pd.comp){kx*=1+.5*pd.comp;ky*=1+.5*pd.comp;m.stun=Math.max(m.stun||0,.1+.2*pd.comp);}
   if(pd.chorus){m.slow=1.5;m.slowAmt=.1+.15*pd.chorus;}
   if(MOBS[m.type].boss){kx=0;ky=0;m.stun=0;m.slow=0;} // боса не можна заморозити чи відкинути
+  addDmg(Math.min(dmg,Math.max(0,m.hp)),activePlayer);
   m.hp-=dmg;m.flash=.12;m.kx+=kx*KB_SCALE;m.ky+=ky*KB_SCALE;m.lastOwner=ownerId();m.hc=PACK_INST.indexOf(charKey)+1;
   if(G.texts.length<60)G.texts.push({x:m.x,y:m.y-m.r,v:Math.round(dmg),age:0,crit});
 }
@@ -2981,7 +3012,7 @@ function update(dt){
     if(isBoss&&d>far){m.x=target.x-dx/d*spawnDist();m.y=target.y-dy/d*spawnDist();} // бос не губиться: підтягується на край екрана
     // статуси від педалей: оглушення / сповільнення / горіння (горіння мінусує HP напряму, без відкидання й цифр)
     let sp=m.spd;if(m.stun>0){m.stun-=dt;sp=0;}else if(m.slow>0){m.slow-=dt;sp*=1-m.slowAmt;}
-    if(m.burn>0){m.burn-=dt;m.hp-=(m.burnDmg||5*DMGK)*dt;if(m.hp<=0)m.lastOwner=m.burnOwner;}
+    if(m.burn>0){const bd=(m.burnDmg||5*DMGK)*dt;addDmg(Math.min(bd,Math.max(0,m.hp)),owner(m.burnOwner));m.burn-=dt;m.hp-=bd;if(m.hp<=0)m.lastOwner=m.burnOwner;}
     const M=MOBS[m.type];let ux=dx/d,uy=dy/d;
     if(M.ranged){ // тримає дистанцію, кружляє й стріляє нотами
       const R=M.ranged;if(d<R.range*.75){ux=-ux;uy=-uy;}else if(d<R.range){const s=m.wob%12<6?1:-1;ux=-dy/d*.6*s;uy=dx/d*.6*s;}
@@ -3081,12 +3112,13 @@ function update(dt){
 
   for(const m of G.mobs)if(m.hp<=0){
     G.kills++;
-    const killer=owner(m.lastOwner);
+    const killer=owner(m.lastOwner);if(killer)stOf(killer).kills++;
     if(!net.active||killer)withPlayer(killer,()=>{
     const pd=pedalEffects();
     if(pd.reverb)ring(45+22*pd.reverb,(3+3*pd.reverb)*DMGK*threat().hp,'#c7b3ff',2,160,{x:m.x,y:m.y,boom:true}); // вибух на місці ворога
     });
     if(MOBS[m.type].boss){
+      G.bosses=(G.bosses||0)+1;
       packFX('boom',m.x,m.y-m.r*.5);packFX('skull',m.x,m.y-m.r*.8,undefined,-.25); // череп з'являється з вибуху
       for(let i=0;i<14;i++){const a=i/14*6.283;G.gems.push({x:m.x+Math.cos(a)*40,y:m.y+Math.sin(a)*40,v:MOBS[m.type].xp,mag:false});}
       if(MOBS[m.type].boss.final)G.won=true;
@@ -3525,15 +3557,40 @@ function setPause(v,silent){if(!v&&net.active&&net.reconnecting)return;
   if(audioOK){if(v)ctx.suspend();else{resuming=true;ctx.resume().then(()=>{resuming=false;seq.nextTime=Math.max(seq.nextTime,ctx.currentTime+.05);})
     .catch(()=>{resuming=false;if(running&&!paused)setPause(true);});}}
 }
+const fmtTime=t=>`${Math.floor(t/60)}:${String(t%60).padStart(2,'0')}`,fmtNum=n=>String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g,' ');
+const escHtml=x=>String(x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
+/* Підсумок забігу: чиста функція від G і SONG. Хост рахує лічильники (G.bosses, G.dmgTotal, a.st), гість бере те саме з останнього знімка. */
+function runRecap(){
+  const n=SONG.prog.length,have=Math.min(n,SONG.have||n);
+  const build=(char,layers,pedals)=>({
+    parts:LAYERS[char].filter(l=>layers[l.id]).map(l=>({id:l.id,name:l.name,lvl:layers[l.id]})),
+    gear:PEDALS.filter(p=>p.inst===char&&pedals[p.id]).map(p=>({id:p.id,name:p.name,lvl:pedals[p.id]})),
+    voicings:Object.keys(VOICINGS[char]||{}).filter(id=>layers['$v_'+id]).map(id=>T(VOICINGS[char][id].name))});
+  const players=net.active&&G.players?G.players.map(a=>({id:a.id,char:a.char,you:a.id===net.id,dmg:Math.round(stOf(a).dmg),kills:stOf(a).kills,...build(a.char,a.layers||{},a.pedals||{})}))
+    :[{id:null,char:charKey,you:true,dmg:Math.round(G.dmgTotal||0),kills:G.kills,...build(charKey,G.layers,G.pedals)}];
+  return {won:!!G.won,time:Math.floor(G.t),level:G.level,kills:G.kills,bosses:G.bosses||0,dmg:Math.round(G.dmgTotal||0),
+    song:{genre:GENRES[SONG.genre].name,have,total:n,chords:SONG.prog.slice(0,have).map(c=>({name:c.name,lvl:c.lvl||1,col:CHORD_FN[chordFnId(c.off)].col}))},players};
+}
+function recapHtml(r){
+  const stat=(v,l)=>`<div class="rstat"><b>${v}</b><span>${l}</span></div>`,hic=(svg,lvl,title)=>`<span class="hic" title="${escHtml(title)}">${svg}<i>${lvl}</i></span>`;
+  const rows=r.players.map(q=>{
+    const C=CHARS[q.char],who=C.glyph+' '+(q.id===null||q.you?T('Ти'):escHtml(q.id))+' · '+C.name;
+    const icons=q.parts.map(x=>hic(ICON.part(q.char,x.id),x.lvl,x.name)).join('')+(q.gear.length?'<span class="sep"></span>'+q.gear.map(x=>hic(ICON.gear(PEDALS.find(p=>p.id===x.id)),x.lvl,x.name)).join(''):'');
+    return `<div class="rp"><div class="rh"><b>${who}</b>${r.players.length>1?`<span>⚔ ${fmtNum(q.dmg)} · ☠ ${q.kills}</span>`:''}</div><div class="rchips">${icons}</div>${q.voicings.length?`<div class="rv">${T('Акорд')}: ${q.voicings.map(escHtml).join(' · ')}</div>`:''}</div>`;}).join('');
+  const chips=r.song.chords.map(c=>`<span class="chip" style="color:${c.col}">${escHtml(c.name)}${c.lvl>1?' '+c.lvl:''}</span>`).join('');
+  return `<div class="rstats">${stat(fmtTime(r.time),T('Час'))}${stat(r.level,T('Рівень'))}${stat(r.kills,T('Вороги'))}${stat(r.bosses,T('Боси'))}${stat(fmtNum(r.dmg),T('Шкода'))}</div>`
+    +`<div class="rsong"><div class="rh"><b>${escHtml(r.song.genre)}</b><span>${TF('акорди: {0} з {1}',r.song.have,r.song.total)}</span></div><div class="rchips">${chips}</div></div>${rows}`;
+}
+const showRecap=()=>{$('#recap').innerHTML=recapHtml(runRecap());};
 function gameOver(){
   if(net.active){netGameOver();return;}
   running=false;joy=null;
   const s=Math.floor(G.t);
   if(G.won){$('#over h1').textContent=T('Перемога!');$('#sum').textContent=TF('{0}. {1} переміг Диригента Тиші за {2}: {3} рівень, {4} ворогів.',GENRES[SONG.genre].name,CHARS[charKey].name,`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`,G.level,G.kills);
-    $('#over').classList.remove('hide');$('#hud').classList.add('hide');return;}
+    showRecap();$('#over').classList.remove('hide');$('#hud').classList.add('hide');return;}
   $('#over h1').textContent=T('Тебе заглушили');
   $('#sum').textContent=TF('{0}. {1} протримався {2}, дійшов до {3} рівня і переміг {4} ворогів.',GENRES[SONG.genre].name,CHARS[charKey].name,`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`,G.level,G.kills);
-  $('#over').classList.remove('hide');$('#hud').classList.add('hide');
+  showRecap();$('#over').classList.remove('hide');$('#hud').classList.add('hide');
 }
 function stopRun(){running=false;paused=false;net.pausedBy=null;choosing=false;loading=false;runId++;G=null;atkQ=[];bossQ=[];joy=null;keys.clear();clearAttackFX();
   endNoteTails();
@@ -3746,7 +3803,7 @@ function initBandWorld(d){
   stopRun();runId++;loading=true;resetNetIp();net.match=d.match;net.renderedChoice=null;net.pending.clear();net.entity=0;
   SONG=d.song;charKey=net.roster.find(p=>p.id===net.id).char;
   G={seed:d.seed,t:0,kills:0,xp:0,level:1,layers:{},syn:synergy(songOffs(),SONG.genre).bonus,
-    players:[],mobs:[],eshots:[],shots:[],rings:[],cones:[],zaps:[],gems:[],hearts:[],fx:[],texts:[],spawnAcc:0,bossNext:0,won:false};
+    players:[],mobs:[],eshots:[],shots:[],rings:[],cones:[],zaps:[],gems:[],hearts:[],fx:[],texts:[],spawnAcc:0,bossNext:0,won:false,bosses:0,dmgTotal:0};
   const ownChar=charKey;
   for(const [i,p] of net.roster.entries()){
     charKey=p.char;const C=CHARS[p.char],bal=balanceTable();
@@ -3775,7 +3832,7 @@ function tryBandStart(){
 const MOB_KEYS=Object.keys(MOBS); // тип ворога їде індексом у цьому списку (однаковий код у хоста й гостя)
 const MOB_WIRE=['netId','type','x','y','r','hp','max','flash','wob','stun','slow','burn','mode','ax','ay','gen','age','hc','cast'];
 function cleanState(){
-  const fields=['seed','t','kills','xp','level','syn','bossNext','won','mobs','eshots','shots','rings','cones','zaps','gems','hearts','fx','texts','pfx','instrumentFX'];
+  const fields=['seed','t','kills','xp','level','syn','bossNext','won','bosses','dmgTotal','mobs','eshots','shots','rings','cones','zaps','gems','hearts','fx','texts','pfx','instrumentFX'];
   for(const key of ['mobs','shots','gems','hearts','rings','cones'])for(const item of G[key]||[])if(!item.netId)item.netId=++net.entity;
   const state={};for(const key of fields)state[key]=G[key];
   // гостям потрібно лише те, що малюється: внутрішні таймери й швидкості ворогів не шлемо (пізня гра — 140+ ворогів)
@@ -3786,7 +3843,7 @@ function cleanState(){
     else if(k==='x'||k==='y')v=Math.round(v);else if(k==='wob')v=Math.round(v)%12; // фаза качання довільна, гість далі крокує її сам
     else if(k==='type'&&MOB_KEYS.includes(v))v=MOB_KEYS.indexOf(v);else if((k==='hp'||k==='max')&&v>0)v=Math.max(.1,Math.round(v*10)/10); // десяті: HP-смужці досить; живий ворог не стає «0»
     o.push(v);if(v!==0||k==='x'||k==='y')n=i+1;});o.length=n;return o;});
-  state.players=G.players.map(a=>({id:a.id,char:a.char,p:a.p,layers:a.layers,pedals:a.pedals}));
+  state.players=G.players.map(a=>({id:a.id,char:a.char,p:a.p,layers:a.layers,pedals:a.pedals,st:a.st}));
   return JSON.parse(JSON.stringify(state,wireReplacer));
 }
 // Акорд атаки (cf:{k,l} + колір cc) їде одним числом: індекс функції в CHORD_KEYS·4 + рівень (1–3). Гість відновлює cf і cc у unpackChords.
@@ -3990,7 +4047,7 @@ function finishBandLevel(){choosing=false;paused=false;net.pausedBy=null;seq.nex
 function showBandOver(){hideScreens();$('#over').classList.remove('hide');$('#over h1').textContent=G.won?T('Гурт переміг!'):T('Гурт заглушили');
   const s=Math.floor(G.t),time=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
   $('#sum').textContent=G.won?TF('Диригента Тиші переможено за {0}: {1} рівень гурту, {2} ворогів.',time,G.level,G.kills):TF('Гурт протримався {0}, дійшов до {1} рівня й переміг {2} ворогів.',time,G.level,G.kills);
-  $('#again').textContent=net.isHost?T('Зібрати гурт знову'):T('Чекаємо на хоста');$('#again').disabled=!net.isHost;
+  showRecap();$('#again').textContent=net.isHost?T('Зібрати гурт знову'):T('Чекаємо на хоста');$('#again').disabled=!net.isHost;
   $('#other').textContent=net.isHost?T('У лобі'):T('Вийти з гурту');setBandVolume();}
 function netGameOver(){running=false;paused=false;net.pausedBy=null;choosing=false;atkQ=[];bossQ=[];joy=null;keys.clear();net.pending.clear();net.phase='ended';wire({t:'phase',phase:'ended'});showBandOver();sendSnapshot();}
 function bandToLobby(){sendBand({k:'lobby'});wire({t:'phase',phase:'lobby'});stopRun();net.match=null;net.phase='lobby';net.pending.clear();net.renderedChoice=null;
@@ -4039,7 +4096,7 @@ window.__game={need,threat,SPAWN_SHIELD,GEM_MAGNET,hurtPlayer,bossEnraged,bossNo
   sectionAt,phraseName,hookPhrase,directorStep,fullChordAt,patOf,P,SEC_NAME,
   logNotes(on){NOTE_LOG=on?[]:null;},get notes(){return NOTE_LOG;},setSong(s){SONG=s;},
   playBuffered,fire,reqBuf,warmLayer,endNoteTails,get voices(){return slot.voices;},
-  get running(){return running;},get paused(){return paused;},get choosing(){return choosing;},get net(){return net;},
+  runRecap,recapHtml,noteCardText,get running(){return running;},get paused(){return paused;},get choosing(){return choosing;},get net(){return net;},
   receiveHost,interpolateWorld,sampleAt,flushState,wireReplacer,CHORD_KEYS};
 if(new URLSearchParams(location.search).has('band'))connectBand();
 })();

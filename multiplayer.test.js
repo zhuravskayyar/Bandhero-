@@ -23,8 +23,9 @@ class Element {
     this.classList = { add: x => classes.add(x), remove: x => classes.delete(x), contains: x => classes.has(x),
       toggle(x, on) { if (on === undefined) on = !classes.has(x); if (on) classes.add(x); else classes.delete(x); } };
   }
+  get innerHTML() { return this._html || ''; }
   set innerHTML(html) {
-    this.children = [];
+    this._html = html; this.children = [];
     for (const m of html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)) {
       const e = new Element(); e.textContent = m[2].replace(/<[^>]*>/g, ''); e.disabled = /\bdisabled\b/.test(m[1]);
       const classes=m[1].match(/class="([^"]*)"/);if(classes)for(const c of classes[1].split(/\s+/))e.classList.add(c);
@@ -2389,4 +2390,78 @@ test('mobs ride the wire as compact positional arrays and unpack to the same fie
     const t1 = v => Math.max(.1, Math.round(v * 10) / 10); assert.ok(o.hp > 0 && Math.abs(o.hp - m.hp) <= .06, 'hp survives to a tenth'); assert.ok(Math.abs((o.max === undefined ? o.hp : o.max) - m.max) <= .06 || Math.round(m.max * 100) === Math.round(m.hp * 100), 'max is restored');
     assert.equal(o.flash || 0, Math.round((m.flash || 0) * 100) / 100); assert.equal(o.hc || 0, m.hc || 0); assert.equal(o.mode || 0, m.mode || 0); assert.equal(o.ax || 0, Math.round((m.ax || 0) * 100) / 100); });
   assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+/* ================= ПІДСУМОК ЗАБІГУ ТА КАРТКИ НОТ ================= */
+const stripTags = h => h.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+const killMob = async (g, type, by) => {
+  g.addMob(type, g.G.p.x + 80, g.G.p.y, { age: 5 }); const m = g.G.mobs.filter(x => x.type === type).pop();
+  const hit = () => g.hurtMob(m, 5, 0, 0); if (by) g.withPlayer(by, hit); else hit();
+  m.hp = 0; await until(() => !g.G.mobs.includes(m), type + ' dies'); return m;
+};
+
+test('run summary: solo game over shows time, level, kills, bosses, damage and the build', async t => {
+  const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
+  s.game.setGenre('pop'); await s.game.pick('guitar');
+  const g = s.game, G = g.G;
+  G.mobs = []; G.p.hp = G.p.max; G.t = 125; G.level = 7;
+  await killMob(g, 'fal'); await killMob(g, 'boss1'); G.p.hp = G.p.max;
+  assert.equal(G.bosses, 1, 'boss kill is counted'); assert.equal(G.kills, 2); assert.ok(G.dmgTotal > 0, 'damage dealt is counted');
+  const pedal = g.PEDALS.find(p => p.inst === 'guitar'); G.pedals[pedal.id] = 2;
+  G.mobs = []; G.p.hp = 0; await until(() => !g.running, 'game over');
+  const r = g.runRecap();
+  assert.equal(r.time, 125); assert.equal(r.level, 7); assert.equal(r.kills, 2); assert.equal(r.bosses, 1); assert.ok(r.dmg > 0);
+  assert.equal(r.players.length, 1); assert.equal(r.players[0].char, 'guitar');
+  assert.ok(r.players[0].parts.length >= 1 && r.players[0].parts.every(x => x.lvl >= 1), 'held parts with levels');
+  assert.equal(JSON.stringify(r.players[0].gear.map(x => [x.id, x.lvl])), JSON.stringify([[pedal.id, 2]]), 'gear with levels');
+  assert.equal(r.song.have, g.SONG.have || g.SONG.prog.length); assert.equal(r.song.chords.length, r.song.have); assert.equal(r.song.genre, g.GENRES.pop.name);
+  const text = stripTags(s.elements.get('#recap').innerHTML);
+  assert.ok(text.includes('2:05'), 'time survived'); assert.ok(text.includes(g.GENRES.pop.name)); assert.ok(text.includes(pedal.name) || /class="hic" title="[^"]*"/.test(s.elements.get('#recap').innerHTML));
+  for (const c of r.song.chords) assert.ok(text.includes(c.name), 'chord ' + c.name);
+  assert.ok(/class="hic"/.test(s.elements.get('#recap').innerHTML), 'pixel icons are reused');
+  assert.equal(s.elements.get('#over').classList.contains('hide'), false);
+  for (const w of ['Час', 'Рівень', 'Вороги', 'Боси']) for (const lang of ['en', 'de', 'ru']) assert.ok(dictionary[lang][w], lang + ': ' + w);
+  assert.deepEqual(s.errors, []);
+});
+
+test('run summary: in co-op the guest sees the same recap with a row per player', async t => {
+  const srv = await startServer(t);
+  const [a, b] = await bandOfTwo(t, srv.origin);
+  const host = a.game, guest = b.game, H = host.G;
+  H.mobs = []; H.level = 60; for (const p of H.players) p.p.hp = p.p.max; // високий рівень: кристали босів не дадуть нового рівня
+  const [hp, gp] = [H.players.find(p => p.id === host.net.id), H.players.find(p => p.id === guest.net.id)];
+  await killMob(host, 'fal', hp); await killMob(host, 'fal', gp); await killMob(host, 'boss1', gp);
+  for (const p of H.players) p.p.hp = p.p.max;
+  assert.equal(gp.st.kills, 2); assert.equal(hp.st.kills, 1); assert.equal(H.bosses, 1); assert.ok(gp.st.dmg > 0 && hp.st.dmg > 0);
+  H.t = 61; H.level = 4; H.xp = 0; H.gems = []; H.mobs = []; for (const p of H.players) p.p.hp = 0; // без кристалів: рівень воскресив би загиблих
+  await until(() => !host.running, 'host ends'); await until(() => !guest.running, 'guest stops: ' + host.running + guest.G.players.map(p => p.p.hp)); await until(() => !b.elements.get('#over').classList.contains('hide'), 'guest sees the screen');
+  await until(() => guest.G.bosses === 1 && guest.G.players.every(p => p.st), 'guest has the final counters');
+  const norm = r => ({ ...r, players: r.players.map(({ you, ...q }) => q) });
+  const hr = host.runRecap(), gr = guest.runRecap();
+  assert.equal(JSON.stringify(norm(gr)), JSON.stringify(norm(hr)), 'the guest recap equals the host recap');
+  assert.equal(gr.players.length, 2); assert.equal(gr.bosses, 1); assert.equal(gr.kills, 3); assert.equal(gr.time, 61); assert.equal(gr.level, 4);
+  assert.equal(gr.players.map(q => q.char).sort().join(), 'drums,guitar');
+  assert.equal(gr.players.find(q => q.you).kills, 2, 'the guest row is his own');
+  const html = b.elements.get('#recap').innerHTML;
+  assert.equal((html.match(/class="rp"/g) || []).length, 2, 'a row per player'); assert.ok(stripTags(html).includes('☠ 2'), 'per-player kills');
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+test('note cards say how far the note takes the next chord', async t => {
+  const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
+  s.game.setGenre('pop'); await s.game.pick('guitar');
+  const g = s.game, song = g.SONG;
+  const slot = song.have, need = g.chordTones(slot, 1).length;
+  for (let k = 1; k <= need; k++) {
+    const card = g.noteCards().find(o => o.lvl === 1); assert.ok(card && card.slot === slot);
+    const text = g.noteCardText(card);
+    assert.ok(text.includes(`${k}/${need}`), 'progress ' + k + '/' + need + ': ' + text);
+    assert.ok(text.includes(song.prog[slot].name), 'names the chord: ' + text);
+    assert.ok(k < need ? !text.includes('долучиться') : text.includes('долучиться до пісні'), text);
+    g.applyUpgrade(card);
+  }
+  assert.equal(song.have, slot + 1, 'the chord joined the song');
+  for (const key of ['Нота {0} — {1}/{2} до акорду {3} (такт {4} з 4).', 'Нота {0} — {1}/{2} до акорду {3}: остання, акорд долучиться до пісні (такт {4} з 4).'])
+    for (const lang of ['en', 'de', 'ru']) assert.ok(dictionary[lang][key], lang + ' translation');
+  assert.deepEqual(s.errors, []);
 });

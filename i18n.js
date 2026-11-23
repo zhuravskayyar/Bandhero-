@@ -1894,7 +1894,6 @@ for(const [uk,en,de,ru] of [
   ['Акорд {0} стане {1} і зазвучить багатше.','Chord {0} becomes {1} and sounds richer.','Akkord {0} wird zu {1} und klingt voller.','Аккорд {0} станет {1} и зазвучит богаче.'],
   ['акорд · рівень {0} → {1}','chord · level {0} → {1}','Akkord · Stufe {0} → {1}','аккорд · уровень {0} → {1}'],
   ['🎼 Нота {0}','🎼 Note {0}','🎼 Note {0}','🎼 Нота {0}'],
-  ['Для акорда {0} (такт {1} з 4): нот {2} з {3}.','For chord {0} (bar {1} of 4): notes {2} of {3}.','Für Akkord {0} (Takt {1} von 4): Noten {2} von {3}.','Для аккорда {0} (такт {1} из 4): нот {2} из {3}.'],
   ['акорди: {0} з 4','chords: {0} of 4','Akkorde: {0} von 4','аккорды: {0} из 4'],
 ]){window.I18N_DICT.en[uk]=en;window.I18N_DICT.de[uk]=de;window.I18N_DICT.ru[uk]=ru;}
 for(const [uk,en,de,ru] of [
@@ -1914,4 +1913,12 @@ for(const [uk,en,de,ru] of [
   ['Точно? Натисни ще раз','Sure? Press again','Sicher? Nochmal drücken','Точно? Нажми ещё раз'],
   ['Забіг уже триває в цій кімнаті. Приєднаєшся, коли гурт повернеться в лобі, або створи власну кімнату.','A run is already in progress in this room. You can join when the band is back in the lobby, or create your own room.','In diesem Raum läuft bereits ein Durchlauf. Du kannst beitreten, sobald die Band wieder in der Lobby ist, oder einen eigenen Raum erstellen.','Забег в этой комнате уже идёт. Присоединишься, когда группа вернётся в лобби, или создай свою комнату.'],
   ['Створити свою кімнату','Create your own room','Eigenen Raum erstellen','Создать свою комнату'],
+]){window.I18N_DICT.en[uk]=en;window.I18N_DICT.de[uk]=de;window.I18N_DICT.ru[uk]=ru;}
+// Підсумок забігу й зрозуміліші картки нот.
+for(const [uk,en,de,ru] of [
+  ['Час','Time','Zeit','Время'],['Рівень','Level','Stufe','Уровень'],['Вороги','Enemies','Gegner','Враги'],['Боси','Bosses','Bosse','Боссы'],
+  ['акорди: {0} з {1}','chords: {0} of {1}','Akkorde: {0} von {1}','аккорды: {0} из {1}'],
+  ['Нота {0} — {1} до акорду {2}: він стане {3} і зазвучить багатше.','Note {0} — the {1} of chord {2}: it becomes {3} and sounds richer.','Note {0} — die {1} von Akkord {2}: er wird zu {3} und klingt voller.','Нота {0} — {1} аккорда {2}: он станет {3} и зазвучит богаче.'],
+  ['Нота {0} — {1}/{2} до акорду {3}: остання, акорд долучиться до пісні (такт {4} з 4).','Note {0} — {1}/{2} toward chord {3}: the last one, the chord joins the song (bar {4} of 4).','Note {0} — {1}/{2} zum Akkord {3}: die letzte, der Akkord kommt in den Song (Takt {4} von 4).','Нота {0} — {1}/{2} к аккорду {3}: последняя, аккорд присоединится к песне (такт {4} из 4).'],
+  ['Нота {0} — {1}/{2} до акорду {3} (такт {4} з 4).','Note {0} — {1}/{2} toward chord {3} (bar {4} of 4).','Note {0} — {1}/{2} zum Akkord {3} (Takt {4} von 4).','Нота {0} — {1}/{2} к аккорду {3} (такт {4} из 4).'],
 ]){window.I18N_DICT.en[uk]=en;window.I18N_DICT.de[uk]=de;window.I18N_DICT.ru[uk]=ru;}
