@@ -274,6 +274,13 @@ function makeRiff(gk){
   return R;
 }
 function riffAt(p,bar,s){return SONG.riff?SONG.riff[p][(bar%2)*16+s]:null;}
+/* Корінь ходу риффу: зсув від кореня акорда притискається до ладу пісні (на півтону/тон), крім b2 (1) і тритону (6) — вони жанровий колір металу й індастріалу (docs/harmony-rules.md).
+   Без цього «b3/b7 від кореня» над bVI/bVII виходили поза ладом. Чиста функція акорда й зсуву; кількість і ритм нот не змінюються. */
+function riffPc(ch,off){
+  if(off===1||off===6||!SONG.mode)return (ch.root+off)%12;
+  for(const d of [0,-1,1,-2,2])if(inKeyPc(SONG,ch.root+off+d))return (ch.root+off+d+12)%12;
+  return (ch.root+off)%12;
+}
 function lowRoot(pc){return GENRES[SONG.genre].drop?up(pc,38):up(pc,40);} // Drop D: найнижча нота D2
 const GK=()=>SONG.genre;
 /* Гітарні аплікатури: справжні рухомі форми (одна нота на струну). -1 = струна заглушена.
@@ -449,16 +456,32 @@ function chordQ(gk,off){const extra=genreExpansion.chordQuality(gk,off);if(extra
 /* Рівні акорда: 1 — трізвук (корінь, терція, квінта; у квінтакорда лише корінь і квінта), 2 — додається септима, 3 — ще й нона.
    mkChord(song,off) без рівня — повний акорд жанру (заготовка майбутніх тактів); mkChord(song,off,lvl) — акорд, який гурт справді зібрав нотами. */
 const TRI={maj7:'maj',m7:'m','7':'maj',m7b5:'m',maj:'maj',m:'m','5':'5'},Q9={maj7:'maj9',m7:'m9','7':'9'};
+/* Діатонічні барви акорда: септима, нона, 6/13, 11 беруться з ЛАДУ пісні й якості акорда, а не «корінь + N півтонів» наосліп
+   (раніше нона над iii мажору була F♯, а над мінорним V — поза ладом; maj7 на bVII мінору замість септакорду з PAL.minor.sev). */
+const DIA={major:[0,2,4,5,7,9,11],minor:[0,2,3,5,7,8,10]};
+const inKeyPc=(song,pc)=>DIA[song.mode||'major'].includes((((pc-song.key)%12)+12)%12);
+function sevQ(song,off,q){ // якість септакорда ступеня (PAL[лад].sev); квінтакорд септими не має
+  if(QU[q].length>3)return q;if(q==='m')return 'm7';
+  if(q==='maj'){const e=(PAL[song.mode]||PAL.major).sev.find(x=>x[0]===off);return e?e[1]:(off===7||(song.mode==='major'&&off===10)?'7':'maj7');}
+  return null;
+}
+const SEV_FAM=[10,11,9];
+function ninePc(song,root,q){ // інтервал нони (9/11/13/b9) від кореня: перший діатонічний; b9 — лише для домінанти мінору (гармонічний мінор)
+  const fam=q==='7'?[2,9,1]:q==='m'||q==='m7'?[2,5]:q==='m7b5'?[5,2]:q==='5'?[2,5]:[2,9];
+  for(const iv of fam)if(inKeyPc(song,root+iv)&&(iv!==1||song.mode==='minor'))return iv;
+  return fam[0];
+}
+const extName=(bq,iv)=>iv===2?(Q9[bq]||QNAME[bq]+'(9)'):iv===5?(bq==='m7'?'m11':QNAME[bq]+'(11)'):iv===9?(bq==='7'?'13':QNAME[bq]+'(13)'):iv===1?'7b9':QNAME[bq]+'(9)';
 function mkChord(song,off,lvl){
   const root=(song.key+off)%12,q=chordQ(song.genre,off);
   if(lvl!==undefined){
-    const seven=QU[q].length>3?q:q==='maj'?(off===7?'7':'maj7'):q==='m'?'m7':null,bq=lvl>=2&&seven?seven:TRI[q]||q,pcs=QU[bq].map(x=>(root+x)%12);
-    if(lvl>=2&&!seven)pcs.push((root+10)%12); // квінтакорд: септима — окрема нота
-    if(lvl>=3)pcs.push((root+2)%12);
-    return {off,root,q:bq,pcs:[...new Set(pcs)],name:NN[root]+(lvl>=3?Q9[bq]||QNAME[bq]+'(9)':QNAME[bq]),vo:voicing(root,bq,song.pref),lvl};
+    const seven=sevQ(song,off,q),bq=lvl>=2&&seven?seven:TRI[q]||q,pcs=QU[bq].map(x=>(root+x)%12);
+    if(lvl>=2&&!seven)pcs.push((root+(SEV_FAM.find(iv=>inKeyPc(song,root+iv))??10))%12); // квінтакорд: септима — окрема нота, з ладу
+    let iv9=2;if(lvl>=3){iv9=ninePc(song,root,bq);pcs.push((root+iv9)%12);}
+    return {off,root,q:bq,pcs:[...new Set(pcs)],name:NN[root]+(lvl>=3?extName(bq,iv9):QNAME[bq]),vo:voicing(root,bq,song.pref),lvl};
   }
   // ext — нона для клавіш лоу-фаю й джазу (maj9, m9, 9): окреме поле, щоб гітарні аплікатури й назви акордів лишились як є
-  const ext=(song.genre==='lofi'||song.genre==='jazz')&&['maj7','m7','7'].includes(q)?[(root+2)%12]:undefined;
+  const ext=(song.genre==='lofi'||song.genre==='jazz')&&['maj7','m7','7'].includes(q)?[(root+ninePc(song,root,q))%12]:undefined;
   return {off,root,q,pcs:QU[q].map(x=>(root+x)%12),name:NN[root]+QNAME[q],vo:voicing(root,q,song.pref),...(ext?{ext}:{})};
 }
 /* Синергія прогресії: квінтові ходи (корінь на кварту вгору) +6% кожен; відома послідовність жанру — корона ♛ +30%.
@@ -560,7 +583,75 @@ let seenEv=null,evText='',evCol='#fff',evUntil=0;
 function checkSongEvent(){const e=SONG&&SONG.ev;if(!e||e.n===seenEv)return;seenEv=e.n;const ch=SONG.prog[e.slot];if(!ch)return;
   evText=e.lvl>1?TF('🎼 Акорд {0}: рівень {1}',ch.name,e.lvl):TF('🎼 Акорд {0} долучився до пісні!',ch.name);evCol=CHORD_FN[chordFnId(ch.off)].col;evUntil=performance.now()+3500;}
 const snap=(m,ch)=>{let best=m,bd=99;for(let d=-3;d<=3;d++){if(ch.pcs.includes(((m+d)%12+12)%12)&&Math.abs(d)<bd){bd=Math.abs(d);best=m+d;}}return best;};
-function motifNote(role,bar,s,ch){const h=hookPhrase(role,bar),p=(bar%2)*16+s;if(!h.pos.includes(p)||h.mot[p]===undefined)return null;return snap(h.mot[p],ch);}
+/* ================= УЗГОДЖЕННЯ З ФОНОМ (лише висоти) =================
+   Фон грає ПОВНУ прогресію (fullChordAt), гравець — зібрані акорди (chordAt): у «розбіжних» тактах його ноти можуть тертися з фоном.
+   Тут — чисті функції від (SONG, такт, крок, нота): жодного Math.random, тож у коопі всі чують те саме. Міняються ТІЛЬКИ висоти — кількість і позиції ударів
+   (а отже weigh/REF_HPS/hitsPerSec) лишаються, як були.
+   1) fitPitch: нота, що є avoid проти повного акорда (таблиця AVOID_Q = docs/harmony-rules.md; у розбіжному такті ще й м2/в7 до тонів фону),
+      замінюється найближчим СПІЛЬНИМ тоном акорда гравця й фону (потім — тоном фону, потім — безпечним тоном ладу).
+   2) fitRegister: нижче 48 нота не має ні брудно триматись проти баса фону (<ч5 у 36–40, <в3 у 40–48, <октави/ч5 нижче 36), ні опускатись нижче нього — тоді октавою вгору.
+   Винятки: хроматичний підхід баса (кроки 12–15, півтон до кореня наступного такту), ноти модифікаторів $v_* (власний колір акорда гравця), флажолети. */
+const AVOID_Q={maj7:[1,3,5,8,10],maj:[1,3,5,8],'7':[5,11],m:[1,4,6],m7:[1,4,6,11],m7b5:[1,4],'5':[1,6]};
+const pcm=m=>((m%12)+12)%12;
+const mudK=(lo,d)=>lo>=48||d===0?0:lo<36?(d<12&&d!==7?2:0):lo<40?(d<7?1:0):(d<4?1:0);
+const FIT_MEMO=new WeakMap();
+function fitInfo(bar){
+  let M=FIT_MEMO.get(SONG);if(!M)FIT_MEMO.set(SONG,M=new Map());
+  const f=fullChordAt(bar),o=chordAt(bar),pf0=fullChordAt(bar-1),k=f.off+'.'+(f.lvl||0)+'|'+o.off+'.'+(o.lvl||0)+'|'+o.pcs.join()+'|'+pf0.off+'.'+(pf0.lvl||0);let v=M.get(k);if(v)return v;
+  const q=chordQ(SONG.genre,f.off),oq=chordQ(SONG.genre,o.off),F=new Uint8Array(12),O=new Uint8Array(12),bad=new Uint8Array(12),key=new Uint8Array(12),badO=new Uint8Array(12);
+  for(const p of f.pcs)F[p]=1;for(const x of QU[q]||[])F[(f.root+x)%12]=1;for(const p of o.pcs)O[p]=1;
+  const OT=new Uint8Array(O);for(const x of QU[oq]||[])OT[(o.root+x)%12]=1;
+  for(let pc=0;pc<12;pc++)if(!OT[pc]&&(AVOID_Q[oq]||[]).includes((pc-o.root+12)%12))badO[pc]=1; // avoid проти акорда гравця: заміна не має створювати нового
+  const div=!(o.off===f.off&&o.pcs.length===f.pcs.length&&o.pcs.every(x=>f.pcs.includes(x))),A=AVOID_Q[q]||[],dark=SONG.genre==='metal'||SONG.genre==='industrial'; // метал/індастріал: b2 і тритон над пауер-акордом — жанровий колір
+  for(const x of DIA[SONG.mode]||DIA.major)key[(SONG.key+x)%12]=1;if(SONG.genre==='blues')for(const x of [3,6,10])key[(SONG.key+x)%12]=1;
+  const pf=fullChordAt(bar-1),PF=new Uint8Array(12),prevClash=new Uint8Array(12); // хвіст акорду фону з попереднього такту звучить ще ~2 кроки
+  for(const p of pf.pcs)PF[p]=1;for(const x of QU[chordQ(SONG.genre,pf.off)]||[])PF[(pf.root+x)%12]=1;
+  for(let pc=0;pc<12;pc++){if(!PF[pc]&&(PF[(pc+1)%12]||PF[(pc+11)%12]))prevClash[pc]=1;if(F[pc])continue;const r=(pc-f.root+12)%12;
+    if(dark&&q==='5'&&(r===1||r===6))continue;
+    if(A.includes(r))bad[pc]=1;else if(div&&(F[(pc+1)%12]||F[(pc+11)%12]))bad[pc]=1;}
+  const low=[up(f.root,36)];if(SONG.genre==='jazz'||SONG.genre==='blues')low.push(up((f.root+7)%12,36));
+  return M.set(k,v={F,O,bad,badO,prevClash,key,div,low}),v;
+}
+// найближча (до ±5 півтонів) прийнятна висота: спільний тон → тон фону → безпечний тон ладу. infos — [такт, наступний такт, якщо нота дзвенить через риску]
+function fitPitch(m,infos,ownPcs,s){
+  const pc=pcm(m),info=infos[0],nx=infos[1];
+  if(!(info.bad[pc]||nx&&nx.bad[pc])||ownPcs&&!ownPcs.includes(pc))return m; // ноти модифікаторів (поза акордом гравця) — не чіпаємо
+  let best=m,bc=1e9;
+  for(const d of [-1,1,-2,2,-3,3,-4,4,-5,5]){const q=pcm(m+d);
+    let c=Math.abs(d)+(info.O[q]&&info.F[q]?0:info.badO[q]?99:info.F[q]?.5:!info.bad[q]&&info.key[q]?1.5:99)+(s<2&&info.prevClash[q]?3:0);
+    if(nx&&nx.bad[q])c+=99;
+    if(c<bc){bc=c;best=m+d;}}
+  return bc<99?best:m;
+}
+function fitRegister(m,infos,bass){
+  if(m>=60)return m;
+  const ok=x=>{for(const info of infos)for(const B of info.low){if(x===B)continue;if(!bass&&x<B)return false;if(mudK(Math.min(x,B),Math.abs(x-B)))return false;}return true;};
+  if(ok(m))return m;
+  for(const sh of [12,24,-12])if(m+sh>=24&&ok(m+sh))return m+sh;
+  return m;
+}
+// хроматичний підхід баса: півтон до кореня наступного такту (гравця чи фону) на кроках 12–15
+function isApproach(pc,bar,s){if(s<12)return false;const n=(pc-chordAt(bar+1).root+12)%12,f=(pc-fullChordAt(bar+1).root+12)%12;return n===1||n===11||f===1||f===11;}
+// скільки кроків нота реально звучить (як у tools/harmony-audit.js: effDur) — щоб знати, чи дзвенить вона в наступному такті
+function noteSteps(e,sd){let d=e.dur==null?1:e.dur;if(e.holdSteps>0)d=e.holdSteps;if(e.art==='pm'||e.art==='staccato')d=Math.min(d,.5/sd);if(e.art==='pizzicato')d=Math.min(d,1.2/sd);if(e.seconds)d=Math.min(d,e.seconds/sd+.3);return d;}
+function fitEvents(evs,ch,bar,s,inst){
+  if(!evs.length)return evs;let out=null;const info=fitInfo(bar),own=chordAt(bar).pcs,bass=inst==='bass',sd=stepDur();let nxt=null;
+  for(let i=0;i<evs.length;i++){const e=evs[i];if(e.midi===undefined||e.drum||e.art==='dead')continue;
+    const infos=s+noteSteps(e,sd)>=16.8?[info,nxt||(nxt=fitInfo(bar+1))]:[info];
+    let m=e.midi;if(!(bass&&isApproach(pcm(m),bar,s)))m=fitPitch(m,infos,ch.pcs.includes(pcm(m))&&!own.includes(pcm(m))?own:null,s);
+    const r=e.art==='harmonic'?m:fitRegister(m,infos,bass);
+    // у акордеона удар «умпи» залежить від того, нижче нота за 55 чи ні — не перетинаємо цей поріг
+    if(r!==m&&inst==='accordion'&&(m<55)!==(r<55))continue;
+    if(r!==e.midi){if(!out)out=evs.slice();out[i]={...e,midi:r,...(e.rootMidi!==undefined?{rootMidi:e.rootMidi+(r-m)}:{}),...(e.harmonicBase!==undefined?{harmonicBase:e.harmonicBase+(r-e.midi)}:{})};}}
+  return out||evs;
+}
+const hookPitch=(m,ch,bar,s)=>{ // мотив: найближчий тон акорда гравця; на сильній долі в розбіжному такті — спільний із фоном, якщо є поруч
+  const info=fitInfo(bar);let best=snap(m,ch);
+  if(info.div&&s%4===0&&!info.F[pcm(best)]){let bd=99;for(let d=-3;d<=3;d++){const q=pcm(m+d);if(info.F[q]&&info.O[q]&&Math.abs(d)<bd){bd=Math.abs(d);best=m+d;}}
+    if(bd===99)for(let d=-3;d<=3;d++){const q=pcm(m+d);if(info.F[q]&&!info.badO[q]&&Math.abs(d)<bd){bd=Math.abs(d);best=m+d;}}} // спільного тону поруч нема — тон фону, що не б'є акорд гравця
+  return fitPitch(best,[info],null,s);
+};
+function motifNote(role,bar,s,ch){const h=hookPhrase(role,bar),p=(bar%2)*16+s;if(!h.pos.includes(p)||h.mot[p]===undefined)return null;return hookPitch(h.mot[p],ch,bar,s);}
 function motifFeel(s,vel,dur){
   const mood=SONG?.hook?.mood;
   if(mood==='fierce')return {vel:Math.min(1,vel*(s%8===0?1.18:.95)),dur:Math.min(dur,3),art:'staccato',seconds:.22};
@@ -612,9 +703,9 @@ function backingEvents(bar,s){
   if(hat.includes(s))out.push({kind:'drum',drum:g.ride?'ride':'hat',vel:vol(s%4===0?.2:.27)});
   if(bass.includes(s)){const fifth=(SONG.genre==='jazz'||SONG.genre==='blues')&&s===8;
     out.push({kind:'bass',midi:up((fch.root+(fifth?7:0))%12,36),vel:vol((s===0?.72:.53)*bV),dur:Math.min(4,(g.bass.find(p=>p>s)??16)-s)});}
-  if(chord.includes(s))for(const midi of tones(fch,55,SONG.genre==='metal'||SONG.genre==='industrial'?2:3))out.push({kind:'chord',midi,vel:vol(.36*cV),dur:SONG.genre==='reggae'||SONG.genre==='funk'?1.2:3});
+  if(chord.includes(s))for(const midi of tones(fch,55,SONG.genre==='metal'||SONG.genre==='industrial'?2:3))out.push({kind:'chord',midi,vel:vol(.36*cV),dur:Math.min(SONG.genre==='reggae'||SONG.genre==='funk'?1.2:3,16-s)}); // не дзвенить через тактову риску: хвіст старого акорду тер би ноти нового
   const m=hook?motifNote('mel',bar,s,pch):null; // мелодія фону — по акорду гравця, щоб не дублювати його лінію в іншій гармонії
-  if(m!==null)out.push({kind:'hook',midi:m,vel:vol(.42),dur:SONG.hook?.mood==='fierce'||SONG.hook?.mood==='playful'?1.5:4});
+  if(m!==null)out.push({kind:'hook',midi:m,vel:vol(.42),dur:Math.min(SONG.hook?.mood==='fierce'||SONG.hook?.mood==='playful'?1.5:4,16-s)});
   return out;
 }
 
@@ -1521,7 +1612,7 @@ const LAYERS={
       desc:T('Удар по струнах у стилі жанру — хвиля-конус у найближчого ворога.'),
       steps:(ch,s,bar,L)=>{let e;
         if(SONG.riff){const r=riffAt(P(L),bar,s);if(!r)return[]; // метал/індастріал/рок: риф із «чагів» і пауер-акордів
-          const b=lowRoot((ch.root+r.off)%12),ns=r.k==='M'?[b,b+7]:[b,b+7,b+12];
+          const b=lowRoot(riffPc(ch,r.off)),ns=r.k==='M'?[b,b+7]:[b,b+7,b+12];
           e=ns.map((m,i)=>E(m,r.k==='M'?.8:.95,r.dur,{str:i,off:i*.004,dir:r.k,jit:true,art:r.k==='M'?'pm':undefined}));e[0].clear=new Set(ns.map((_,i)=>i));}
         else{const g=GK(),pl=SONG.boi||P(L),d=(STRUM_BARS[g]&&pl===1?STRUM_BARS[g][bar%4]:(STRUMS[g]||STRUMS.lofi)[pl])[s];if(!d)return[];e=strum(ch,d,.85,16,s);}
         return e;},
@@ -1633,7 +1724,7 @@ const LAYERS={
         if(g==='rock'||g==='newwave')return (g==='rock'?[0,4,8,12]:[0,6,8,14]).includes(s)?x(r,s%8?.7:.85,4):[];
         if(g==='pop'){if(s%2)return[];if(p>1&&(s===6||s===10))return x(r+12,.7,1.6);return x(r,s%4?.7:.95,1.8);}
         if((g==='metal'||g==='industrial')&&SONG.riff){const rf=riffAt(p,bar,s);if(!rf)return[]; // бас дублює риф
-          return x(up((ch.root+rf.off)%12,33),rf.k==='M'?.8:.95,rf.k==='M'?.7:rf.dur);}
+          return x(up(riffPc(ch,rf.off),33),rf.k==='M'?.8:.95,rf.k==='M'?.7:rf.dur);}
         // джаз: «ходовий» бас по чвертях — корінь, терція/ступінь, квінта, на 4-ту долю хроматичний підхід до наступного кореня
         if(g==='jazz'){if(s%4)return[];const b=s>>2,nr=up(chordAt(bar+1).root,33);
           if(b===0)return x(r,.9,3.6);if(b===1)return x([t[1],r+2,t[1],t[2]][bar%4],.78,3.6);
@@ -1841,7 +1932,7 @@ const STARTERS={
   violin:{id:'pulse',art:'bow',name:'Смичок у долю',lv:'Тони акорду по долях',desc:'Смичок проходить тони акорду 1-3-5-8 — звукова нитка.',
     by:['bow','pizz'],steps:(ch,s,bar)=>{if(s%4)return[];let pc=starterLadder(ch,ch.close?72:67,s,bar||0);
       if(ch.violinThird&&s===4)pc=ch.pcs.find(n=>[3,4].includes((n-ch.root+12)%12))??pc;
-      if(ch.violinSixth&&s===8)pc=(ch.root+9)%12;
+      if(ch.violinSixth&&s===8)pc=(ch.root+sixIv(ch))%12;
       if(ch.violinFifth&&s===12)pc=(ch.root+7)%12;
       if(ch.violinPicardy&&s===12)pc=(ch.root+4)%12;
       let vm=pc<24?up(pc,ch.close?72:67):pc;while(vm>VIOLIN_TOP)vm-=12;
@@ -1853,7 +1944,7 @@ const STARTERS={
     by:[],steps:(ch,s)=>{if(s%4)return[];const t=tones(ch,ACCORDION.arpLow-(ch.close?5:0),4),variant=G?.layers?.$frogpick||'basic',order=FROG_PICK_CARDS[variant].order;
       let m=t[order[(s>>2)%order.length]%t.length];if(variant==='up'&&s===12)m=up(ch.root,ACCORDION.arpLow)+12;
       if(ch.octaveBass&&s===0)m=up(ch.root,43);
-      else if(ch.add9&&s===4)m=up((ch.root+2)%12,ACCORDION.arpLow);
+      else if(ch.add9&&s===4)m=up((ch.root+nineIv(ch))%12,ACCORDION.arpLow);
       else if(ch.seventh!==undefined&&s===8)m=up(ch.seventh,ACCORDION.arpLow);
       return[E(m,s?.42:.5,1,{holdSteps:1,seconds:.16,fixedRegister:true,down:s===0})];}, // коротка нота-удар, без утримання
     atk:(e,L)=>{for(const n of e)instrumentExpansion.noteRing(L,{...ACCORDION.ring,down:!!n.down});}} // сильна доля — товще кільце (лише вигляд)
@@ -1949,20 +2040,27 @@ const VOICINGS={guitar:{
   close:{name:'Тісне обернення',desc:'Голоси правої руки збираються ближче.'},
   octbass:{name:'Октавний бас',desc:'Ліва рука підсилює бас октавою.'}
 }};
+/* Натяжки модифікаторів $v_* і карток — діатонічні до ладу й якості акорда (див. ninePc/sevQ) */
+const sevIv=ch=>{if(QU[ch.q].length>3)return QU[ch.q][3];const sq=sevQ(SONG,ch.off,ch.q);return sq?QU[sq][3]:SEV_FAM.find(iv=>inKeyPc(SONG,ch.root+iv))??10;}; // септима V мажору — b7, bVII мінору — b7
+const nineIv=ch=>ninePc(SONG,ch.root,ch.q);
+const minorQ=ch=>ch.q==='m'||ch.q==='m7'||ch.q==='m7b5';
+const sixIv=ch=>{for(const iv of minorQ(ch)?[9,5,2]:[9,2])if(inKeyPc(SONG,ch.root+iv))return iv;return 9;}; // 6/13: нат. шоста над мінорним акордом лише якщо вона в ладі (дорійська), інакше — нона
+const blueIv=ch=>minorQ(ch)?5:(SONG.genre==='blues'||SONG.genre==='jazz'||ch.q==='7')?6:sixIv(ch); // b5 — лише в блюзі/джазі й над домінантою (як прохідна), над мінорним — кварта, в інших жанрах — 6/13 з ладу
+const clusterIv=ch=>{for(const iv of [8,9,10,2])if(inKeyPc(SONG,ch.root+iv))return iv;return 2;}; // кластер: ступінь ладу над квінтою (а не м2 над коренем)
 function personalPitch(ch,s,low,base=up(ch.root,low)){
   let pc=null,register=low;
   if(ch.fluteTonic&&s%16===0)register-=12;
-  if(ch.fluteThird&&s%16===4)pc=ch.pcs.find(n=>[3,4,5].includes((n-ch.root+12)%12));
+  if(ch.fluteThird&&s%16===4)pc=ch.pcs.find(n=>[3,4,5].includes((n-ch.root+12)%12))??null; // у пауер-акорді терції нема: лишаємо звичайну ноту (раніше виходило NaN)
   if(ch.fluteFifth&&s%16===8)pc=(ch.root+7)%12;
-  if(ch.flutePassing&&s%16===12)pc=(ch.root+2)%12;
-  if(ch.violinThird&&s%16===4)pc=ch.pcs.find(n=>[3,4].includes((n-ch.root+12)%12));
-  if(ch.violinSixth&&s%16===8)pc=(ch.root+9)%12;
+  if(ch.flutePassing&&s%16===12)pc=(ch.root+nineIv(ch))%12;
+  if(ch.violinThird&&s%16===4)pc=ch.pcs.find(n=>[3,4].includes((n-ch.root+12)%12))??null;
+  if(ch.violinSixth&&s%16===8)pc=(ch.root+sixIv(ch))%12;
   if(ch.violinFifth&&s%16===12)pc=(ch.root+7)%12;
   if(ch.violinPicardy&&s%16===12)pc=(ch.root+4)%12;
-  if(ch.saxSixth&&s%16===0)pc=(ch.root+9)%12;
+  if(ch.saxSixth&&s%16===0)pc=(ch.root+sixIv(ch))%12;
   if(ch.seventh!==undefined&&s%16===4)pc=ch.seventh;
-  if(ch.add9&&s%16===8)pc=(ch.root+2)%12;
-  if(ch.saxBlue&&s%16===12)pc=(ch.root+6)%12;
+  if(ch.add9&&s%16===8)pc=(ch.root+nineIv(ch))%12;
+  if(ch.saxBlue&&s%16===12)pc=(ch.root+blueIv(ch))%12;
   if(ch.bassTonicPedal)pc=SONG.key;
   else if(ch.bassSeventh&&s%16===12)pc=ch.seventh;
   else if(ch.bassFifth&&s%8===4)pc=(ch.root+7)%12;
@@ -1976,13 +2074,13 @@ function voiced(ch,layers,step=0,bar=0){
   const owned=Object.keys(layers).filter(k=>k.startsWith('$v_')&&layers[k]);if(!owned.length)return ch;
   const root=ch.root,pcs=[...ch.pcs],add=pc=>{pc=(pc+12)%12;if(!pcs.includes(pc))pcs.push(pc);};
   if(layers.$v_sus&&step<12&&ch.q!=='5'){const third=pcs.find(pc=>[3,4].includes((pc-root+12)%12));if(third!==undefined)pcs.splice(pcs.indexOf(third),1);add(root+5);}
-  const seventh=(root+(ch.q.startsWith('m')?10:ch.q==='maj'||ch.q==='maj7'?11:10))%12;
+  const seventh=(root+sevIv(ch))%12;
   if(layers.$v_sev)add(seventh);
-  if(layers.$v_add9)add(root+2);
-  if(layers.$v_passing)add(root+2);
-  if(layers.$v_blue)add(root+6);
-  if(layers.$v_sixth)add(root+9);
-  if(layers.$v_cluster)add(root+1);
+  if(layers.$v_add9)add(root+nineIv(ch));
+  if(layers.$v_passing)add(root+nineIv(ch));
+  if(layers.$v_blue)add(root+blueIv(ch));
+  if(layers.$v_sixth)add(root+sixIv(ch));
+  if(layers.$v_cluster)add(root+clusterIv(ch));
   if(layers.$v_power){pcs.splice(0,pcs.length,root,(root+7)%12);}
   if(layers.$v_picardy&&bar%4===3&&step>=12){const minor=(root+3)%12;if(pcs.includes(minor)){pcs.splice(pcs.indexOf(minor),1);add(root+4);}}
   const out={...ch,pcs};
@@ -2003,7 +2101,7 @@ function voiced(ch,layers,step=0,bar=0){
   if(charKey==='guitar'){
     let vo=ch.vo.slice();if(layers.$v_power)vo=vo.filter(n=>[root,(root+7)%12].includes(n.midi%12));
     if(layers.$v_sev&&vo.length)vo[vo.length-1]={...vo[vo.length-1],midi:up(seventh,vo[vo.length-1].midi)};
-    if(layers.$v_add9&&vo.length>1)vo[vo.length-2]={...vo[vo.length-2],midi:up((root+2)%12,vo[vo.length-2].midi)};
+    if(layers.$v_add9&&vo.length>1)vo[vo.length-2]={...vo[vo.length-2],midi:up((root+nineIv(ch))%12,vo[vo.length-2].midi)};
     if(layers.$v_sus&&step<12)vo=vo.map(n=>[3,4].includes((n.midi-root+120)%12)?{...n,midi:n.midi+([3,4].includes((n.midi-root+120)%12)?5-((n.midi-root+120)%12):0)}:n);
     if(layers.$v_barre)vo=vo.map(n=>({...n,midi:n.midi+12}));out.vo=vo;
   }
@@ -2060,6 +2158,8 @@ for(const Ly of LAYERS.bass){if(['root','walk'].includes(Ly.id))continue;const o
   const t=tones(ch,ch.close?64:60,5),i=(s/2)%8,k=v==='up'?i%5:v==='alberti'?[0,4,2,4][i%4]:[0,1,2,3,4,3,2,1][i];return[E(t[k],.36,1.5)];};}
 // позначаємо ноти-акорди клавіш (для демпфера рояля): стартова партія, акорди, стаккато, сустейн — і жанрові версії акордів
 for(const id of ['pulse','chords','stab','pad']){const Ly=LAYERS.piano.find(l=>l.id===id),original=Ly.steps;Ly.steps=(ch,s,bar,L)=>original(ch,s,bar,L).map(e=>e.midi===undefined||e.chord?e:{...e,chord:true});}
+// УЗГОДЖЕННЯ З ФОНОМ: остання обгортка кожної мелодійної партії — міняє лише висоти (див. fitEvents)
+for(const inst of Object.keys(LAYERS)){if(inst==='drums')continue;for(const Ly of LAYERS[inst]){const raw=Ly.steps;Ly.steps=(ch,s,bar,L)=>fitEvents(raw(ch,s,bar,L),ch,bar,s,inst);}}
 const starterOf=inst=>LAYERS[inst]&&LAYERS[inst][0].starter?LAYERS[inst][0]:null;
 const mainLayerId=inst=>{const st=starterOf(inst);return st?st.art:LAYERS[inst][0].id;}; // сила горіння/вибухів — від головної партії, не від стартової
 // партії, що займають місце серед HOLD: стартова — лише доки її не замінила картка

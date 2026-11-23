@@ -122,9 +122,9 @@ function setupScenario(L, sc, barsOpt) {
   const keySet = new Set((song.mode === 'minor' ? MIN : MAJ).map(x => (song.key + x) % 12));
   if (sc.genre === 'blues') BLUES.forEach(x => keySet.add((song.key + x) % 12));
   const inKey = new Uint8Array(12); keySet.forEach(x => { inKey[x] = 1; });
-  const fqCache = {}, ctCache = new Map(), maskCache = new Map();
+  const fqCache = {}, ctCache = new Map(), maskCache = new Map(), dark = sc.genre === 'metal' || sc.genre === 'industrial';
   const S = {
-    sc, song, bars, sd, keySet, inKey, mode: song.mode, g, a, pch: [], fch: [], div: new Uint8Array(bars), isV: new Uint8Array(bars), dom: new Uint8Array(bars),
+    sc, song, bars, sd, dark, keySet, inKey, mode: song.mode, g, a, pch: [], fch: [], div: new Uint8Array(bars), isV: new Uint8Array(bars), dom: new Uint8Array(bars),
     ctO: [], ctF: [], avO: [], avF: [],
     fullQ: off => fqCache[off] || (fqCache[off] = g.mkChord(song, off).q),
     ct(c) { // тони акорда: власні pcs (рівень гравця) ∪ повний акорд жанру
@@ -135,6 +135,7 @@ function setupScenario(L, sc, barsOpt) {
     avoid(c, pc) { // → назва avoid-інтервалу чи null
       if (this.ct(c).has(pc)) return null;
       const r = (pc - c.root + 12) % 12, A = AVOID[this.fullQ(c.off)];
+      if (dark && this.fullQ(c.off) === '5' && (r === 1 || r === 6)) return null; // метал/індастріал: b2 (фрігійська) і тритон над пауер-акордом — жанровий колір (docs/harmony-rules.md)
       return A && A.includes(r) ? REL[r] + ' над ' + this.fullQ(c.off) : null;
     },
     masks(c) { // [тони, avoid] як Uint8Array(12) — O(1) на ноту
@@ -229,6 +230,15 @@ function vertical(S, xs, yIdx, belowChk, emit) {
   return dsum;
 }
 
+/* Хроматичний підхід: нота баса на кроках 12–15, що лежить на півтон нижче/вище кореня наступного такту (акорда гравця АБО повного акорда фону).
+   docs/harmony-rules.md не вважає її помилкою: вона розв'язується в корінь. 1 — підхід (не рахуємо avoid/out_of_key), 2 — ще й слабка 16-та (непарний крок, ≤ 1,5 кроку): не рахуємо тертя з фоном. */
+function approachKind(S, n) {
+  if (n.s < 12 || n.bar + 1 >= S.bars) return 0;
+  const near = r => { const d = (n.pc - r + 12) % 12; return d === 1 || d === 11; };
+  if (!near(S.pch[n.bar + 1].root) && !near(S.fch[n.bar + 1].root)) return 0;
+  return n.s % 2 === 1 && n.end - n.abs <= 1.5 ? 2 : 1;
+}
+
 /* ---------- аналіз проходу одного шару/модифікатора ---------- */
 function analyze(S, part, notes, ctx, o) {
   const { accL, sumAcc } = ctx, sc = S.sc, sid = sc.id, loc = {}, tag = o.tag || '', A = m => loc[m] || (loc[m] = newAcc());
@@ -239,18 +249,22 @@ function analyze(S, part, notes, ctx, o) {
   for (const n of notes) {
     const bar = n.bar, pc = n.pc, dv = S.div[bar], w = n.w;
     dsum += w; if (dv) ddiv += w;
+    n.appr = o.isBass ? approachKind(S, n) : 0; // хроматичний підхід баса до кореня наступного такту — жанровий прийом, не «avoid»
+    if (n.appr) continue; // у «зваженому часі» (d) нота лишається, але як брудна тут не рахується
     if (S.avF[bar][pc]) { const x = hit('avoid_full', n, w, dv); if (want(x, w, sid, bar, n.s, n.midi)) addEx(x, { w, sid, bar, s: n.s, k: n.midi, mk: () => { const af = S.avoid(S.fch[bar], pc); return info(n, noteName(n.midi) + ' (' + af + ') проти ' + S.fch[bar].name + ', гравець грає ' + S.pch[bar].name); } }); }
     if (S.avO[bar][pc]) { const x = hit('avoid_own', n, w, dv); if (want(x, w, sid, bar, n.s, n.midi)) addEx(x, { w, sid, bar, s: n.s, k: n.midi, mk: () => info(n, noteName(n.midi) + ' (' + S.avoid(S.pch[bar], pc) + ') проти ' + S.pch[bar].name) }); }
-    if (!S.inKey[pc]) {
+    if (!S.inKey[pc]) { // метал/індастріал: b2 і тритон над коренем пауер-акорда — жанровий колір, не «поза ладом»
       if (minor && pc === lt) {
         if (S.isV[bar]) { const x = hit('leadtone_V', n, w, dv); if (want(x, w, sid, bar, n.s, n.midi)) addEx(x, { w, sid, bar, s: n.s, k: n.midi, mk: () => info(n, noteName(n.midi) + ' ввідний тон над V ' + S.pch[bar].name) }); }
         else { const x = hit('out_of_key', n, w, dv); if (want(x, w, sid, bar, n.s, n.midi)) addEx(x, { w, sid, bar, s: n.s, k: n.midi, mk: () => info(n, noteName(n.midi) + ' (ввідний тон поза V) над ' + S.pch[bar].name) }); }
-      } else if (!S.ctO[bar][pc] && !S.ctF[bar][pc]) { const x = hit('out_of_key', n, w, dv); if (want(x, w, sid, bar, n.s, n.midi)) addEx(x, { w, sid, bar, s: n.s, k: n.midi, mk: () => info(n, noteName(n.midi) + ' поза ладом ' + NN[S.song.key] + ' ' + S.mode + ' над ' + S.pch[bar].name) }); }
+      } else if (!S.ctO[bar][pc] && !S.ctF[bar][pc] && !(S.dark && S.fullQ(S.pch[bar].off) === '5' && [1, 6].includes((pc - S.pch[bar].root + 12) % 12))) { const x = hit('out_of_key', n, w, dv); if (want(x, w, sid, bar, n.s, n.midi)) addEx(x, { w, sid, bar, s: n.s, k: n.midi, mk: () => info(n, noteName(n.midi) + ' поза ладом ' + NN[S.song.key] + ' ' + S.mode + ' над ' + S.pch[bar].name) }); }
     }
   }
   for (const m of ['avoid_full', 'avoid_own', 'out_of_key', 'leadtone_V']) { const x = A(m); x.d += dsum; x.dd += ddiv; }
   const belowChk = !o.isBass, KM = { clash: 'clash_backing', tritone: 'tritone', mud: 'mud', sub: 'mud_sub', below: 'below_bass' }, KT = { clash: '', tritone: '', mud: 'бруд ', sub: 'суб-бруд ', below: 'нижче баса ' };
   const vd = vertical(S, notes, S.backIdx, belowChk, (kind, x, y, k) => {
+    if (S.dark && (kind === 'clash' || kind === 'tritone') && S.fullQ(S.pch[x.bar].off) === '5' && [1, 6].includes((x.pc - S.pch[x.bar].root + 12) % 12)) return; // метал/індастріал: b2 і тритон від кореня пауер-акорда — жанровий колір (docs/harmony-rules.md)
+    if (x.appr === 2 && (kind === 'clash' || kind === 'tritone')) return; // підхід на слабкій 16-й частці (≤ 1,5 кроку): тертя з фоном не рахуємо
     const m = KM[kind], dv = S.div[x.bar], c = hit(m, x, x.w, dv), kk = x.midi * 128 + y.midi;
     if (want(c, x.w, sid, x.bar, x.s, kk)) addEx(c, { w: x.w, sid, bar: x.bar, s: x.s, k: kk, mk: () => info(x, (k ? k + ' ' : KT[kind]) + noteName(x.midi) + '+' + noteName(y.midi) + ' (' + y.src.replace('backing:', 'фон ') + ') над ' + S.fch[Math.min(S.bars - 1, Math.floor(Math.max(x.abs, y.abs) / 16))].name + ', гравець ' + S.pch[x.bar].name) });
   });
