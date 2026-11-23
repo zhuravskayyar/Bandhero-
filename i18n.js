@@ -1905,3 +1905,11 @@ for(const [uk,en,de,ru] of [
   ['Підтримка','Support','Unterstützung','Поддержка'],
   ['ще {0} у фразі','{0} more in the phrase','noch {0} in der Phrase','ещё {0} в фразе'],
 ]){window.I18N_DICT.en[uk]=en;window.I18N_DICT.de[uk]=de;window.I18N_DICT.ru[uk]=ru;}
+// Пауза в кооперативі: хто поставив; підтвердження повернення в лобі; зайнята кімната; перезавантаження гостя.
+for(const [uk,en,de,ru] of [
+  ['{0} поставив гурт на паузу','{0} paused the band','{0} hat die Band pausiert','{0} поставил группу на паузу'],
+  ['Ти поставив гурт на паузу','You paused the band','Du hast die Band pausiert','Ты поставил группу на паузу'],
+  ['Точно? Натисни ще раз','Sure? Press again','Sicher? Nochmal drücken','Точно? Нажми ещё раз'],
+  ['Забіг уже триває в цій кімнаті. Приєднаєшся, коли гурт повернеться в лобі, або створи власну кімнату.','A run is already in progress in this room. You can join when the band is back in the lobby, or create your own room.','In diesem Raum läuft bereits ein Durchlauf. Du kannst beitreten, sobald die Band wieder in der Lobby ist, oder einen eigenen Raum erstellen.','Забег в этой комнате уже идёт. Присоединишься, когда группа вернётся в лобби, или создай свою комнату.'],
+  ['Створити свою кімнату','Create your own room','Eigenen Raum erstellen','Создать свою комнату'],
+]){window.I18N_DICT.en[uk]=en;window.I18N_DICT.de[uk]=de;window.I18N_DICT.ru[uk]=ru;}

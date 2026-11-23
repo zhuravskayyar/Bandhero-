@@ -73,6 +73,7 @@ function session(origin, audio = false, audioFixture = {}) {
     console: { log() {}, warn() {}, error: (...s) => errors.push(s.join(' ')) },
     document: { querySelector: get, createElement: () => new Element(), hidden: false, addEventListener() {} },
     innerWidth: 390, innerHeight: 844, devicePixelRatio: 1, performance, URL, URLSearchParams, Blob, atob,
+    ...(audioFixture.sessionStorage ? { sessionStorage: audioFixture.sessionStorage } : {}),
     WebSocket, location: new URL(origin), setTimeout: later, clearTimeout, setInterval: interval,
     Image: class { constructor() { this.complete = true; this.naturalWidth = 1254; this.naturalHeight = 1254; } },
     // SoundFont-банк (.sf2) не тягнемо з мережі: тест не має залежати від того, чи запущено сервер на 8080.
@@ -664,7 +665,7 @@ test('a guest who was away while the band returned to the lobby comes back to th
   const [a, b] = await bandOfTwo(t, srv.origin);
   b.game.net.ws.close();
   await until(() => srv.output.includes('втратив зв’язок'), 'seat held');
-  await a.click('#quit');
+  await a.click('#quit'); await a.click('#quit');
   await until(() => !b.game.net.reconnecting && b.game.net.ws && b.game.net.ws.readyState === 1, 'guest reconnects', 8000);
   await until(() => b.game.net.phase === 'lobby' && !b.game.running && !b.elements.get('#lobby').classList.contains('hide'), 'guest sees the lobby');
   await until(() => a.game.net.roster.length === 2, 'guest is in the host lobby again');
@@ -672,6 +673,79 @@ test('a guest who was away while the band returned to the lobby comes back to th
   await b.click('#ready'); await a.click('#ready');
   await until(() => !a.elements.get('#start-band').disabled, 'host can start a new run');
   assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+const memoryStorage = () => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }; };
+
+test('co-op pause: the player who paused can resume, others cannot, the host always can, and the overlay names who paused', async t => {
+  const srv = await startServer(t);
+  const [a, b] = await bandOfTwo(t, srv.origin);
+  const bid = b.game.net.id;
+  b.game.setPause(true); await until(() => a.game.paused && b.game.paused, 'guest pause reaches everyone');
+  assert.equal(a.game.net.pausedBy, bid); assert.equal(b.game.net.pausedBy, bid);
+  assert.match(a.elements.get('#pause-title').textContent, new RegExp(bid + ' · .* поставив гурт на паузу'), 'host sees who paused');
+  await until(() => b.elements.get('#pause-title').textContent === 'Ти поставив гурт на паузу', 'guest sees that it paused');
+  assert.ok(!b.elements.get('#resume').classList.contains('hide'), 'the pauser gets the resume button');
+  assert.ok(!a.elements.get('#resume').classList.contains('hide'), 'the host always has the resume button');
+  b.key('keydown', 'KeyP'); await until(() => !a.game.paused && !b.game.paused, 'guest unpauses with P');
+  assert.equal(a.game.net.pausedBy, null);
+  // хост поставив паузу — гість зняти її не може
+  a.game.setPause(true); await until(() => b.game.paused, 'host pause reaches the guest');
+  assert.ok(b.elements.get('#resume').classList.contains('hide'), 'a guest cannot resume the host pause');
+  b.game.setPause(false); await delay(150); assert.ok(a.game.paused && b.game.paused, 'guest request is ignored');
+  b.game.net.ws.send(JSON.stringify({ t: 'toHost', d: { k: 'resume', match: b.game.net.match } })); await delay(150);
+  assert.ok(a.game.paused, 'forged resume is ignored by the host');
+  a.game.setPause(false); await until(() => !a.game.paused && !b.game.paused, 'host resumes');
+  // гість поставив паузу — хост знімає її в будь-який момент
+  b.game.setPause(true); await until(() => a.game.paused, 'guest pause again');
+  a.game.setPause(false); await until(() => !a.game.paused && !b.game.paused, 'host overrides the guest pause');
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+test('the host asks twice before returning the band to the lobby', async t => {
+  const srv = await startServer(t);
+  const [a, b] = await bandOfTwo(t, srv.origin);
+  a.game.setPause(true); await until(() => b.game.paused, 'paused');
+  await a.click('#quit');
+  assert.equal(a.elements.get('#quit').textContent, 'Точно? Натисни ще раз'); assert.ok(a.game.running && b.game.running, 'one click does nothing yet');
+  await a.click('#quit'); await until(() => !a.game.running && b.game.net.phase === 'lobby', 'second click returns everyone to the lobby');
+});
+
+test('a guest who reloads the page mid-run reclaims the same seat from sessionStorage and gets the world back', async t => {
+  const srv = await startServer(t);
+  const a = session(srv.origin, true); t.after(() => a.close());
+  await a.click('#multiplayer'); await until(() => a.game.net.id, 'host welcome');
+  const store = memoryStorage(), invite = roomUrl(srv.origin, a);
+  let b = session(invite, true, { sessionStorage: store }); t.after(() => b.close());
+  await b.click('#multiplayer'); await until(() => b.game.net.id, 'guest welcome');
+  await a.pick('guitar'); await b.pick('drums'); await until(() => a.game.net.roster.every(p => p.char), 'picks');
+  await a.click('#ready'); await b.click('#ready'); await until(() => a.game.net.roster.every(p => p.ready), 'ready');
+  await a.click('#start-band'); await until(() => a.game.running && b.game.running, 'both playing');
+  const id = b.game.net.id, token = b.game.net.token;
+  await until(() => store.getItem('bandhero.band'), 'resume token stored');
+  assert.deepEqual(JSON.parse(store.getItem('bandhero.band')), { room: a.game.net.room, token });
+  b.close(); // вкладку перезавантажено: пам’ять гри втрачена, sessionStorage лишився
+  await until(() => srv.output.includes('втратив зв’язок'), 'server keeps the seat');
+  const b2 = session(invite, true, { sessionStorage: store }); t.after(() => b2.close()); // ?band=1&room=… з’єднується сама
+  await until(() => b2.game.net.id === id, 'same player id after reload');
+  await until(() => b2.game.running && b2.game.G && b2.game.G.players.length === 2, 'reloaded guest gets the run back');
+  assert.equal(b2.game.net.token, token); assert.equal(a.game.G.players.length, 2, 'host kept the musician');
+  const bx = a.game.G.players[1].p.x; b2.key('keydown', 'KeyD'); await delay(500); b2.key('keyup', 'KeyD');
+  await until(() => a.game.G.players[1].p.x > bx + 30, 'reloaded guest controls its actor again');
+  assert.deepEqual(a.errors, []); assert.deepEqual(b2.errors, []);
+  // вихід гравця стирає токен
+  await b2.click('#quit'); await until(() => !b2.game.net.active, 'guest left'); assert.equal(store.getItem('bandhero.band'), null, 'token cleared on leave');
+});
+
+test('a late joiner is told the run is in progress and is offered their own room', async t => {
+  const srv = await startServer(t);
+  const [a] = await bandOfTwo(t, srv.origin);
+  const late = session(roomUrl(srv.origin, a)); t.after(() => late.close());
+  await late.click('#multiplayer'); await until(() => !late.game.net.active, 'late join rejected');
+  assert.match(late.elements.get('#menu-notice').textContent, /Забіг уже триває.*лобі.*власну кімнату/);
+  assert.ok(!late.elements.get('#own-room').classList.contains('hide'), 'own-room button is shown');
+  await late.click('#own-room'); await until(() => late.game.net.room && late.game.net.id, 'own room created');
+  assert.notEqual(late.game.net.room, a.game.net.room);
 });
 
 test('a host whose connection drops mid-run comes back: the run pauses and continues, nobody is sent to the lobby', async t => {
