@@ -527,8 +527,10 @@ function songLabel(){
   const g=GENRES[SONG.genre],sy=synergy(songOffs(),SONG.genre),ry=rhythmSyn(SONG.dfig),bonus=sy.bonus*ry.bonus; // ритм-фраза барабанщика теж у підсумку
   const n=Math.min(SONG.prog.length,SONG.have||SONG.prog.length),tail=' · '+SONG.bpm+' BPM'+(sy.crown?' · ♛ '+sy.crownName:'')+(ry.crown?' · ♛ '+T(ry.crownName):'')+(bonus>1?' · +'+Math.round((bonus-1)*100)+'% '+T('шкоди'):'');
   // барабанщик не грає ні акордів, ні тональності — йому показуємо його ритм-фразу
-  if(charKey==='drums')return g.name+' · '+songPartLabel()+' · '+T('ритм')+': '+(SONG.dfig||[null,null,null,null]).map(f=>f&&DRUM_FIGS[f]?T(DRUM_FIGS[f].name):'?').join(' – ')+tail;
-  return g.name+' · '+songPartLabel()+' · '+SONG.prog.map((c,i)=>i<n?c.name:'?').join(' – ')+' · '+NN[SONG.key]+' '+(SONG.mode==='minor'?T('мінор'):T('мажор'))+' · '+SONG.bpm+' BPM'
+  // порожні слоти не малюємо «?» — лише скільки ще лишилось у фразі
+  const slotTxt=(names,left)=>[names.join(' – '),left>0?TF('ще {0} у фразі',left):''].filter(Boolean).join(' · ');
+  if(charKey==='drums'){const df=SONG.dfig||[null,null,null,null],dn=df.filter(f=>f&&DRUM_FIGS[f]);return g.name+' · '+songPartLabel()+' · '+T('ритм')+': '+slotTxt(dn.map(f=>T(DRUM_FIGS[f].name)),df.length-dn.length)+tail;}
+  return g.name+' · '+songPartLabel()+' · '+slotTxt(SONG.prog.slice(0,n).map(c=>c.name),SONG.prog.length-n)+' · '+NN[SONG.key]+' '+(SONG.mode==='minor'?T('мінор'):T('мажор'))+' · '+SONG.bpm+' BPM'
     +(sy.crown?' · ♛ '+sy.crownName:'')+(ry.crown?' · ♛ '+T(ry.crownName):'')+(bonus>1?' · +'+Math.round((bonus-1)*100)+'% '+T('шкоди'):'');
 }
 const stepDur=()=>60/SONG.bpm/4;
@@ -2692,7 +2694,7 @@ const ICON=(()=>{
 function optionIcon(o){return o.hp?ICON.heal():o.xpb||o.note?ICON.chord(false):o.rhythm?ICON.rhythm(o.fig,DRUM_FIGS[o.fig].icon,DRUM_FIGS[o.fig].home):o.voicing?ICON.voicing(o.voicing):o.pd?ICON.gear(o.pd):o.l?ICON.part(charKey,o.l.id):'';}
 function renderChoices(opts,submit){
   $('#lvlT').textContent=TF('Рівень {0}',G.level);
-  $('#gear-hint').textContent=TF('{0} · до 5 партій, 5 звукових, 5 бойових і 5 акордових скілів',CHARS[charKey].name);
+  $('#gear-hint').textContent=TF('{0} · тримаєш до 5 скілів кожного типу',CHARS[charKey].name);
   $('#opts').innerHTML='';
   const col=CHARS[charKey].col;
   for(const o of opts){
@@ -2707,7 +2709,7 @@ function renderChoices(opts,submit){
       b.innerHTML=`<b>${o.add?'＋':''}🥁 ${TF('Ритм: {0}',F.name)}</b><small>${F.desc} ${o.add?TF('Такт {0} з 4 у фразі.',o.slot+1):TF('У такт {0} замість «{1}».',o.slot+1,DRUM_FIGS[was].name)}</small>${synText(o)}<span class="st">${o.add?TF('ритм-фраза: {0} → {1} з 4',n,n+1):T('ритм-фраза')}</span>`;}
     else if(o.voicing){const v=VOICINGS[charKey][o.voicing];b.innerHTML=`<b>＋ ${T(v.name)}</b><small>${T(v.desc)}</small><span class="st">${T('Акорд')} · ${Object.keys(VOICINGS[charKey]).filter(id=>G.layers['$v_'+id]).length+1} / ${MAXVOICING}</span>`;}
     else if(o.pd){const cur=G.pedals[o.pd.id]||0;
-      b.innerHTML=`<b>${o.pd.ic} ${o.isNew?'＋':'▲'} ${o.pd.name}</b><small>${o.pd.lv[cur]}.</small><span class="st">${T(o.pd.cat==='sound'?'Звук':'Шкода')} · ${o.isNew?T('нове'):TF('рівень {0} → {1}',cur,cur+1)}</span>`;}
+      b.innerHTML=`<b>${o.pd.ic} ${o.isNew?'＋':'▲'} ${o.pd.name}</b><small>${o.pd.lv[cur]}.</small><span class="st">${T(o.pd.cat==='sound'?'Звук':o.pd.type==='помічник'?'Підтримка':'Шкода')} · ${o.isNew?T('нове'):TF('рівень {0} → {1}',cur,cur+1)}</span>`;}
     else if(o.variant){const V=VARIANTS[o.l.id],B=V.cards[o.variant];
       b.innerHTML=`<b>${o.isNew?'＋':'⇄'} ${T(V.title)}: ${T(B.name)}</b><small>${T(B.desc)}.</small><span class="st">${o.isNew?TF('нова партія · {0} з {1}',heldParts(charKey,{...G.layers,[o.l.id]:1}).length,HOLD):T(V.change)}</span>`;}
     else if(o.isNew)b.innerHTML=`<b>＋ ${o.l.name}</b><small>${o.l.desc} ${o.l.lv[0]}.</small><span class="st">${T('Партія')} · ${TF('нова партія · {0} з {1}',heldParts(charKey,{...G.layers,[o.l.id]:1}).length,HOLD)}</span>`;
@@ -3329,7 +3331,7 @@ function hud(){
   if(!G)return;
   $('#player-name').textContent=CHARS[charKey].name;
   $('#player-portrait').className='hud-portrait portrait-'+charKey;
-  $('#hp-value').textContent=Math.ceil(G.p.hp)+'/'+G.p.max;
+  const hpMaxShown=Math.ceil(G.p.max);$('#hp-value').textContent=Math.min(Math.ceil(G.p.hp),hpMaxShown)+'/'+hpMaxShown;
   $('#hud').classList.toggle('danger',G.p.hp/G.p.max<.25);
   $('#xp-label').textContent=Math.floor(G.xp)+' / '+need(G.level);
   $('#hp').style.width=(G.p.hp/G.p.max*100)+'%';

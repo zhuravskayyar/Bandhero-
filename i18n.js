@@ -1529,7 +1529,7 @@ window.I18N_DICT={
 };
 // Нові картки жаби. Один рядок містить український ключ і три переклади.
 for(const [uk,en,de,ru] of [
-  ['до 5 партій, 5 звукових, 5 бойових і 5 акордових скілів','up to 5 parts, 5 sound, 5 damage and 5 chord skills','bis zu 5 Parts, 5 Klang-, 5 Schadens- und 5 Akkordskills','до 5 партий, 5 звуковых, 5 боевых и 5 аккордовых навыков'],
+  ['{0} · тримаєш до 5 скілів кожного типу','{0} · up to 5 skills of each type','{0} · bis zu 5 Skills je Typ','{0} · до 5 навыков каждого типа'],
   ['Партія','Part','Part','Партия'],['Звук','Sound','Klang','Звук'],['Шкода','Damage','Schaden','Урон'],['Акорд','Chord','Akkord','Аккорд'],
   ['Септакорд','Seventh chord','Septakkord','Септаккорд'],['Додає сьому ноту до твого акорду.','Adds a seventh to your chord.','Fügt deinem Akkord eine Septime hinzu.','Добавляет септиму к твоему аккорду.'],
   ['Затримання sus4','Sus4 suspension','Sus4-Vorhalt','Задержание sus4'],['Терція переходить у кварту й повертається на останній долі.','The third rises to a fourth and resolves on the last beat.','Die Terz wird zur Quarte und löst sich auf dem letzten Schlag auf.','Терция переходит в кварту и возвращается на последней доле.'],
@@ -1899,4 +1899,9 @@ for(const [uk,en,de,ru] of [
   ['Вимкнути звук','Mute','Ton aus','Выключить звук'],
   ['Увімкнути звук','Unmute','Ton an','Включить звук'],
   ['Гучність','Volume','Lautstärke','Громкость'],
+]){window.I18N_DICT.en[uk]=en;window.I18N_DICT.de[uk]=de;window.I18N_DICT.ru[uk]=ru;}
+// Підпис картки-підтримки (помічники), підпис недороблених слотів пісні.
+for(const [uk,en,de,ru] of [
+  ['Підтримка','Support','Unterstützung','Поддержка'],
+  ['ще {0} у фразі','{0} more in the phrase','noch {0} in der Phrase','ещё {0} в фразе'],
 ]){window.I18N_DICT.en[uk]=en;window.I18N_DICT.de[uk]=de;window.I18N_DICT.ru[uk]=ru;}
