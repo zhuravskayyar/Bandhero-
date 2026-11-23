@@ -92,6 +92,14 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, { 'Content-Type': violin[1].endsWith('.mp3') ? 'audio/mpeg' : 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=604800' }); res.end(data);
     }); return;
   }
+  // семпли сопілки VSCO-2 (CC0): той самий білий список імен
+  const flute = /^\/assets\/flute\/([A-Za-z0-9_]+\.mp3|LICENSE\.txt)$/.exec(url);
+  if (req.method === 'GET' && flute) {
+    fs.readFile(path.join(__dirname, 'assets', 'flute', flute[1]), (err, data) => {
+      if (err) { res.writeHead(404); res.end('Asset not found'); return; }
+      res.writeHead(200, { 'Content-Type': flute[1].endsWith('.mp3') ? 'audio/mpeg' : 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=604800' }); res.end(data);
+    }); return;
+  }
   if (req.method === 'GET' && ASSETS.has(url)) {
     const [file, type] = ASSETS.get(url);
     fs.readFile(path.join(__dirname, file), (err, data) => {

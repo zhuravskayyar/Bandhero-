@@ -107,7 +107,7 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
   <div class="keys" aria-hidden="true"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> рух</span><span><kbd>P</kbd> пауза</span></div>
   <p class="controls-note">Тягни пальцем або рухайся WASD / стрілками. Чудик атакує сам, у ритм музики. Кожен забіг — нова пісня.</p>
   <div class="menu-foot"><button class="btn s" id="multiplayer">♫ Грати з друзями онлайн</button><div id="lang-switch" class="chips" aria-label="Language"></div></div>
-  <details class="credits"><summary>Про звук і шрифти</summary><p>Семпли: FluidR3 GM (Frank Wen), CC BY 3.0, gleitz/midi-js-soundfonts. Ударні: Pearl Master Studio (enoe, CC BY 3.0, oramics/sampled), teropa/drumkit (DWDS CC BY, тарілки й томи CC0). Шрифти Rubik, Russo One і Pixelify Sans (логотип): SIL Open Font License. Ефекти: BDragon1727, Effect and FX Pixel (безкоштовна версія). Семпли кешуються; без мережі працює синтез.</p></details>
+  <details class="credits"><summary>Про звук і шрифти</summary><p>Семпли: FluidR3 GM (Frank Wen), CC BY 3.0, gleitz/midi-js-soundfonts. Ударні: Pearl Master Studio (enoe, CC BY 3.0, oramics/sampled), teropa/drumkit (DWDS CC BY, тарілки й томи CC0). Скрипка й сопілка: VSCO-2 CE (Sam Gossner, Simon Dalzell), CC0. Шрифти Rubik, Russo One і Pixelify Sans (логотип): SIL Open Font License. Ефекти: BDragon1727, Effect and FX Pixel (безкоштовна версія). Семпли кешуються; без мережі працює синтез.</p></details>
 </div>
 
 <div id="lobby" class="ov hide">
@@ -488,7 +488,8 @@ function makeSong(prev,forced,fix){ // fix={seed,key} — лише для тес
   song.groove=(genreExpansion.grooves[genre]||({lofi:[3,10],pop:[6,14],rock:[6,14],newwave:[2,10],metal:[2,10],industrial:[6,14],jazz:[4,12],chanson:[4,12],chanson_ua:[6,14],reggae:[6,13]})[genre]).slice();
   song.riff=makeRiff(genre);
   song.dfig=[null,null,null,null]; // ритм-фраза барабанщика: фігури збираються ритм-картками
-  if(genre==='chanson'||genre==='chanson_ua')song.boi=1+Math.floor(Math.random()*3); // четвірка, шістка або вісімка на всю пісню
+  if(genre==='chanson'||genre==='chanson_ua')song.boi=1+Math.floor(Math.random()*(genre==='chanson'?4:3)); // четвірка, шістка або вісімка на всю пісню; російський шансон має ще й 4-й — «шансонний бій»
+  if(genre==='chanson'&&song.boi===4)song.bpm=Math.round(rnd(100,105)); // густий шістнадцятий бій потребує ~103 BPM; темп лежить у song, тож у коопі його розсилає хост разом із піснею
   genreExpansion.decorateSong(song);
   deriveHook(song,hrng); // A′, B, A″ — з остаточної фрази A (блюз і фолк-рок мають власну)
   return song;
@@ -882,6 +883,37 @@ function violinSample(ev,dry){
   const s=cand[n%cand.length];
   return{buf:s.buf,rate:Math.pow(2,(m-s.midi)/12),trim:s.trim,vs:kind,file:s.file};
 }
+/* --- Сопілка: справжні семпли VSCO-2 CE (CC0, assets/flute/) — флейта «sustain з вібрато», 10 нот (MIDI 60…96, крок 3–5 півтонів).
+   Як у скрипки: найближчий семпл (≤4 півтони, далі playbackRate), нота обрізається за ev.seconds. Один шар гучності, без round robin.
+   НАЗВИ → MIDI: susvib_C3 = 60 (звучить C4), тобто MIDI = ґрадус + 12·(октава+2); перевірено спектром кожного файла.
+   Файли не завантажились — лишається старий шлях: SoundFont A320U/FluidR3. --- */
+const FLUTE_DIR='assets/flute/',FLUTE_FILES='C3 E3 A3 C4 E4 A4 C5 E5 A5 C6';
+const FLU={set:[],ready:false,loading:null};
+function loadFluteSamples(){
+  if(FLU.ready)return Promise.resolve(true);
+  if(!ctx)return Promise.resolve(false);
+  return FLU.loading||(FLU.loading=(async()=>{
+    const one=async n=>{try{
+      const r=await fetch(FLUTE_DIR+'susvib_'+n+'.mp3');if(!r||!r.ok)return false;
+      const buf=await ctx.decodeAudioData(await r.arrayBuffer());if(!buf)return false;
+      FLU.set.push({file:'susvib_'+n,midi:VSCO_PC[n[0]]+12*(Number(n[1])+2),buf,trim:ExpansionAudio.levelTrim(buf)}); // той самий вирівнювач, що й для старого семпла
+      return true;}catch(e){return false;}};
+    const list=FLUTE_FILES.split(' ');
+    if(!await one(list[0])){FLU.loading=null;return false;} // проба першого файла: немає — одразу старий звук
+    await Promise.all(list.slice(1).map(one));
+    FLU.set.sort((a,b)=>a.midi-b.midi);FLU.ready=FLU.set.length>0;if(!FLU.ready)FLU.loading=null;
+    return FLU.ready;
+  })().catch(()=>{FLU.loading=null;return false;}));
+}
+const loadFluteFor=(inst)=>inst==='flute'?Promise.race([loadFluteSamples(),new Promise(r=>setTimeout(()=>r(false),12000))]):Promise.resolve(false);
+function fluteSample(ev){
+  if(!FLU.ready||ev.midi===undefined)return null;
+  // нижче семплів — октавою вище; угорі до 104 (педаль «октава» над високими нотами) верхній C6 підтягується вгору, щоб октава не ставала унісоном
+  let m=ev.midi;while(m<60)m+=12;while(m>104)m-=12;
+  let best=null;for(const s of FLU.set){const d=Math.abs(s.midi-m);if(!best||d<Math.abs(best.midi-m))best=s;}
+  if(!best||Math.abs(best.midi-m)>(m>best.midi&&best===FLU.set[FLU.set.length-1]?8:4))return null;
+  return{buf:best.buf,rate:Math.pow(2,(m-best.midi)/12),trim:best.trim,vs:'flute',file:best.file};
+}
 async function loadArtBanks(inst,my){
   for(const name of Object.values(ART_BANKS[inst]||{})){
     const map=SF[name]||await Promise.race([fetchSF(name),new Promise(r=>setTimeout(()=>r(null),10000))]);
@@ -893,6 +925,7 @@ const srcName=(inst,art)=>{const s=audioSlots[inst]||slot,bank=ART_BANKS[inst]?.
 const bkey=(inst,midi,art)=>srcName(inst,art)+':'+midi;
 function reqBuf(inst,midi,art){
   if(inst==='violin'&&violinSample({midi,art,vel:.5},true))return Promise.resolve(); // справжній семпл скрипки — старий SoundFont/синтез не потрібен
+  if(inst==='flute'&&fluteSample({midi}))return Promise.resolve(); // справжній семпл сопілки — так само
   const key=bkey(inst,midi,art);if(bufCache.has(key))return Promise.resolve();
   return new Promise(res=>{
     if(pend.has(key)){pend.get(key).push(res);return;}pend.set(key,[res]);
@@ -933,16 +966,16 @@ function playBuffered(t,ev){
   const cfg=CFG[slot.inst],s=slot,tt=Math.max(ctx.currentTime+.002,t+(ev.off||0)+(ev.jit?rnd(-.003,.003):0));
   if(ev.art==='dead'){playDeadStrings(tt,ev);return;}
   if(s.inst==='accordion'&&ev.holdSteps>0){playAccordion(tt,ev,reedBuf(ev.midi),s);return;} // власний синтез язичка, без семплів
-  const b=(s.inst==='violin'&&violinSample(ev))||getBuf(s.inst,ev.midi,ev.art);if(!b)return;
+  const b=(s.inst==='violin'&&violinSample(ev))||(s.inst==='flute'&&fluteSample(ev))||getBuf(s.inst,ev.midi,ev.art);if(!b)return;
   const src=ctx.createBufferSource();src.buffer=b.buf;src.playbackRate.value=b.rate;if(ev.detune&&src.detune)src.detune.value=ev.detune; // «плівка» Фонограми
   const env=ctx.createGain(),fade=ctx.createGain();
   const natural=(b.buf.duration||b.buf.length/ctx.sampleRate)/Math.max(.01,b.rate);
   // A320U (SF2): нота звучить свою записану довжину ev.dur кроків і відпускається, як у MIDI-плеєрі, — а не весь семпл
   const gate=(b.sf2||s.inst==='piano')&&!ev.art&&!(ev.seconds&&ExpansionAudio.instruments.includes(s.inst))&&ev.dur>0&&Math.min(ev.dur,s.inst==='piano'?PIANO_MAX_HOLD:1e9)*stepDur()<natural?Math.min(ev.dur,s.inst==='piano'?PIANO_MAX_HOLD:1e9)*stepDur():0; // рояль: довгі акорди обрізаються до PIANO_MAX_HOLD кроків — без гулу
-  const duration=b.vs?Math.min(natural,b.vs==='spic'?Math.max(.1,ev.seconds||.22)+.05:b.vs==='arco'?Math.max(.1,ev.seconds||.4)+.06:1.1):gate?Math.min(natural,gate+cfg.rel):ev.art==='pm'?Math.min(natural,.5):ev.art==='staccato'?Math.min(natural,ev.seconds||.2):ev.art==='pizzicato'?natural:ExpansionAudio.instruments.includes(s.inst)&&ev.seconds?Math.min(natural,ev.seconds):natural,stopT=tt+duration;
+  const duration=b.vs?Math.min(natural,b.vs==='spic'?Math.max(.1,ev.seconds||.22)+.05:b.vs==='arco'?Math.max(.1,ev.seconds||.4)+.06:b.vs==='flute'?(ev.seconds&&ev.seconds<.15?Math.max(.03,ev.seconds)+.015:Math.max(.1,ev.seconds||.4)+.08):1.1):gate?Math.min(natural,gate+cfg.rel):ev.art==='pm'?Math.min(natural,.5):ev.art==='staccato'?Math.min(natural,ev.seconds||.2):ev.art==='pizzicato'?natural:ExpansionAudio.instruments.includes(s.inst)&&ev.seconds?Math.min(natural,ev.seconds):natural,stopT=tt+duration;
   const vel=Math.min(1,ev.vel*cfg.gain*(ev.jit?rnd(.95,1.03):1))*(ExpansionAudio.instruments.includes(s.inst)?b.trim||1:1),nodes=[src,env,fade];
   if(b.vs){ // справжній семпл скрипки: спіккато/піцикато б'ють одразу (без наростання), арко — короткий рух смичка; кінець — швидке затухання
-    src.connect(env);const arco=b.vs==='arco',att=arco?.02:.0015,rel=Math.min(b.vs==='pizz'?.35:.07,duration*.45);
+    src.connect(env);const arco=b.vs==='arco'||b.vs==='flute',att=b.vs==='flute'?.03:arco?.02:.0015,rel=Math.min(b.vs==='pizz'?.35:b.vs==='flute'?.1:.07,duration*.45); // сопілка: легке дихання на вході й м'який кінець
     env.gain.setValueAtTime(0,tt);env.gain.linearRampToValueAtTime(vel,tt+att);
     env.gain.setValueAtTime(vel,Math.max(tt+att,stopT-rel));env.gain.linearRampToValueAtTime(0,stopT);
   }else if(gate){ // note-off на gate, м'який release cfg.rel (до ~2% гучності)
@@ -1422,9 +1455,11 @@ const STRUMS={
     3:{0:'D',1:'M',2:'M',3:'M',4:'M',5:'M',6:'M',7:'M',8:'D',9:'M',10:'M',11:'M',12:'M',13:'M',14:'M',15:'M'}},
   jazz:{1:{0:'C',4:'C',8:'C',12:'C'},2:{0:'C',6:'C',8:'C',14:'C'},3:{0:'C',3:'C',6:'C',10:'C',12:'C',14:'C'}},
   // шансон: «умпа» (бас–акорд) → «шістка» (бас, вниз, вгору, вгору, вниз, вгору) → «вісімка» з басом
-  // шансон: пісня отримує один із трьох боїв (SONG.boi): 1 «четвірка» (вниз, вгору, вниз із глушінням X, вгору),
+  // шансон: пісня отримує один із боїв (SONG.boi; 4-й лише в російського): 1 «четвірка» (вниз, вгору, вниз із глушінням X, вгору),
   // 2 «шістка» (бас, вниз, вгору, вгору, вниз, вгору), 3 «вісімка» (бас, вниз, вгору, вгору, бас, вниз, вгору, вгору)
-  chanson:{1:{0:'D',4:'U',8:'X',12:'U'},2:{0:'B',4:'D',6:'U',10:'U',12:'D',14:'U'},3:{0:'B',2:'D',4:'U',6:'U',8:'B',10:'D',12:'U',14:'U'}},
+  // 4 «шансонний бій» (з гітарного уроку, шістнадцяті ~103 BPM): бас, вниз із глушінням X, вгору, бас, вгору, X, вгору — двічі на такт; бас завжди корінь
+  chanson:{1:{0:'D',4:'U',8:'X',12:'U'},2:{0:'B',4:'D',6:'U',10:'U',12:'D',14:'U'},3:{0:'B',2:'D',4:'U',6:'U',8:'B',10:'D',12:'U',14:'U'},
+    4:{0:'B',2:'X',3:'U',4:'B',5:'U',6:'X',7:'U',8:'B',10:'X',11:'U',12:'B',13:'U',14:'X',15:'U'}},
   // український шансон — ті самі бої з басом на першу долю
   chanson_ua:{1:{0:'B',4:'U',8:'X',12:'U'},2:{0:'B',4:'D',6:'U',8:'B',12:'D',14:'U'},3:{0:'B',2:'D',4:'U',6:'D',8:'B',10:'D',12:'U',14:'D'}},
   // реґі: скенк — короткий приглушений «чоп» на «і» 2-ї та 4-ї долі; далі подвійний чоп
@@ -1478,7 +1513,7 @@ const STRUM_BARS={
   jazz:[{0:'C',6:'C'},{2:'C',8:'C',12:'C'},{0:'C',6:'C',10:'C'},{4:'C',10:'C',14:'C'}], // «чарльстон», зсуви, випередження
   lofi:[{0:'D',7:'U',10:'C'},{0:'D',7:'U',10:'C',14:'K'},{0:'D',7:'U',10:'C'},{0:'D',6:'K',10:'C'}]       // 4-й такт — «вдих» перед новою фразою
 };
-const BOI={1:{name:'четвірка'},2:{name:'шістка'},3:{name:'вісімка'}}; // бої шансону (шкоду густішого бою вирівнює balanceK)
+const BOI={1:{name:'четвірка'},2:{name:'шістка'},3:{name:'вісімка'},4:{name:'шансонний бій'}}; // бої шансону (шкоду густішого бою вирівнює balanceK: hitsPerSec рахує кожен удар за вагою STRUM_ATK)
 const STRUM_ATK={D:[185,11,260],U:[130,6,150],M:[120,4.5,90],C:[160,8,180],K:[150,9,200],B:[170,7,160],X:[140,8,420]};
 const LAYERS={
   guitar:[
@@ -3314,7 +3349,8 @@ async function startRun(){
       DKIT=kit||null; // немає мережі — синтез
     }
     if(inst==='violin'){$('#load').textContent=T('Завантажую скрипку…');await loadViolinFor(inst);if(my!==runId)return;}
-    if(name&&!SF[name]&&!(inst==='violin'&&VSCO.ready)){ // справжній семпл скрипки є — 9,7 МБ SoundFont для неї зайві
+    if(inst==='flute')await loadFluteFor(inst);if(my!==runId)return;
+    if(name&&!SF[name]&&!(inst==='violin'&&VSCO.ready)&&!(inst==='flute'&&FLU.ready)){ // справжній семпл скрипки є — 9,7 МБ SoundFont для неї зайві
       $('#load').textContent=TF('Завантажую семпли: {0}…',GENRES[SONG.genre].name);
       const map=await Promise.race([fetchSF(name),new Promise(r=>setTimeout(()=>r(null),15000))]);
       if(my!==runId)return; // застарілий запуск: нічого не чіпаємо (loading уже скинув toMenu)
@@ -3531,6 +3567,7 @@ async function prepareBandAudio(my){
     const name=GENRES[SONG.genre].sf[inst];
     if(inst==='drums'){const kit=await Promise.race([loadKit(GENRES[SONG.genre].kit||'acoustic'),new Promise(r=>setTimeout(()=>r(null),10000))]);if(my!==runId)return;DKIT=kit;}
     else if(inst==='violin'&&await loadViolinFor(inst)){if(my!==runId)return;} // справжній семпл скрипки — SoundFont не потрібен
+    else if(inst==='flute'&&await loadFluteFor(inst)){if(my!==runId)return;} // справжній семпл сопілки — SoundFont не потрібен
     else if(name){const map=SF[name]||await Promise.race([fetchSF(name),new Promise(r=>setTimeout(()=>r(null),10000))]);if(my!==runId)return;if(map){SF[name]=map;s.sf=name;}}
     if(my!==runId||!G)return;
     await loadArtBanks(inst,my);if(my!==runId)return;

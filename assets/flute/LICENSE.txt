@@ -1,0 +1,8 @@
+Solo flute samples from VSCO-2 Community Edition (Versilian Studios)
+https://github.com/sgossner/VSCO-2-CE — Woodwinds/Flute/susvib (sustain with vibrato), LDFlute_susvib_<note>_v1_1.wav
+License: CC0 1.0 Universal (public domain dedication).
+Recorded by Sam Gossner and Simon Dalzell, sample editing by Elan Hickler / Soundemote.
+
+Converted for the game: leading silence trimmed, mono, 44.1 kHz MP3 96 kbps, gain-matched per note (equal held-note level);
+sustained notes cut to 4 s with a 0.4 s fade-out.
+Naming: susvib_<note>.mp3 (note names follow the source files: susvib_C3 sounds C4 = MIDI 60, i.e. MIDI = pitch class + 12*(octave+2)).

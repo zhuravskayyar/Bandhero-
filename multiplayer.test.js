@@ -78,6 +78,7 @@ function session(origin, audio = false, audioFixture = {}) {
     // SoundFont-банк (.sf2) не тягнемо з мережі: тест не має залежати від того, чи запущено сервер на 8080.
     // audioFixture.sf2 — справжній файл із диска (див. тест «A320U bank renders…»), інакше банку «немає» → запасні семпли.
     fetch: (url, opts) => { const u = new URL(url, origin);
+      if (u.pathname.startsWith('/assets/flute/')) return Promise.resolve(audioFixture.flute ? { ok: true, arrayBuffer: async () => new ArrayBuffer(8) } : { ok: false }); // семпли сопілки: лише коли тест просить
       if (u.pathname.startsWith('/assets/violin/')) return Promise.resolve(audioFixture.violin ? { ok: true, arrayBuffer: async () => new ArrayBuffer(8) } : { ok: false }); // семпли скрипки: лише коли тест просить
       if (u.pathname.endsWith('.sf2')) return Promise.resolve(audioFixture.sf2 ? { ok: true, arrayBuffer: async () => { const b = fs.readFileSync(path.join(__dirname, u.pathname)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.length); } } : { ok: false });
       return u.origin === origin ? fetch(u, opts) : Promise.resolve(audioFixture.soundfontText?{ok:true,text:async()=>audioFixture.soundfontText}:{ok:false}); },
@@ -284,7 +285,9 @@ test('genre arrangements keep a stable rhythm inside each pattern band and a cle
   for(const genre of Object.keys(game.GENRES)){
     const song=game.makeSong(null,genre);game.setSong(song);const original=JSON.stringify(song);
     assert.equal(song.prog.length,4);assert.ok(new Set(song.prog.map(c=>c.off)).size>=3,'four-bar harmony has movement: '+genre);
-    assert.ok(song.bpm>=game.GENRES[genre].bpm[0]&&song.bpm<=game.GENRES[genre].bpm[1]);
+    // 4-й бій російського шансону має власний темп 100–105 BPM поза діапазоном жанру
+    const [lo,hi]=genre==='chanson'&&song.boi===4?[100,105]:game.GENRES[genre].bpm;
+    assert.ok(song.bpm>=lo&&song.bpm<=hi,'tempo in range: '+genre);
     const events=(layer,rank)=>{const out=[];for(let bar=0;bar<8;bar++)for(let step=0;step<16;step++){
       for(const e of layer.steps(game.chordAt(bar),step,bar,rank)){
         assert.ok(!e.slide&&!e.vib,'no automatic pitch scoop: '+genre+'/'+layer.id);
@@ -759,9 +762,14 @@ test('chords are collected note by note; each instrument has a pool of 10 parts 
   // бій шансону: густіша шістка/вісімка б'є частіше, але кожен удар слабший — шкода за такт однакова
   const strum = g.LAYERS.guitar.find(l => l.id === 'strum'), perBar = []; // бій жанру, не стартовий удар униз
   await g.pick('guitar'); g.setPause(true);
-  for (const boi of [1, 2, 3]) { const S = { ...g.SONG, genre: 'chanson', boi }; g.setSong(S);
+  for (const boi of [1, 2, 3, 4]) { const S = { ...g.SONG, genre: 'chanson', boi }; g.setSong(S);
     const hps = g.hitsPerSec('chanson', S.bpm, strum, 1); perBar.push(hps); }
-  assert.ok(perBar[1] > perBar[0] && perBar[2] > perBar[1], 'denser boi = more strokes, so balanceK lowers damage per stroke on its own');
+  assert.ok(perBar[1] > perBar[0] && perBar[2] > perBar[1] && perBar[3] > perBar[2], 'denser boi = more strokes, so balanceK lowers damage per stroke on its own');
+  // 4-й бій («шансонний») лише в російського шансону: ~103 BPM
+  const seen = { 1: 0, 2: 0, 3: 0, 4: 0 }, uaBois = new Set();
+  for (let i = 0; i < 200; i++) { const c = g.makeSong(null, 'chanson'); seen[c.boi]++; if (c.boi === 4) assert.ok(c.bpm >= 100 && c.bpm <= 105, 'chanson boi 4 tempo 100-105, got ' + c.bpm); else assert.ok(c.bpm >= 80 && c.bpm <= 100);
+    uaBois.add(g.makeSong(null, 'chanson_ua').boi); }
+  assert.ok(Object.values(seen).every(n => n > 0), 'all four chanson bois get picked'); assert.deepEqual([...uaBois].sort(), [1, 2, 3], 'ukrainian chanson keeps three bois');
   assert.deepEqual(s.errors, []);
 });
 
@@ -1252,6 +1260,25 @@ test('violin resolves to the real VSCO sampler: spiccato by default, arco only o
   g.playBuffered(at(),{midi:69,vel:.5,seconds:.2,art:'pizzicato'});assert.equal(g.notes.at(-1).source,'vsco-pizz');assert.match(g.notes.at(-1).sample,/^pizz_A4_f/);
   g.playBuffered(at(),{midi:69,vel:.5,seconds:.2});const v=g.voices.at(-1);assert.ok(v.source.stoppedAt-v.source.startedAt<.4);
   assert.deepEqual(s.errors,[]);
+});
+
+test('flute resolves to the real VSCO vibrato sustain samples, names mapped to MIDI, nearest sample repitched; without files it falls back',async t=>{
+  const s=session('http://127.0.0.1:8080',true,{flute:true,sampleLevel:.05});t.after(()=>s.close());const g=s.game;
+  g.setGenre('folkrock');await g.pick('flute');g.setPause(true);g.logNotes(true);const at=()=>g.ctx.currentTime+.05;
+  g.playBuffered(at(),{midi:81,vel:.5,seconds:.3});let n=g.notes.at(-1);
+  assert.equal(n.source,'vsco-flute');assert.equal(n.sample,'susvib_A4','susvib_A4 sounds A5 = MIDI 81');assert.ok(Math.abs(n.rate-1)<1e-9);assert.ok(n.duration<.5,'a short note is cut, not the whole 4 s sample');
+  g.playBuffered(at(),{midi:60,vel:.5,seconds:.3});assert.equal(g.notes.at(-1).sample,'susvib_C3','lowest sample C3 = MIDI 60');
+  g.playBuffered(at(),{midi:83,vel:.5,seconds:.3});n=g.notes.at(-1);assert.equal(n.sample,'susvib_C5');assert.ok(Math.abs(n.rate-Math.pow(2,-1/12))<1e-9,'nearest sample is repitched by playbackRate');
+  for(let m=60;m<=96;m++){g.playBuffered(at(),{midi:m,vel:.5,seconds:.2});n=g.notes.at(-1);assert.equal(n.source,'vsco-flute');assert.ok(Math.abs(Math.log2(n.rate))*12<=2.51,'midi '+m+' is within 2.5 semitones of a sample');}
+  // педаль октави над високою нотою (до 104) — справді вище, а не той самий звук
+  g.playBuffered(at(),{midi:100,vel:.5,seconds:.2});n=g.notes.at(-1);assert.equal(n.source,'vsco-flute');assert.equal(n.sample,'susvib_C6');assert.ok(Math.abs(Math.log2(n.rate)*12-4)<1e-9,'100 = C6 sample raised 4 semitones, not folded to unison');
+  g.playBuffered(at(),{midi:110,vel:.5,seconds:.2});n=g.notes.at(-1);assert.equal(n.source,'vsco-flute','notes far above the samples fold an octave down');
+  // трелі й форшлаги (0,05 с) не тягнуться під наступну ноту
+  g.playBuffered(at(),{midi:81,vel:.5,seconds:.05});n=g.notes.at(-1);assert.ok(n.duration<.1,'ornament stays short: '+n.duration);
+  assert.deepEqual(s.errors,[]);
+  const f=session('http://127.0.0.1:8080',true,{sampleLevel:.05});t.after(()=>f.close());await f.game.pick('flute');f.game.setPause(true);f.game.logNotes(true);
+  f.game.playBuffered(f.game.ctx.currentTime+.05,{midi:81,vel:.5,seconds:.3});const last=f.game.notes.at(-1);assert.ok(!last||last.source!=='vsco-flute','no sample files: old SoundFont/synth path');
+  assert.deepEqual(f.errors,[]);
 });
 
 test('violin and accordion in the game: no held notes, at least two attacks in every bar, any bow or pizz card',async t=>{
