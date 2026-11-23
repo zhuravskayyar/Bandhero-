@@ -3427,6 +3427,7 @@ function openBandSocket(){
     let m;try{m=JSON.parse(e.data);}catch{return;}
     net.lastServer=performance.now();
     if(m.t==='pong')return;
+    if(m.q!==undefined&&!net.isHost)wire({t:'ack',q:m.q}); // одразу, ще до застосування знімка (у прихованій вкладці теж): сервер міряє по цьому, чи встигає лінія
     if(['full','busy','expired','missing','serverFull'].includes(m.t)){rejected=m.t==='full'?T('У гурті вже четверо.'):m.t==='expired'?T('Зв’язок не відновився вчасно, забіг продовжився без тебе. Приєднайся, коли гурт повернеться в лобі.'):m.t==='missing'?T('Кімната вже закрита. Створи новий гурт із головної сторінки.'):m.t==='serverFull'?T('Сервер зараз заповнений. Спробуй пізніше.'):T('Забіг уже триває. Приєднайся, коли гурт повернеться в лобі.');if(m.t==='missing')net.ignoreRoomLink=true;return;}
     if(m.t==='welcome'){
       if(net.reconnecting){net.reconnecting=false;clearTimeout(net.retry);clearTimeout(net.connectTimer);net.lastHeard=performance.now();
@@ -3572,6 +3573,7 @@ function tryBandStart(){
   loading=false;running=true;paused=false;choosing=false;seq.step=0;seq.nextTime=now()+.4;
   hideScreens();$('#hud').classList.remove('hide');sendSnapshot();if(document.hidden)netPause(true);
 }
+const MOB_KEYS=Object.keys(MOBS); // тип ворога їде індексом у цьому списку (однаковий код у хоста й гостя)
 const MOB_WIRE=['netId','type','x','y','r','hp','max','flash','wob','stun','slow','burn','mode','ax','ay','gen','age','hc','cast'];
 function cleanState(){
   const fields=['seed','t','kills','xp','level','syn','bossNext','won','mobs','eshots','shots','rings','cones','zaps','gems','hearts','fx','texts','pfx','instrumentFX'];
@@ -3579,8 +3581,12 @@ function cleanState(){
   const state={};for(const key of fields)state[key]=G[key];
   // гостям потрібно лише те, що малюється: внутрішні таймери й швидкості ворогів не шлемо (пізня гра — 140+ ворогів)
   // r (типовий радіус) і max (= hp у непошкодженого) гість відновлює сам — це ~третина байтів кожного ворога
-  state.mobs=G.mobs.map(m=>{const o={};for(const k of MOB_WIRE){const v=m[k];if(v===undefined||(v===0&&k!=='x'&&k!=='y'))continue;
-    if(k==='r'&&MOBS[m.type]&&v===MOBS[m.type].r)continue;if(k==='max'&&Math.round(m.max*100)===Math.round(m.hp*100))continue;o[k]=v;}return o;});
+  // ворог їде позиційним масивом у порядку MOB_WIRE (без назв полів — ~вдвічі менше байтів); 0 = «немає» (нулі й так не слали), хвіст із нулів обрізаємо
+  state.mobs=G.mobs.map(m=>{const o=[];let n=0;MOB_WIRE.forEach((k,i)=>{let v=m[k];
+    if(v===undefined||v===null||v===false||(k==='r'&&MOBS[m.type]&&v===MOBS[m.type].r)||(k==='max'&&Math.round(m.max*100)===Math.round(m.hp*100)))v=0;
+    else if(k==='x'||k==='y')v=Math.round(v);else if(k==='wob')v=Math.round(v)%12; // фаза качання довільна, гість далі крокує її сам
+    else if(k==='type'&&MOB_KEYS.includes(v))v=MOB_KEYS.indexOf(v);else if((k==='hp'||k==='max')&&v>0)v=Math.max(.1,Math.round(v*10)/10); // десяті: HP-смужці досить; живий ворог не стає «0»
+    o.push(v);if(v!==0||k==='x'||k==='y')n=i+1;});o.length=n;return o;});
   state.players=G.players.map(a=>({id:a.id,char:a.char,p:a.p,layers:a.layers,pedals:a.pedals}));
   return JSON.parse(JSON.stringify(state,wireReplacer));
 }
@@ -3594,6 +3600,10 @@ function wireReplacer(k,v){
   if(k==='x'||k==='y')return this&&this.fx!==undefined?Math.round(v*10)/10:Math.round(v); // герої (мають fx) — десяті, решта — цілі: гість усе одно інтерполює
   if(k==='vx'||k==='vy'||k==='wob')return Math.round(v);
   return Math.round(v*100)/100;
+}
+// зворотне до пакування в cleanState: масив → об’єкт; нуль = поле відсутнє (крім x,y). Об’єкти (старий формат) лишаються як є.
+function unpackMobs(state){
+  if(Array.isArray(state.mobs))state.mobs=state.mobs.map(a=>{if(!Array.isArray(a))return a;const o={};MOB_WIRE.forEach((k,i)=>{const v=a[i];if(v!==undefined&&(v!==0||k==='x'||k==='y'||k==='type'))o[k]=k==='type'&&typeof v==='number'?MOB_KEYS[v]:v;});return o;});
 }
 function unpackChords(state){
   for(const key in state){const list=state[key];if(!Array.isArray(list))continue;
@@ -3677,7 +3687,7 @@ async function receiveHost(d,at){
   }
   if(d.k!=='state'||d.match!==net.match||!G)return;
   const old=G,oldPlayers=new Map(G.players.map(a=>[a.id,a])),ip=net.ip,recv=typeof at==='number'?at:performance.now(),wait=Math.max(0,(performance.now()-recv)/1000);
-  if(d.song)SONG=d.song;G=d.state;unpackChords(G);ip.applied++;
+  if(d.song)SONG=d.song;G=d.state;unpackMobs(G);unpackChords(G);ip.applied++;
   if(ip.off===null)ip.off=recv-(typeof d.ts==='number'?d.ts:recv);
   const T=(typeof d.ts==='number'?d.ts:recv)+ip.off; // локальний час, якому відповідає цей знімок
   for(const m of G.mobs){if(m.max===undefined)m.max=m.hp;if(m.r===undefined&&MOBS[m.type])m.r=MOBS[m.type].r;}
@@ -3810,7 +3820,7 @@ buildCards();
 
 // для тестів і налагодження
 window.__game={MIX,CFG,get beatState(){return {BK,BP,ok:beat.ok};},hitsPerSec,MUSIC_REACT,reactState:id=>({...reactOf(id)}),get reactWorld(){return {...REACT_W};},reactNotes,get bossDrone(){return !!bossDrone;},get userSound(){return {vol:userVol,muted:userMuted,gain:userGain};},setUserSound,get masterReact(){return {lp:masterLP,mood:masterMood,master};},get sampled(){return Object.keys(SF);},get cache(){return [...bufCache.keys()];},get G(){return G;},get SONG(){return SONG;},
-  get ctx(){return ctx;},get audioOK(){return audioOK;},tileAt,pick,setPause,levelUp,addMob,spawnMob,hurtMob,MOBS,CHARS,ICON,makeSong,voicing,LAYERS,layerNotes,strum,chordAt,backingEvents,songLabel,songPartLabel,instrumentExpansion,genreExpansion,update,cleanState,
+  get ctx(){return ctx;},get audioOK(){return audioOK;},tileAt,pick,setPause,levelUp,addMob,spawnMob,hurtMob,MOBS,CHARS,ICON,makeSong,voicing,LAYERS,layerNotes,strum,chordAt,backingEvents,songLabel,songPartLabel,instrumentExpansion,genreExpansion,update,cleanState,unpackMobs,
   leaveBand,GENRES,synergy,hitsPerSec,balanceK,balanceTable,mkChord,noteCards,applyNote,chordTint,chordFnId,CHORD_FN,chordStamp,chordTones,dropHearts,pickHearts,HEART_LIFE,drawHeart,checkSongEvent,get attackChord(){return attackChord;},PEDALS,GEAR,VARIANTS,VOICINGS,voiced,availableGear,pedalEffects,levelOptions,applyUpgrade,serializeOption,deserializeOption,withPlayer,withAttack,driveCurve,bellowsBar,bellowsStrokes,bellowsStroke,
   backingSkip,now,doPlayerStep,processQueues,qInsert,get atkQ(){return atkQ;},set atkQ(v){atkQ=v;},get walkSide(){return walkSide;},get walkLast(){return walkLast;},get runId(){return runId;},get buses(){return buses;},get backingVoices(){return backingSlot?.voices.length||0;},get renderStats(){return {...renderStats};},FX_PROFILES,VISUAL_ASSETS,draw,setChar(k){charKey=k;},setGenre(k){chosenGenre=k;},
   sectionAt,phraseName,hookPhrase,directorStep,fullChordAt,patOf,P,SEC_NAME,

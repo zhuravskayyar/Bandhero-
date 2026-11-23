@@ -56,7 +56,7 @@ function newRoom(code) {
   if (!code) {
     do { code = crypto.randomBytes(5).toString('hex').toUpperCase(); } while (rooms.has(code) || code === LEGACY_ROOM);
   }
-  const room = { code, clients: new Map(), hostId: null, phase: 'lobby', genre: 'rand' };
+  const room = { code, clients: new Map(), hostId: null, phase: 'lobby', genre: 'rand', fsq: 0 };
   rooms.set(code, room);
   return room;
 }
@@ -142,6 +142,11 @@ const GRACE_MS = Number(process.env.GRACE_MS || 30000); // скільки чек
 const DROP_BACKLOG = 128 * 1024;   // жорсткий ліміт черги знімків для повільного гравця (байти)
 const DROP_AGE_MS = 200;           // і головний: якщо найстаріший недописаний запис чекає довше — свіжі знімки світу пропускаємо, а не копимо затримку
 const HARD_BACKLOG = 8 * 1024 * 1024; // лише якщо зовсім нічого не приймає
+// Наскрізний контроль потоку: за проксі (Render/Cloudflare) сокет сервера спорожнюється миттєво, тож черга росте в проксі, а не тут.
+// Гість підтверджує кожен регулярний знімок («ack»); поки найстаріший непідтверджений їде довше за (найкращий виміряний час + запас) — нових не шлемо.
+const FLOW_MARGIN_MS = 100;        // запас над найкращим виміряним часом «знімок → ack»
+const FLOW_PROBE_MS = 1000;        // без жодного ack стільки часу — пропускаємо один знімок, щоб потік не заглух назавжди
+const FLOW_MAX_BASE = 1500;        // верхня межа «найкращого» часу, щоб поганий старт не вимкнув контроль
 
 function sendRaw(c, buf, droppable) {
   if (!c || !c.sock || c.sock.destroyed) return;
@@ -152,6 +157,27 @@ function sendRaw(c, buf, droppable) {
   if (queued > HARD_BACKLOG) { c.reason = 'не встигав приймати дані'; sock.destroy(); return; }
   pend.push(Date.now());
   sock.write(buf, () => { pend.shift(); });
+  return true;
+}
+function flowReset(c) { c.flow = null; c.unacked = []; c.lastAck = 0; c.lastPass = 0; c.base = undefined; } // нове з’єднання чи новий хост: старі лічильники не мають сенсу
+// знімки світу для гостей: нумеруємо (room.fsq), кожному гравцеві шлемо, лише якщо його лінія встигає за ack-ами
+function broadcastState(room, d, exceptId) {
+  const q = ++room.fsq, f = frame(JSON.stringify({ t: 'fromHost', d, q })), now = Date.now();
+  for (const c of room.clients.values()) {
+    if (c.id === exceptId) continue;
+    const un = c.unacked || (c.unacked = []);
+    if (c.flow && un.length && now - un[0].at > Math.min(FLOW_MAX_BASE, c.base) + FLOW_MARGIN_MS && now - Math.max(c.lastAck, c.lastPass) < FLOW_PROBE_MS) { c.dropped = (c.dropped || 0) + 1; continue; }
+    if (sendRaw(c, f, true)) { un.push({ q, at: now }); if (un.length > 64) un.shift(); c.lastPass = now; }
+  }
+}
+function onAck(c, q) {
+  const un = c.unacked; if (!un || !un.length || !Number.isFinite(q)) return;
+  const now = Date.now(); let hit = null;
+  while (un.length && un[0].q <= q) { const e = un.shift(); if (e.q === q) hit = e; }
+  c.lastAck = now; if (!hit) return;
+  const dt = Math.min(FLOW_MAX_BASE, now - hit.at); // найкращий час тримаємо мінімумом, що повільно «забувається» (лінія може погіршитись надовго)
+  c.base = c.base === undefined || dt < c.base ? dt : c.base + (dt - c.base) * 0.01;
+  c.flow = true; // контроль вмикається лише для клієнтів, що справді шлють ack
 }
 function send(c, obj) { sendRaw(c, frame(JSON.stringify(obj))); }
 function broadcast(room, obj, exceptId, droppable) { const f = frame(JSON.stringify(obj)); for (const c of room.clients.values()) if (c.id !== exceptId) sendRaw(c, f, droppable); }
@@ -176,7 +202,7 @@ function removeClient(c, why) {
   if (room.hostId === c.id) { // хост пішов — новим хостом стає найстаріший гравець; гру треба почати заново
     room.phase = 'lobby'; dropAway(room);
     room.hostId = clients.size ? [...clients.keys()][0] : null;
-    for (const peer of clients.values()) peer.ready = false;
+    for (const peer of clients.values()) { peer.ready = false; flowReset(peer); }
     broadcast(room, { t: 'hostLeft', host: room.hostId });
   } else if (room.hostId) send(clients.get(room.hostId), { t: 'left', id: c.id });
   if (clients.size) pushRoster(room);
@@ -210,7 +236,7 @@ server.on('upgrade', (req, sock, head) => {
   if (c) {
     const old = c.sock;
     clearTimeout(c.graceTimer); c.graceTimer = null;
-    c.sock = sock; c.alive = true; c.dropped = 0;
+    c.sock = sock; c.alive = true; c.dropped = 0; flowReset(c);
     if (old && !old.destroyed) { c.reason = null; old.destroy(); } // старе «напівмертве» з’єднання телефона
     send(c, { t: 'welcome', id: c.id, token: c.token, resumed: true, room: room.code, host: room.hostId, players: roster(room), phase: room.phase, genre: room.genre });
     if (room.hostId && room.hostId !== c.id) send(clients.get(room.hostId), { t: 'back', id: c.id });
@@ -309,7 +335,8 @@ function onMessage(c, text) {
     pushRoster(room); return;
   }
   if (m.t === 'toHost') { if (room.hostId && room.hostId !== c.id) send(clients.get(room.hostId), { t: 'fromPeer', from: c.id, d: m.d }); return; }
-  if (m.t === 'toAll') { if (c.id === room.hostId) broadcast(room, { t: 'fromHost', d: m.d }, c.id, m.drop === 1); return; } // лише хост розсилає стан
+  if (m.t === 'ack') { onAck(c, m.q); return; }               // гість підтвердив знімок: див. broadcastState
+  if (m.t === 'toAll') { if (c.id === room.hostId) { if (m.drop === 1) broadcastState(room, m.d, c.id); else broadcast(room, { t: 'fromHost', d: m.d }, c.id); } return; } // лише хост розсилає стан
   if (m.t === 'toPeer') { if (c.id === room.hostId && clients.has(m.to)) send(clients.get(m.to), { t: 'fromHost', d: m.d }); return; }
 }
 

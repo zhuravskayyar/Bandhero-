@@ -2142,3 +2142,74 @@ test('starter parts over one chord keep their attacks but walk through the chord
   }
   assert.deepEqual(s.errors, []);
 });
+
+/* ================= ГІСТЬ ЗА ПОВІЛЬНИМ ПРОКСІ: черга в проксі не має робити знімки «старими» ================= */
+// Проксі читає з сервера миттєво (тож сокет сервера ніколи не бачить черги), а гостю тягне ~rate Б/с і зрідка «зависає»: так поводиться мобільна мережа за Render/Cloudflare.
+function trickleProxy(t, port, { rate = 80000, stallEvery = 4000, stallMs = 300 } = {}) {
+  const net = require('node:net'), box = { on: false, queued: 0, sent: 0, conns: [] };
+  const srv = net.createServer(client => {
+    const up = net.connect({ port, host: '127.0.0.1' }), q = []; let stallUntil = 0, nextStall = Date.now() + stallEvery;
+    box.conns.push(client, up); client.on('error', () => {}); up.on('error', () => {});
+    client.on('data', b => up.write(b)); up.on('data', b => { if (!box.on && !q.length) { client.write(b); return; } q.push(b); box.queued += b.length; });
+    client.on('close', () => up.destroy()); up.on('close', () => client.destroy());
+    const timer = setInterval(() => {
+      if (!box.on && !q.length) return;
+      const n = Date.now(); if (n >= nextStall) { stallUntil = n + stallMs; nextStall = n + stallEvery; } if (n < stallUntil) return;
+      let budget = rate / 50; while (budget > 0 && q.length) { const b = q[0], part = b.subarray(0, budget); q[0] = b.subarray(part.length); if (!q[0].length) q.shift(); budget -= part.length; box.queued -= part.length; box.sent += part.length; client.write(part); }
+    }, 20);
+    client.on('close', () => clearInterval(timer));
+  });
+  t.after(() => { box.conns.forEach(c => c.destroy()); srv.close(); });
+  return new Promise(r => srv.listen(0, '127.0.0.1', () => { box.origin = 'http://127.0.0.1:' + srv.address().port; r(box); }));
+}
+// гість із повільною лінією: хост напряму, гість через проксі; повертає вимірювач віку знімка в момент прийому
+async function slowGuestBand(t, srv, proxyOpts) {
+  const proxy = await trickleProxy(t, srv.port, proxyOpts);
+  const a = session(srv.origin, true); t.after(() => a.close());
+  await a.click('#multiplayer'); await until(() => a.game.net.id, 'host welcome');
+  const b = session(roomUrl(proxy.origin, a), true); t.after(() => b.close());
+  await b.click('#multiplayer'); await until(() => b.game.net.id, 'guest welcome');
+  await a.pick('guitar'); await b.pick('drums'); await until(() => a.game.net.roster.every(p => p.char), 'picks');
+  await a.click('#ready'); await b.click('#ready'); await until(() => a.game.net.roster.every(p => p.ready), 'ready');
+  await a.click('#start-band'); await until(() => a.game.running && b.game.running, 'both playing');
+  const ws = b.game.net.ws, h = ws.onmessage, ages = [], arrivals = [], bytes = [];
+  ws.onmessage = e => { if (e.data.length > 200 && e.data.includes('"k":"state"')) { const d = JSON.parse(e.data).d; if (d && d.k === 'state') { const n = performance.now(); ages.push(n - d.ts); arrivals.push(n); bytes.push(e.data.length); } } return h(e); };
+  return { a, b, proxy, ages, arrivals, bytes };
+}
+const pct = (xs, p) => { const s = [...xs].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))] || 0; };
+
+test('a guest behind a slow proxy sees fresh snapshots: age stays bounded while the proxy queue is throttled', async t => {
+  const srv = await startServer(t), { a, b, proxy, ages, arrivals, bytes } = await slowGuestBand(t, srv);
+  const H = a.game.G; for (const p of H.players) p.p.hp = p.p.max = 1e9;
+  // пізня гра: ~150 живих ворогів поруч (кого герої добили — доповнюємо; живучі, щоб не гинули), трохи побиті й частково «спалахують»
+  const types = Object.keys(a.game.MOBS).filter(k => !/^boss/.test(k)); let n = 0;
+  const fill = () => { while (H.mobs.length < 150) { const m = a.game.addMob(types[n++ % types.length], H.players[0].p.x + 200 + (n % 15) * 40, H.players[0].p.y + 200 + (n / 15 % 10 | 0) * 40); m.spd = 0; m.max = 3000; m.hp = 3000 - 0.37 * (n % 5); m.flash = 0.05 * (n % 2); } };
+  fill(); const refill = setInterval(fill, 50); t.after(() => clearInterval(refill));
+  await delay(500);  proxy.on = true; ages.length = 0; arrivals.length = 0; bytes.length = 0;
+  await delay(12000);
+  const gaps = arrivals.slice(1).map((x, i) => x - arrivals[i]), kb = bytes.length ? bytes.reduce((x, y) => x + y, 0) / bytes.length / 1024 : 0;
+  if (process.env.AGES) console.log(ages.map((x, i) => Math.round(x) + "@" + Math.round(arrivals[i] - arrivals[0])).join(" "));
+  console.log(`  slow proxy: snapshots ${ages.length}, ${kb.toFixed(1)} KB avg, mobs ${H.mobs.length}, age max ${Math.round(Math.max(0, ...ages))} p95 ${Math.round(pct(ages, .95))} ms, max gap ${Math.round(Math.max(0, ...gaps))} ms, ip.lost ${b.game.net.ip.lost}, proxy queued ${(proxy.queued / 1024).toFixed(0)} KB`);
+  assert.ok(ages.length > 20, 'guest keeps receiving snapshots');
+  assert.ok(pct(ages, .95) < 700, 'p95 snapshot age < 700 ms (before flow control: ~8 s and growing), got ' + Math.round(pct(ages, .95)));
+  assert.ok(Math.max(...gaps) < 1500 && Math.max(...ages) < 1500, 'no multi-second freezes, age never grows without bound');
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+test('mobs ride the wire as compact positional arrays and unpack to the same fields on the guest', async t => {
+  const srv = await startServer(t); const [a, b] = await bandOfTwo(t, srv.origin);
+  const G = a.game.G, g = a.game, types = Object.keys(g.MOBS).filter(k => !/^boss/.test(k));
+  G.mobs = []; for (let i = 0; i < 150; i++) { const m = g.addMob(types[i % types.length], 100 + i * 7.3137, -50 + i * 3.1); m.hp = m.max * (i % 3 ? 1 : 0.43); m.flash = i % 4 ? 0 : 0.07; m.hc = i % 5 ? 0 : 2; if (i % 9 === 0) { m.mode = 'wind'; m.ax = 0.6; m.ay = -0.8; } m.netId = i + 1; }
+  // еталон: старий формат (об’єкт на ворога з назвами полів)
+  const W = ['netId', 'type', 'x', 'y', 'r', 'hp', 'max', 'flash', 'wob', 'stun', 'slow', 'burn', 'mode', 'ax', 'ay', 'gen', 'age', 'hc', 'cast'];
+  const oldMobs = G.mobs.map(m => { const o = {}; for (const k of W) { const v = m[k]; if (v === undefined || (v === 0 && k !== 'x' && k !== 'y')) continue; if (k === 'r' && g.MOBS[m.type] && v === g.MOBS[m.type].r) continue; if (k === 'max' && Math.round(m.max * 100) === Math.round(m.hp * 100)) continue; o[k] = v; } return o; });
+  const oldSize = JSON.stringify(JSON.parse(JSON.stringify(oldMobs), (k, v) => typeof v === 'number' ? Math.round(v * 100) / 100 : v)).length;
+  const wire = g.cleanState().mobs, size = JSON.stringify(wire).length;
+  console.log(`  mobs payload: ${(oldSize / 1024).toFixed(1)} KB -> ${(size / 1024).toFixed(1)} KB for ${wire.length} mobs (${(oldSize / size).toFixed(2)}x)`);
+  assert.ok(Array.isArray(wire[0]), 'positional arrays'); assert.ok(size * 2 <= oldSize, 'at least 2x smaller than named-field objects');
+  const un = { mobs: JSON.parse(JSON.stringify(wire)) }; b.game.unpackMobs(un);
+  un.mobs.forEach((o, i) => { const m = G.mobs[i]; assert.equal(o.netId, m.netId); assert.equal(o.type, m.type); assert.ok(Math.abs(o.x - m.x) <= 0.5 && Math.abs(o.y - m.y) <= 0.5);
+    const t1 = v => Math.max(.1, Math.round(v * 10) / 10); assert.ok(o.hp > 0 && Math.abs(o.hp - m.hp) <= .06, 'hp survives to a tenth'); assert.ok(Math.abs((o.max === undefined ? o.hp : o.max) - m.max) <= .06 || Math.round(m.max * 100) === Math.round(m.hp * 100), 'max is restored');
+    assert.equal(o.flash || 0, Math.round((m.flash || 0) * 100) / 100); assert.equal(o.hc || 0, m.hc || 0); assert.equal(o.mode || 0, m.mode || 0); assert.equal(o.ax || 0, Math.round((m.ax || 0) * 100) / 100); });
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
