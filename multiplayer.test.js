@@ -871,6 +871,15 @@ test('new enemies behave: ranged notes hurt, swarms come in groups, echoes split
   g.draw(); assert.deepEqual(s.errors, []);
 });
 
+// після вбивства (не фінального) боса гурт отримує безкоштовний вибір покращення і +30% HP: беремо першу картку, щоб гра пішла далі
+const takeBossReward = async (ss, lv0) => {
+  await until(() => ss[0].game.G.level > lv0, 'boss reward is a free level');
+  await delay(150); if (!ss.some(s => s.game.choosing)) return; // високий рівень: «нічого вибирати» застосовується саме
+  await until(() => ss.every(s => s.game.choosing && s.elements.get('#opts').children.length > 0), 'reward cards');
+  for (const s of ss) await s.elements.get('#opts').children[0].onclick();
+  await until(() => ss.every(s => !s.game.choosing), 'reward taken');
+};
+
 test('bosses arrive at 5, 10 and 15 minutes; killing the last one wins the run (solo and band)', async t => {
   const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
   s.game.setGenre('pop'); await s.game.pick('guitar');
@@ -881,7 +890,7 @@ test('bosses arrive at 5, 10 and 15 minutes; killing the last one wins the run (
     const b = g.G.mobs.find(m => m.type === 'boss' + (i + 1));
     g.hurtMob(b, 1, 500, 500); assert.equal(b.kx, 0, 'bosses ignore knockback'); assert.equal(b.stun || 0, 0);
     g.G.p.hp = g.G.p.max; g.draw();
-    if (i < 2) { b.hp = 0; await until(() => !g.G.mobs.includes(b), 'boss dies'); assert.ok(g.running, 'run continues'); }
+    if (i < 2) { const lv = g.G.level; b.hp = 0; await until(() => !g.G.mobs.includes(b), 'boss dies'); await takeBossReward([s], lv); assert.ok(g.running, 'run continues'); }
     else { b.hp = 0; await until(() => !g.running, 'final boss ends the run'); }
   }
   assert.equal(g.G.won, true); assert.match(s.elements.get('#over h1').textContent, /Перемога/);
@@ -1050,8 +1059,9 @@ test('pixel FX pack: instrument-coloured hit sparks, level-up star, revive lotus
   const hit = host.addMob('glush', H.players[0].p.x + 300, H.players[0].p.y); hit.spd = 0; hit.hp = hit.max = 1e6;
   host.hurtMob(hit, 1, 0, 0); assert.equal(hit.hc, 1, 'host guitar hit');
   await until(() => guest.G.mobs.some(e => e.netId === hit.netId && e.hc === 1), 'guest gets the guitar spark colour (index 1 survives the wire)');
-  const boss = host.addMob('boss1', H.players[0].p.x + 200, H.players[0].p.y); boss.spd = 0; boss.hp = 0;
+  const boss = host.addMob('boss1', H.players[0].p.x + 200, H.players[0].p.y); boss.spd = 0; boss.hp = 0; const lv0 = H.level;
   await until(() => (guest.G.pfx || []).some(f => f.k === 'boom') && guest.G.pfx.some(f => f.k === 'skull'), 'guest sees boss explosion and skull');
+  H.gems = []; H.xp = 0; await takeBossReward([a, b], lv0); await until(() => !(H.pfx || []).some(f => f.k === 'star'), 'reward stars fade');
   const mate = H.players.find(p => p.char === 'drums'); mate.p.hp = 0; H.xp = 99; host.levelUp();
   assert.ok(H.pfx.some(f => f.k === 'lotus' && f.who === mate.id), 'downed teammate rises with a lotus');
   await until(() => (guest.G.pfx || []).some(f => f.k === 'lotus') && guest.G.pfx.filter(f => f.k === 'star').length === 2, 'guest sees both stars and the lotus');
@@ -2407,7 +2417,8 @@ test('run summary: solo game over shows time, level, kills, bosses, damage and t
   s.game.setGenre('pop'); await s.game.pick('guitar');
   const g = s.game, G = g.G;
   G.mobs = []; G.p.hp = G.p.max; G.t = 125; G.level = 7;
-  await killMob(g, 'fal'); await killMob(g, 'boss1'); G.p.hp = G.p.max;
+  const lv0 = G.level; await killMob(g, 'fal'); await killMob(g, 'boss1'); await takeBossReward([s], lv0); G.p.hp = G.p.max; G.pedals = {};
+  assert.equal(G.level, 8, 'the boss reward is one free level'); G.level = 7; // далі рахуємо підсумок на рівні 7 без картки нагороди
   assert.equal(G.bosses, 1, 'boss kill is counted'); assert.equal(G.kills, 2); assert.ok(G.dmgTotal > 0, 'damage dealt is counted');
   const pedal = g.PEDALS.find(p => p.inst === 'guitar'); G.pedals[pedal.id] = 2;
   G.mobs = []; G.p.hp = 0; await until(() => !g.running, 'game over');
@@ -2432,7 +2443,7 @@ test('run summary: in co-op the guest sees the same recap with a row per player'
   const host = a.game, guest = b.game, H = host.G;
   H.mobs = []; H.level = 60; for (const p of H.players) p.p.hp = p.p.max; // високий рівень: кристали босів не дадуть нового рівня
   const [hp, gp] = [H.players.find(p => p.id === host.net.id), H.players.find(p => p.id === guest.net.id)];
-  await killMob(host, 'fal', hp); await killMob(host, 'fal', gp); await killMob(host, 'boss1', gp);
+  await killMob(host, 'fal', hp); await killMob(host, 'fal', gp); const lv0 = H.level; await killMob(host, 'boss1', gp); await takeBossReward([a, b], lv0); H.level = 60;
   for (const p of H.players) p.p.hp = p.p.max;
   assert.equal(gp.st.kills, 2); assert.equal(hp.st.kills, 1); assert.equal(H.bosses, 1); assert.ok(gp.st.dmg > 0 && hp.st.dmg > 0);
   H.t = 61; H.level = 4; H.xp = 0; H.gems = []; H.mobs = []; for (const p of H.players) p.p.hp = 0; // без кристалів: рівень воскресив би загиблих
@@ -2547,4 +2558,154 @@ test('first-run hints: a co-op guest gets them from its own snapshot state', asy
   assert.match(guest.game.hints.text, /Атакуєш автоматично/);
   assert.equal(host.game.hints.current, null, 'host has hints off here and nothing was sent over the wire');
   assert.deepEqual(guest.errors, []);
+});
+
+/* ================= бос як концерт: фази, механіки, нагорода ================= */
+const bossMix = (g, b) => { const o = { burst: 0, spiral: 0 }; for (let st = 0; st < 64; st++) { const n = g.bossNotes(b, st, { off: 0 }); if (n && n.atk && o[n.atk.k] !== undefined) o[n.atk.k]++; } return o; };
+
+test('boss concert: crossing 66% and 35% starts a 1.5 s invulnerable section change; sections cannot be skipped and each has a bigger attack mix', async t => {
+  const s = session('http://127.0.0.1:8080', false); t.after(() => s.close());
+  s.game.setGenre('pop'); await s.game.pick('guitar');
+  const g = s.game, G = g.G, p = G.p; G.mobs = []; G.eshots = []; p.hp = p.max;
+  const b = g.addMob('boss3', p.x + 400, p.y, { age: 5, ph: 1, inv: 0 }); b.spd = 0; b.hp = b.max = 10000;
+  assert.deepEqual([...g.PHASE_AT], [.66, .35]); assert.equal(g.bossPhase(b), 1);
+  const m1 = bossMix(g, b);
+  g.hurtMob(b, 9000, 0, 0); // удар на 90% HP не перестрибує частину: бос зупиняється трохи нижче 66%
+  assert.equal(b.ph, 2); assert.ok(b.hp >= b.max * .65 && b.hp < b.max * .66, 'clamped just under 66%: ' + b.hp);
+  assert.ok(Math.abs(b.inv - g.PHASE_INV) < 1e-9 && g.PHASE_INV === 1.5, 'invulnerable for 1.5 s');
+  const hp2 = b.hp; g.hurtMob(b, 500, 0, 0); assert.equal(b.hp, hp2, 'no damage during the section change');
+  G.eshots = []; g.bossFire(b, { k: 'burst', n: 12 }); assert.equal(G.eshots.length, 0, 'the boss is silent while changing sections');
+  const m2 = bossMix(g, b); assert.ok(m2.burst > m1.burst, 'chorus fires more bursts than the verse: ' + m1.burst + ' → ' + m2.burst);
+  for (let i = 0; i < 4; i++) { p.hp = p.max; g.update(.4); }
+  assert.equal(b.inv, 0, 'invulnerability ends'); g.hurtMob(b, 100, 0, 0); assert.ok(b.hp < hp2, 'vulnerable again');
+  g.hurtMob(b, 9000, 0, 0); assert.equal(b.ph, 3); assert.ok(b.inv > 1.4); assert.ok(g.bossEnraged(b), 'phase III is the existing enrage');
+  assert.ok(b.hp >= b.max * .34 && b.hp < b.max * .35);
+  const m3 = bossMix(g, b); assert.ok(m3.burst > m2.burst, 'finale fires even more: ' + m2.burst + ' → ' + m3.burst);
+  // фаза не повертається назад від лікування, а смерть працює завжди
+  b.hp = b.max * .5; g.bossPhaseCheck(b); assert.equal(b.ph, 3);
+  b.inv = 0; b.hp = 0; g.update(.016); assert.ok(!G.mobs.includes(b), 'the boss still dies');
+  g.draw(); assert.deepEqual(s.errors, []);
+});
+
+test('Фонограма: amps shield the boss until every amp is destroyed, and every new section brings a new set', async t => {
+  const s = session('http://127.0.0.1:8080', false); t.after(() => s.close());
+  s.game.setGenre('pop'); await s.game.pick('guitar');
+  const g = s.game, G = g.G, p = G.p; G.mobs = []; p.hp = p.max;
+  G.t = 299.99; G.bossNext = 0; g.update(.02); p.hp = p.max;
+  const b = G.mobs.find(m => m.type === 'boss1'); assert.ok(b, 'boss spawns on schedule'); b.spd = 0;
+  const amps = () => G.mobs.filter(m => m.type === 'amp' && m.hp > 0);
+  assert.equal(amps().length, 2, 'solo: two amps'); assert.equal(b.sh, 1); assert.equal(b.ph, 1);
+  for (const a of amps()) assert.ok(Math.hypot(a.x - p.x, a.y - p.y) < 400, 'amps stand around the player, on screen');
+  const hp0 = b.hp; g.hurtMob(b, 5000, 0, 0); assert.equal(b.hp, hp0, 'shielded: no damage');
+  b.burn = 2; b.burnDmg = 500; g.update(.5); p.hp = p.max; assert.equal(b.hp, hp0, 'burn does not pierce the shield either');
+  amps()[0].hp = 0; g.update(.016); assert.equal(b.sh, 1, 'one amp left: still shielded'); assert.equal(amps().length, 1);
+  amps()[0].hp = 0; g.update(.016); assert.equal(b.sh, 0, 'last amp down: shield drops'); assert.ok(b.daze > 0, 'and the boss is staggered');
+  g.hurtMob(b, 100, 0, 0); assert.ok(b.hp < hp0, 'damage goes through');
+  g.hurtMob(b, 1e5, 0, 0); assert.equal(b.ph, 2, 'section II'); assert.equal(amps().length, 2, 'new amps arrive with the chorus'); assert.equal(b.sh, 1);
+  const hp1 = b.hp; g.update(.016); g.hurtMob(b, 100, 0, 0); assert.equal(b.hp, hp1, 'shield is back');
+  // 3–4 героя: 4 колонки; кільце навколо центру гурту
+  const fake = [{ p: { x: 0, y: 0, hp: 5 } }, { p: { x: 100, y: 0, hp: 5 } }, { p: { x: 0, y: 100, hp: 5 } }];
+  const saved = G.players; G.players = fake; const wasActive = g.net.active; g.net.active = true;
+  try { const before = amps().length; g.bossAmps(b); assert.equal(amps().length - before, 4, 'three heroes: four amps'); } finally { G.players = saved; g.net.active = wasActive; }
+  b.hp = 0; g.update(.016); assert.equal(amps().length, 0, 'amps vanish with the boss');
+  g.draw(); assert.deepEqual(s.errors, []);
+});
+
+test('Автотюн: a ring zone damages and staggers the boss only if someone stands in it on the downbeat', async t => {
+  const s = session('http://127.0.0.1:8080', false); t.after(() => s.close());
+  s.game.setGenre('pop'); await s.game.pick('guitar');
+  const g = s.game, G = g.G, p = G.p; G.mobs = []; G.zones = []; p.hp = p.max;
+  const b = g.addMob('boss2', p.x + 300, p.y, { age: 5, ph: 1, inv: 0 }); b.spd = 0; b.hp = b.max = 10000;
+  b.zCd = 0; g.bossMech(b, .1);
+  assert.equal(G.zones.length, 1); const z = G.zones[0]; assert.equal(z.k, 'beat'); assert.ok(z.r >= 100 && z.life > 4);
+  assert.ok(Math.abs(Math.hypot(z.x - b.x, z.y - b.y) - (b.r + 170)) < 1e-6, 'the ring is marked next to the boss');
+  g.bossMech(b, .1); assert.equal(G.zones.length, 1, 'one ring at a time');
+  p.x = z.x; p.y = z.y;
+  g.bossBeat(b, 0); assert.equal(b.hp, b.max, 'the ring is only a warning for the first moments');
+  z.age = 1; g.bossBeat(b, 3); g.bossBeat(b, 8); assert.equal(b.hp, b.max, 'off-beat steps do not count');
+  g.bossBeat(b, 16); assert.ok(Math.abs(b.hp - b.max * (1 - g.BEAT_DMG)) < 1e-6, 'a hit on the downbeat takes 2% of max HP');
+  assert.ok(b.daze > 1 && z.hits === 1 && z.fl > 0, 'the boss is staggered and the ring flashes');
+  const keep = b.hp; p.x = z.x + 1000; g.bossBeat(b, 32); assert.equal(b.hp, keep, 'standing outside does nothing');
+  p.x = z.x; b.inv = 1; g.bossBeat(b, 48); assert.equal(b.hp, keep, 'no damage during a section change'); b.inv = 0;
+  b.sh = 1; g.bossBeat(b, 48); assert.equal(b.hp, keep, 'a shield blocks it as well'); b.sh = 0;
+  // стагер зупиняє рух
+  b.spd = 70; b.daze = 1; const x0 = b.x; g.update(.1); p.hp = p.max; assert.equal(b.x, x0, 'a staggered boss does not move');
+  // кільце зникає з кінцем життя, нове — за таймером
+  z.age = z.life + .1; g.update(.016); assert.equal(G.zones.length, 0);
+  g.draw(); assert.deepEqual(s.errors, []);
+});
+
+test('Диригент Тиші: in silence the band deals ×0.25 damage unless it stands together (solo: inside a marker)', async t => {
+  const s = session('http://127.0.0.1:8080', false); t.after(() => s.close());
+  s.game.setGenre('pop'); await s.game.pick('guitar');
+  const g = s.game, G = g.G, p = G.p; G.mobs = []; G.zones = []; p.hp = p.max;
+  const b = g.addMob('boss3', p.x + 500, p.y, { age: 5, ph: 2, inv: 0 }); b.spd = 0; b.hp = b.max = 1e6; b.hp = b.max * .5; b.silCd = 0;
+  g.bossMech(b, .1); assert.equal(b.sil, 5, 'silence starts'); const mark = G.zones.find(z => z.k === 'mark'); assert.ok(mark, 'solo: a marker appears');
+  const hit = () => { const before = b.hp; g.hurtMob(b, 1000, 0, 0); return before - b.hp; };
+  p.x = mark.x + 600; p.y = mark.y; assert.equal(g.harmony(p), false); const lone = hit();
+  p.x = mark.x + 20; p.y = mark.y; assert.equal(g.harmony(p), true); const tuned = hit();
+  assert.ok(lone > 0 && Math.abs(tuned / lone - 1 / g.SIL_K) < 1e-6, 'outside the marker the damage is ×0.25: ' + lone + ' vs ' + tuned);
+  g.draw(); assert.deepEqual(s.errors, []);
+  b.sil = .05; g.bossMech(b, .1); assert.equal(b.sil, 0, 'silence ends'); assert.ok(!G.zones.some(z => z.k === 'mark'), 'marker is removed'); assert.ok(b.silCd > 5, 'next silence later');
+  p.x = mark.x + 600;
+  const calm = hit(); assert.ok(Math.abs(calm / tuned - 1) < 1e-6, 'full damage again');
+  // перша фаза без тиші
+  b.ph = 1; b.hp = b.max; b.silCd = 0; g.bossMech(b, .1); assert.ok(!(b.sil > 0), 'no silence in section I');
+});
+
+test('boss kill is rewarded with a free level-up pick and 30% HP; the final boss just wins', async t => {
+  const s = session('http://127.0.0.1:8080', false); t.after(() => s.close());
+  s.game.setGenre('pop'); await s.game.pick('guitar');
+  const g = s.game, G = g.G, p = G.p; G.mobs = []; G.level = 7; G.xp = 0; p.hp = 10;
+  const b = g.addMob('boss2', p.x + 300, p.y, { age: 5 }); b.hp = 0; g.update(.016);
+  assert.equal(G.bosses, 1); assert.equal(G.level, 8, 'free level'); assert.ok(p.hp >= 10 + p.max * .3 - 1e-6, 'healed 30%');
+  assert.ok(g.choosing || G.texts.some(x => /Авто/.test(String(x.v))), 'a card pick (or the auto-pick) follows');
+  assert.equal(G.bossReward, 0);
+  if (g.choosing) { await s.elements.get('#opts').children[0].onclick(); assert.equal(g.choosing, false); }
+  G.mobs = []; const f = g.addMob('boss3', p.x + 300, p.y, { age: 5 }); f.hp = 0; g.update(.016);
+  assert.equal(G.won, true); assert.equal(G.level, 8, 'no reward after the final boss');
+  assert.deepEqual(s.errors, []);
+});
+
+test('co-op: the guest sees the boss phase, invulnerability, shield, ring and silence in the snapshot; the reward pick goes to both players', async t => {
+  const srv = await startServer(t);
+  const [a, b] = await bandOfTwo(t, srv.origin);
+  const host = a.game, guest = b.game, H = host.G, keep = () => { for (const q of H.players) { q.p.hp = q.p.max; } };
+  keep(); H.mobs = [];
+  // Фонограма: у двох — 3 колонки, щит їде в знімку
+  H.t = 299.98; H.bossNext = 0;
+  await until(() => guest.G.mobs.some(m => m.type === 'boss1'), 'guest sees Фонограма');
+  const hb = H.mobs.find(m => m.type === 'boss1'); hb.spd = 0;
+  const amps = () => H.mobs.filter(m => m.type === 'amp' && m.hp > 0);
+  assert.equal(amps().length, 3, 'two heroes: three amps');
+  await until(() => { const gb = guest.G.mobs.find(m => m.type === 'boss1'); return gb && gb.sh === 1 && gb.ph === 1 && guest.G.mobs.filter(m => m.type === 'amp').length === 3; }, 'guest sees the shield and its amps');
+  guest.draw();
+  const before = hb.hp; host.hurtMob(hb, 1000, 0, 0); assert.equal(hb.hp, before, 'shielded in co-op too');
+  for (const m of amps()) m.hp = 0;
+  await until(() => guest.G.mobs.find(m => m.type === 'boss1').sh !== 1, 'guest sees the shield drop');
+  keep(); host.hurtMob(hb, 1e6, 0, 0);
+  await until(() => { const gb = guest.G.mobs.find(m => m.type === 'boss1'); return gb && gb.ph === 2 && gb.inv > 0; }, 'guest sees section II and the invulnerability window');
+  guest.draw(); assert.deepEqual(b.errors, []);
+  // винагорода: обидва обирають картку
+  keep(); const lv0 = H.level; hb.inv = 0; hb.sh = 0; hb.hp = 0;
+  await until(() => host.choosing && guest.choosing && host.net.pending.size === 2, 'both players get the reward pick');
+  assert.equal(H.level, lv0 + 1); await takeBossReward([a, b], lv0);
+  // Автотюн: кільце видно гостю
+  keep(); H.mobs = []; H.zones = [];
+  const b2 = host.addMob('boss2', H.players[0].p.x + 300, H.players[0].p.y, { age: 5, ph: 1, inv: 0 }); b2.spd = 0; b2.hp = b2.max = 1e6; b2.zCd = 0;
+  await until(() => (guest.G.zones || []).some(z => z.k === 'beat' && z.r >= 100), 'guest sees the beat ring');
+  guest.draw();
+  // Диригент: тиша, гармонія за відстанню між героями (без маркера)
+  keep(); H.mobs = []; H.zones = [];
+  const b3 = host.addMob('boss3', H.players[0].p.x + 500, H.players[0].p.y, { age: 5, ph: 2, inv: 0 }); b3.spd = 0; b3.hp = b3.max = 1e6; b3.hp = b3.max * .5; b3.silCd = 0;
+  await until(() => { const gb = guest.G.mobs.find(m => m.type === 'boss3'); return gb && gb.sil > 0 && gb.ph === 2; }, 'guest sees the silence');
+  assert.ok(!H.zones.some(z => z.k === 'mark'), 'two heroes need no marker');
+  const [p1, p2] = H.players.map(q => q.p); p1.x = 0; p1.y = 0; p2.x = 900; p2.y = 0;
+  assert.equal(host.harmony(p1), false, 'far apart: no harmony');
+  const hpA = b3.hp; host.withPlayer(H.players[0], () => host.hurtMob(b3, 1000, 0, 0)); const apart = hpA - b3.hp;
+  p2.x = 100; assert.equal(host.harmony(p1), true, 'close together: harmony');
+  const hpB = b3.hp; host.withPlayer(H.players[0], () => host.hurtMob(b3, 1000, 0, 0)); const together = hpB - b3.hp;
+  assert.ok(apart > 0 && Math.abs(together / apart - 1 / host.SIL_K) < 1e-6, 'silence cuts the damage of lone heroes to ×0.25');
+  guest.draw(); host.draw();
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
 });

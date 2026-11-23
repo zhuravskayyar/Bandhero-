@@ -1936,3 +1936,15 @@ for(const [uk,en,de,ru] of [
   ['Скинути підказки','Reset hints','Tipps zurücksetzen','Сбросить подсказки'],
   ['Підказки скинуто — з’являться знову в наступному забігу.','Hints reset — they will show again next run.','Tipps zurückgesetzt — sie erscheinen im nächsten Lauf wieder.','Подсказки сброшены — появятся снова в следующем забеге.'],
 ]){window.I18N_DICT.en[uk]=en;window.I18N_DICT.de[uk]=de;window.I18N_DICT.ru[uk]=ru;}
+// Бос як концерт: частини бою, механіки босів, нагорода.
+for(const [uk,en,de,ru] of [
+  ['Колонка','Amp','Verstärker','Колонка'],
+  ['{0}: {1}!','{0}: {1}!','{0}: {1}!','{0}: {1}!'],
+  ['щит: колонки {0}','shield: amps {0}','Schild: Verstärker {0}','щит: колонки {0}'],
+  ['Щит знято!','Shield down!','Schild weg!','Щит снят!'],
+  ['Знищ колонки, щоб зняти щит!','Destroy the amps to drop the shield!','Zerstöre die Verstärker, um das Schild zu senken!','Уничтожь колонки, чтобы снять щит!'],
+  ['Стань у коло на першу долю!','Stand in the ring on the downbeat!','Steh auf dem ersten Schlag im Ring!','Встань в круг на первую долю!'],
+  ['ТИША! Збийтесь докупи: шкода ×0.25','SILENCE! Group up: damage ×0.25','STILLE! Rückt zusammen: Schaden ×0,25','ТИШИНА! Сбейтесь вместе: урон ×0.25'],
+  ['ТИША! Стань у світле коло: шкода ×0.25','SILENCE! Stand in the bright circle: damage ×0.25','STILLE! Steh im hellen Kreis: Schaden ×0,25','ТИШИНА! Встань в светлый круг: урон ×0.25'],
+  ['Нагорода за боса!','Boss reward!','Boss-Belohnung!','Награда за босса!'],
+]){window.I18N_DICT.en[uk]=en;window.I18N_DICT.de[uk]=de;window.I18N_DICT.ru[uk]=ru;}
