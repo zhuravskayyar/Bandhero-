@@ -1,238 +1,328 @@
-/* Band Hero: інтерфейс у стилі піксельної аркади. Бойові ефекти малюються покадрово зі спрайтових атласів у Canvas.
-   Рамки — піксельні «сходинки» на кутах (clip-path) + внутрішнє тло в ::before; колір рамки — --edge, тло — --fill. */
+/* Band Hero: інтерфейс «нічний рок-концерт» — грубі мультяшні панелі, товсті майже чорні контури, жорсткі тіні без розмиття.
+   Усі кольори й обводки — токени в :root нижче: палітра міняється в одному місці. Бойові ефекти малюються покадрово зі спрайтових атласів у Canvas.
+   Ключові кадри анімацій тут не пишемо (тест це перевіряє): уся анімація інтерфейсу — у <style> у game.html. */
 @font-face{font-family:Rubik;src:url('assets/Rubik.ttf') format('truetype');font-weight:300 900;font-style:normal;font-display:swap}
 @font-face{font-family:'Russo One';src:url('assets/RussoOne.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
 /* BH Pixel — Pixelify Sans (SIL OFL); див. assets/bh-pixel-OFL.txt. Лише логотип: кирилиця в ньому «болгарська» (д≈a, ь≈b, ґ≈Y),
    а дрібна латиниця плутається (E≈Є, D≈O), тож решта тексту — Russo One (--px). */
 @font-face{font-family:'BH Pixel';src:url('assets/bh-pixel.ttf') format('truetype');font-weight:400 700;font-style:normal;font-display:swap;unicode-range:U+0041-005A,U+0061-007A} /* лише літери: цифри поруч із кирилицею виглядали чужими */
 :root{
-  --night:#0f1b26;--deep:#09121a;--panel:#162a37;--panel-hi:#1e3646;--ink:#05090e;
-  --paper:#f3e4c7;--muted:#9fb5b1;--dim:#6f8a8a;--gold:#ffd18b;--gold-deep:#b9772f;--teal:#80d9cd;--edge:#3e5a5f;--fill:var(--panel);
-  --px:'Russo One',Rubik,sans-serif; /* піксельний BH Pixel — лише в логотипі: дрібним «E» читається як «Є», «D» як «O» */
-  --notch:polygon(0 6px,3px 6px,3px 3px,6px 3px,6px 0,calc(100% - 6px) 0,calc(100% - 6px) 3px,calc(100% - 3px) 3px,calc(100% - 3px) 6px,100% 6px,100% calc(100% - 6px),calc(100% - 3px) calc(100% - 6px),calc(100% - 3px) calc(100% - 3px),calc(100% - 6px) calc(100% - 3px),calc(100% - 6px) 100%,6px 100%,6px calc(100% - 3px),3px calc(100% - 3px),3px calc(100% - 6px),0 calc(100% - 6px));
-  --notch-in:polygon(0 3px,3px 3px,3px 0,calc(100% - 3px) 0,calc(100% - 3px) 3px,100% 3px,100% calc(100% - 3px),calc(100% - 3px) calc(100% - 3px),calc(100% - 3px) 100%,3px 100%,3px calc(100% - 3px),0 calc(100% - 3px));
+  --bg:#140d12;--panel:#241820;--panel-hi:#33222c;--ink:#0a0608;
+  --paper:#fff3df;--muted:#cdb9a6;--dim:#8d7867;
+  --gold:#ffc93c;--gold-deep:#c7771a;--hot:#ff4f6d;--hp:#ff3b4f;
+  --xp:linear-gradient(90deg,#ffc93c,#ff8a1f);
+  --px:'Russo One',Rubik,sans-serif;
+  --r:12px;--r-s:10px;                       /* скруглення: панелі/кнопки і дрібні чіпи */
+  --line:3px solid var(--ink);               /* товста контурна рамка */
+  --lift:0 4px 0 var(--ink);                 /* жорстка тінь «підлога» */
+  /* контур тексту у 8 напрямках (-webkit-text-stroke виглядає ріденько) */
+  --o1:-1px -1px 0 var(--ink),1px -1px 0 var(--ink),-1px 1px 0 var(--ink),1px 1px 0 var(--ink),0 -1px 0 var(--ink),0 1px 0 var(--ink),-1px 0 0 var(--ink),1px 0 0 var(--ink);
+  --o2:-2px -2px 0 var(--ink),2px -2px 0 var(--ink),-2px 2px 0 var(--ink),2px 2px 0 var(--ink),0 -2px 0 var(--ink),0 2px 0 var(--ink),-2px 0 0 var(--ink),2px 0 0 var(--ink);
+  --o3:-3px -3px 0 var(--ink),3px -3px 0 var(--ink),-3px 3px 0 var(--ink),3px 3px 0 var(--ink),0 -3px 0 var(--ink),0 3px 0 var(--ink),-3px 0 0 var(--ink),3px 0 0 var(--ink);
+  --stage:radial-gradient(ellipse 70% 55% at 0% 0%,#ffb03a33,transparent 70%),radial-gradient(ellipse 70% 55% at 100% 0%,#ff4f6d2e,transparent 70%); /* два прожектори сцени */
 }
-html,body{font-family:Rubik,system-ui,sans-serif;background:var(--night);color:var(--paper)}
+html,body{font-family:Rubik,system-ui,sans-serif;background:var(--bg);color:var(--paper);overscroll-behavior:none;-webkit-text-size-adjust:100%;-webkit-touch-callout:none}
 button,input{font-family:inherit}button{touch-action:manipulation}
-button:focus-visible{outline:3px dashed var(--gold);outline-offset:5px}
-#world-vignette{position:fixed;inset:0;pointer-events:none;z-index:1;background:radial-gradient(ellipse at 50% 45%,transparent 42%,#07101c66 100%)}
+button:focus-visible{outline:3px dashed var(--gold);outline-offset:3px}
+#world-vignette{position:fixed;inset:0;pointer-events:none;z-index:1;background:radial-gradient(ellipse at 50% 45%,transparent 45%,#0a060877 100%)}
 
-/* ---------- піксельна рамка ---------- */
-.card,.btn,.chips button,#pause,.player-panel,.run-counters,.member,#load,kbd{
-  position:relative;isolation:isolate;border:0!important;border-radius:0!important;background:var(--edge)!important;clip-path:var(--notch);box-shadow:none}
-/* !important: старі правила у <style> гри (.card:hover, .chips button.on) інакше перефарбовують рамку; тло картки — у ::before */
-.card::before,.btn::before,.chips button::before,#pause::before,.player-panel::before,.run-counters::before,.member::before,#load::before,kbd::before{
-  content:'';position:absolute;inset:3px;z-index:-1;clip-path:var(--notch-in);
-  background:linear-gradient(var(--fill),var(--fill)) top/100% calc(100% - 4px) no-repeat,var(--shade,#0a141c)}
-/* фокус з клавіатури: обвідку зовні обрізає clip-path, тож підсвічуємо саму рамку */
-.card:focus-visible,.btn:focus-visible,.chips button:focus-visible,#pause:focus-visible{--edge:#fff3c4!important;outline:none}
+/* ---------- спільна «товста» рамка: панелі, картки, кнопки, чіпи ---------- */
+.card,.btn,.chips button,#pause,.player-panel,.member,#load,#invite,#snd,#kills{
+  background:var(--panel);border:var(--line);border-radius:var(--r);box-shadow:var(--lift)}
+.chips button,.member,#kills{border-radius:var(--r-s)}
+kbd{display:inline-block;min-width:28px;padding:4px 8px 5px;font:400 13px var(--px);color:var(--paper);text-align:center;
+  background:var(--panel-hi);border:2px solid var(--ink);border-radius:6px;box-shadow:0 3px 0 var(--ink)}
 
 /* ---------- екрани поверх гри ---------- */
-.ov{background:var(--deep);gap:14px;padding:26px 22px;scrollbar-width:thin;scrollbar-color:#3e5a5f #0c161f;touch-action:pan-y;
-  background:repeating-conic-gradient(#ffffff05 0 25%,#0000 0 50%) 0 0/4px 4px,#08111ae6}
-.ov h1{font-family:var(--px);font-weight:400;font-size:34px;letter-spacing:.01em;color:var(--gold);text-shadow:3px 3px 0 var(--ink)}
+.ov{gap:14px;padding:26px 22px;scrollbar-width:thin;scrollbar-color:var(--panel-hi) var(--bg);touch-action:pan-y;
+  background:var(--stage),#140d12d9}                       /* під час гри світ ледь видно крізь темну сливу */
+.ov h1{font-family:var(--px);font-weight:400;font-size:34px;letter-spacing:.01em;color:var(--paper);text-shadow:var(--o3),0 6px 0 var(--ink)}
 .ov p{font-size:14px;line-height:1.6;color:var(--muted);max-width:560px}
-.section-label{font-family:var(--px);font-weight:400;font-size:17px;color:var(--paper);margin:10px 0 0;width:100%;max-width:880px;text-align:left;text-shadow:2px 2px 0 var(--ink)}
+.section-label{font-family:var(--px);font-weight:400;font-size:17px;color:var(--paper);margin:10px 0 0;width:100%;max-width:880px;text-align:left;text-shadow:var(--o2),0 3px 0 var(--ink)}
 
 /* ---------- головне меню ---------- */
 #menu,#lobby{justify-content:flex-start;padding-top:max(30px,env(safe-area-inset-top));padding-bottom:max(30px,env(safe-area-inset-bottom));
-  background:repeating-conic-gradient(#ffffff05 0 25%,#0000 0 50%) 0 0/4px 4px,linear-gradient(180deg,#07111aef,#0f1d29e6 45%,#08131cef)}
+  background:var(--stage),linear-gradient(180deg,#140d12fa,#1a1018f5 50%,#140d12fa)}
 #menu h1.logo{font-family:'BH Pixel','Russo One',sans-serif;font-weight:700;font-size:76px;line-height:1;letter-spacing:.04em;margin:4px 0 0;color:var(--gold);
-  text-shadow:4px 4px 0 var(--gold-deep),8px 8px 0 var(--ink)}
-#menu h1.logo span{color:var(--teal);text-shadow:4px 4px 0 #2f7d75,8px 8px 0 var(--ink)}
-#menu .menu-copy{max-width:520px;font-size:15px;color:#c3d1cb;margin-bottom:2px}
+  text-shadow:var(--o3),0 8px 0 var(--ink),0 11px 0 var(--gold-deep)}
+#menu h1.logo span{color:var(--hot)}
+#menu .menu-copy{max-width:520px;font-size:15px;color:var(--muted);margin-bottom:2px}
 #menu-notice:empty{display:none}
 
 /* жанри: плитки з піксельними емблемами */
 .chips{max-width:880px;gap:8px;justify-content:flex-start;width:100%}
-.chips button{--fill:#122230;--edge:#2f474e;color:var(--muted);font-size:12px;font-weight:500;padding:8px 13px;cursor:pointer}
-.chips button:hover{--edge:#5d7f80;color:var(--paper)}
-.chips button.on{--edge:var(--gold);--fill:#2a2a24;color:var(--paper)}
+.chips button{color:var(--muted);font-size:12px;font-weight:500;padding:8px 13px;cursor:pointer}
+.chips button:hover{border-color:var(--gold-deep);color:var(--paper)}
+.chips button.on{border-color:var(--gold);background:color-mix(in srgb,var(--gold) 16%,var(--panel));color:var(--paper)}
 .chips.genres{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px;flex-shrink:0}
 .chips.genres button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 4px 9px;min-width:0}
 .gi{display:block;width:48px;height:48px;background:url('assets/genre-icons-v1.png?v=1') no-repeat;background-size:528px 48px;
-  background-position:calc(var(--i) * -48px) 0;image-rendering:pixelated;filter:drop-shadow(2px 2px 0 #05090e99)}
+  background-position:calc(var(--i) * -48px) 0;image-rendering:pixelated;filter:drop-shadow(2px 2px 0 var(--ink))}
 .gn{font-family:var(--px);font-size:12px;line-height:1.15;text-align:center;overflow-wrap:anywhere}
 .gi.gi-expansion{background:none}.gi-expansion svg{width:100%;height:100%;display:block;shape-rendering:crispEdges}
 .chips.genres button.on .gi{transform:translateY(-3px)}
 .chips.genres button:disabled{opacity:.5;cursor:default}
 
-/* герої: вибір як у файтингу */
+/* герої */
 .cards{max-width:880px;gap:12px;flex-shrink:0}
 #cards,#lobby-cards{grid-template-columns:repeat(4,minmax(0,1fr))}
-.card{--fill:var(--panel);--edge:#355055;color:var(--paper);font-family:Rubik,system-ui,sans-serif;padding:16px 16px 14px;cursor:pointer;text-align:left}
-.card:not(:disabled):hover,.card.sel{--edge:var(--c,var(--gold))}
-.card b{font-family:var(--px);font-weight:400;font-size:19px;line-height:1.2;color:var(--c,var(--gold))}
-.card small{font-size:12px;line-height:1.5;color:#b2c4bf}
+.card{color:var(--paper);font-family:Rubik,system-ui,sans-serif;padding:16px 16px 14px;cursor:pointer;text-align:left;position:relative;transition:transform .1s,box-shadow .1s,border-color .1s}
+.card:not(:disabled):hover,.card.sel{border-color:var(--c,var(--gold))}
+.card b{font-family:var(--px);font-weight:400;font-size:19px;line-height:1.2;color:var(--paper);text-shadow:0 2px 0 var(--ink)}
+.card small{font-size:12px;line-height:1.5;color:var(--muted)}
 .card .st{font-family:var(--px);font-size:12px;line-height:1.4;color:var(--dim)}
 .card.musician{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:12px 14px 14px;
-  --fill:color-mix(in srgb,var(--c) 9%,var(--panel));--edge:color-mix(in srgb,var(--c) 38%,#253a40)}
-.card.musician:not(:disabled):hover{--fill:color-mix(in srgb,var(--c) 16%,var(--panel))}
-.musician .st{margin-top:auto;color:color-mix(in srgb,var(--c) 55%,#b9c4b4)}
+  background:radial-gradient(circle at 50% 36%,color-mix(in srgb,var(--c) 38%,transparent),transparent 62%),color-mix(in srgb,var(--c) 12%,var(--panel));border-color:color-mix(in srgb,var(--c) 60%,var(--ink))}
+.card.musician:not(:disabled):hover{background:radial-gradient(circle at 50% 36%,color-mix(in srgb,var(--c) 55%,transparent),transparent 66%),color-mix(in srgb,var(--c) 22%,var(--panel));
+  transform:translateY(-5px);box-shadow:0 9px 0 var(--ink),0 0 24px color-mix(in srgb,var(--c) 55%,transparent)}
+.card.musician:not(:disabled):active{transform:translateY(2px);box-shadow:0 2px 0 var(--ink)}
+/* зайнятий герой у лобі: сірий портрет і затемнення */
+.card.musician:disabled{opacity:1}
+.card.musician.taken{border-color:var(--ink);background:var(--panel)}
+.card.musician.taken .portrait{filter:grayscale(1) brightness(.55)}.card.musician.taken b,.card.musician.taken .st{color:var(--dim)}
+.card.musician.taken::after{content:'';position:absolute;inset:0;border-radius:9px;pointer-events:none;background:repeating-linear-gradient(135deg,#0a060877 0 8px,#0a0608aa 8px 16px)}
+.card.musician:disabled:not(.taken){opacity:.6}
+.card.musician.mine{border-color:var(--gold)}
+.musician b{color:var(--c);text-shadow:var(--o1),0 2px 0 var(--ink)}
+.musician .st{margin-top:auto;color:color-mix(in srgb,var(--c) 60%,var(--muted))}
 .portrait,.hud-portrait{display:block;background-image:var(--sheet,url('assets/hero-guitar-v3.png'));background-repeat:no-repeat;background-size:600% 600%;background-position:0 0}
-.portrait{width:128px;height:128px;margin:-4px 0 -2px;filter:drop-shadow(4px 4px 0 #05090e88)}
+.portrait{width:144px;height:144px;margin:-4px 0 -2px;filter:drop-shadow(4px 4px 0 #0a060899)}
 .portrait-drums{--sheet:url('assets/hero-drums-v3.png')}.portrait-bass{--sheet:url('assets/hero-bass-v3.png')}.portrait-piano{--sheet:url('assets/hero-piano-v3.png')}
 .musician:not(:disabled):hover .portrait{background-position:20% 20%} /* кадр ходи: у «підсилення» частина героїв вистрибує за клітинку */
 
 /* клавіші-підказки: лише там, де є клавіатура */
 .keys{display:flex;flex-wrap:wrap;gap:18px;justify-content:center;font-family:var(--px);font-size:13px;color:var(--muted)}
 .keys span{display:flex;align-items:center;gap:5px}
-kbd{--fill:#203845;--edge:#4f6f72;--shade:#0b161e;display:inline-block;min-width:28px;padding:5px 8px 8px;font:400 13px var(--px);color:var(--paper);text-align:center}
 @media (hover:none),(pointer:coarse){.keys{display:none}}
 
-.btn{--fill:#e0a95c;--edge:#ffe0a6;--shade:#8d5e31;font-family:var(--px);font-weight:400;color:#241a10;padding:12px 26px 15px;font-size:17px;cursor:pointer;transition:transform .08s}
-.btn:hover{--fill:#eab76c}.btn:active{transform:translateY(2px)}
-.btn.s{--fill:#1b3240;--edge:#4c6b6e;--shade:#0b161e;color:#cfe0d7;font-size:14px;font-weight:600}
-.btn.s:hover{--fill:#24404f}
+/* кнопки: золота основна, темна другорядна; натиск — кнопка «вдавлюється» у тінь */
+.btn{background:linear-gradient(#ffdc6e,var(--gold) 55%,#f5a623);font-family:var(--px);font-weight:400;color:#2a1606;padding:12px 26px;font-size:17px;cursor:pointer;
+  transition:transform .08s,box-shadow .08s,filter .08s}
+.btn:hover{filter:brightness(1.08)}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+.btn.s{background:var(--panel-hi);color:var(--paper);font-size:14px;font-weight:600}
 .btn:disabled,.card:disabled{opacity:.45;cursor:default}
+.btn:disabled:active{transform:none;box-shadow:var(--lift)}
 .menu-foot{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:center;margin-top:6px}
 .menu-foot #lang-switch{width:auto}
-#multiplayer{color:#bfe6d8}
 .controls-note{font-size:12px!important;max-width:640px!important;color:var(--dim)!important;margin:0!important}
 @media (hover:hover) and (pointer:fine){.controls-note{display:none}} /* на ПК видно клавіші; текст — для телефона */
 .credits{font-size:11px;max-width:640px;color:var(--dim);line-height:1.5}
-.credits summary{cursor:pointer;color:#86a19f}.credits p{font-size:11px;line-height:1.6;margin-top:8px}
+.credits summary{cursor:pointer;color:var(--muted)}.credits p{font-size:11px;line-height:1.6;margin-top:8px}
 
-/* ---------- покращення: три картки в ряд ---------- */
-#lvl h1{font-size:40px}
-#gear-hint{font-size:13px;color:#93b3ad}
-#opts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));max-width:900px;gap:16px;align-items:stretch}
-#opts .card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:20px 16px 18px;min-height:250px;
-  --edge:color-mix(in srgb,var(--c,#b6d1b8) 40%,#2b4148);transition:transform .1s}
-#opts .card .ic{flex:0 0 auto;width:84px;height:84px;filter:drop-shadow(3px 3px 0 #05090e99)}
-#opts .card .tx{align-items:center;gap:8px;flex:1}
-#opts .card b{font-size:19px}
-#opts .card small{font-size:13px}
-#opts .card .st{margin-top:auto}
-#opts .card.sel{--edge:var(--gold);--fill:color-mix(in srgb,var(--c,#b6d1b8) 14%,var(--panel-hi));transform:translateY(-8px)}
-#opts .card.sel::after{content:'';position:absolute;left:50%;top:9px;width:12px;height:6px;transform:translateX(-50%);background:var(--gold);
-  clip-path:polygon(0 0,100% 0,100% 2px,calc(100% - 3px) 2px,calc(100% - 3px) 4px,calc(100% - 6px + 3px) 4px,50% 100%,3px 4px,3px 2px,0 2px)}
+/* ---------- покращення: три високі картки в ряд ---------- */
+#lvl h1{font-size:44px;color:var(--gold);transform:rotate(-2deg);text-shadow:var(--o3),0 6px 0 var(--ink),0 9px 0 var(--gold-deep)}
+#gear-hint{font-size:13px;color:var(--muted);text-shadow:var(--o1)}
+#opts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));max-width:900px;gap:18px;align-items:stretch;padding-top:8px}
+#opts .card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:16px 14px 14px;min-height:310px;
+  border-color:var(--ink)}
+/* кольорова «планка» зверху — колір рідкості (--c); під нею ліпиться кругла пластина з іконкою */
+#opts .card::before{content:'';position:absolute;left:0;right:0;top:0;height:74px;border-bottom:var(--line);border-radius:9px 9px 0 0;
+  background:repeating-linear-gradient(135deg,#ffffff1f 0 8px,#0000 8px 16px),linear-gradient(var(--c,var(--gold)),color-mix(in srgb,var(--c,var(--gold)) 62%,var(--ink)))}
+#opts .card .ic,#opts .card .tx{position:relative;z-index:1}
+#opts .card .ic{flex:0 0 auto;width:96px;height:96px;padding:9px;border:var(--line);border-radius:50%;background:var(--panel);box-shadow:var(--lift)}
+#opts .card .tx{align-items:center;gap:8px;flex:1;width:100%}
+#opts .card b{font-size:20px}
+#opts .card small{font-size:13px;color:var(--muted)}
+#opts .card .st,.card .syn{font-size:12px}
+/* футер-пігулка */
+#opts .card .st{margin-top:auto;align-self:center;padding:4px 11px;border:2px solid var(--ink);border-radius:var(--r-s);color:var(--paper);
+  background:color-mix(in srgb,var(--c,var(--gold)) 28%,var(--ink))}
+#opts .card:not(:disabled):hover,#opts .card.sel{transform:translateY(-6px);border-color:var(--gold);box-shadow:0 10px 0 var(--ink),0 0 26px #ffc93c88;
+  background:color-mix(in srgb,var(--c,var(--gold)) 12%,var(--panel-hi))}
+#opts .card:not(:disabled):hover::before,#opts .card.sel::before{border-color:var(--gold)}
+/* наліпка «Нове!» */
+.card.new::after{content:attr(data-badge);position:absolute;z-index:3;top:-11px;right:-8px;transform:rotate(8deg);padding:3px 10px 4px;
+  font:400 13px/1.1 var(--px);color:var(--paper);background:var(--hot);border:3px solid var(--ink);border-radius:var(--r-s);box-shadow:0 3px 0 var(--ink);text-shadow:var(--o1);pointer-events:none}
 #lvl .keys{margin-top:6px}
+.card .syn.good{color:#9be08a}.card .syn.bad{color:#ff8a7a}.card .syn.crown{color:var(--gold)}
 
-#paused h1,#over h1{font-size:40px;margin-bottom:4px}
-#paused .btn,#over .btn{min-width:230px}
+.dialog{width:100%;max-width:360px;display:flex;flex-direction:column;gap:12px;padding:22px 20px 20px;background:var(--panel);border:var(--line);border-radius:16px;box-shadow:0 6px 0 var(--ink),0 0 40px #0a0608aa}
+.dialog h1{font-size:34px;line-height:1.15;text-wrap:balance;overflow-wrap:anywhere;margin-bottom:2px}
+.dialog .btn,.dialog .btn.s{width:100%;min-width:0;min-height:48px;font-size:17px;font-weight:400}
+.dialog #sum{max-width:none;padding:10px 12px;font-size:14px;line-height:1.5;color:var(--paper);background:var(--ink);border:2px solid var(--panel-hi);border-radius:var(--r-s)}
+.dialog #sum:empty{display:none}
 
 /* ---------- гурт ---------- */
 #lobby{gap:12px}#lobby h1{font-size:30px}#lobby>p{font-size:13px;max-width:680px}
 #roster{max-width:880px;gap:8px}
-.member{--fill:#172e35;--edge:#496662;color:#d6e4d8;font-size:12px;padding:9px 14px}
-#invite{max-width:580px;width:100%;padding:11px 14px;background:#0b1a26;border:0;border-radius:0;box-shadow:inset 0 0 0 3px #4f6f72;color:#b9e3db;font-size:13px;user-select:text}
-#net-status{font-size:13px;min-height:18px;max-width:620px;color:#a5c6b5;line-height:1.5}
+.member{display:inline-flex;align-items:center;gap:6px;background:var(--panel-hi);color:var(--paper);font-size:12px;padding:8px 14px}
+.member.host{border-color:var(--gold-deep)}
+.member.ready{border-color:#7ee08a;background:color-mix(in srgb,#7ee08a 16%,var(--panel-hi))}
+#invite{max-width:580px;width:100%;padding:10px 14px;background:var(--ink);border-color:var(--panel-hi);box-shadow:none;color:var(--gold);font-size:13px;user-select:text}
+#net-status{font-size:13px;min-height:18px;max-width:620px;color:var(--muted);line-height:1.5}
 #ready,#start-band{min-width:240px}#leave-band{font-size:13px}
 
-#load{position:fixed;--fill:#10212b;--edge:#536252;font-family:var(--px);font-size:13px;bottom:20px;color:#ffe0a3;padding:9px 18px;width:max-content;max-width:calc(100% - 32px);left:50%;right:auto;transform:translateX(-50%)}
+#load{font-family:var(--px);font-size:13px;bottom:20px;color:var(--gold);padding:8px 18px;width:max-content;max-width:calc(100% - 32px);left:50%;right:auto;transform:translateX(-50%)}
 #load:empty{display:none}
-#audio-resume{font-size:13px;bottom:max(20px,env(safe-area-inset-bottom));white-space:nowrap}
+#audio-resume{font-size:14px;padding:10px 20px;bottom:max(20px,env(safe-area-inset-bottom));white-space:nowrap}
+#audio-resume:active{transform:translateX(-50%) translateY(3px)}  /* інакше натиск .btn збиває центрування */
 
-/* ---------- HUD ---------- */
-#hud{z-index:3;padding:max(11px,env(safe-area-inset-top)) 14px 9px;gap:7px;font-family:Rubik,system-ui,sans-serif;max-width:1200px;margin:0 auto}
-.hud-top{display:grid;grid-template-columns:minmax(0,1fr) 74px 46px;gap:10px;align-items:center}
-.player-panel{--fill:#0d1c28;--edge:#3f5d61;display:flex;align-items:center;gap:6px;max-width:440px;min-width:0;height:70px;padding:3px 14px 3px 5px}
-.hud-portrait{width:64px;height:64px;flex-shrink:0}
-.player-info{flex:1;min-width:0}.player-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
-#player-name{font-family:var(--px);font-size:15px;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#f0e4c8}
-#lv{font-family:var(--px);font-size:13px;white-space:nowrap;color:var(--gold)}
-.health-row{display:flex;align-items:center;gap:6px;font-size:11px;color:#ec8c7a}
-.health-row .bar{flex:1;height:10px;background:var(--ink);border:0;border-radius:0;box-shadow:0 0 0 2px #2b3d44}
-#hp{background:linear-gradient(#ef8a78 0 40%,#d25f55 40%);transition:width .12s linear}
-#hp-value{font-family:var(--px);font-size:12px;min-width:48px;text-align:right;color:#d2dccf;font-variant-numeric:tabular-nums}
-.run-counters{--fill:#0d1c28;--edge:#3a5358;text-align:center;color:#eff2db;padding:7px 4px 9px}
-#time{display:block;font:400 18px var(--px);font-variant-numeric:tabular-nums;color:#f1e7cc}
-#kills{display:block;font-family:var(--px);font-size:12px;color:#91c3ba;margin-top:2px;font-variant-numeric:tabular-nums}
-#pause{--fill:#15293a;--edge:#4c6b6e;height:46px;width:46px;padding:0 0 3px;pointer-events:auto;font-family:var(--px);font-weight:400;font-size:20px;color:#e2e6d2;cursor:pointer}
-.xp-row{display:flex;align-items:center;gap:9px;padding:0 3px}
-#xpw{height:6px;background:var(--ink);border:0;border-radius:0;flex:1;box-shadow:0 0 0 2px #1d3038}
-#xp{background:linear-gradient(#a9e8dd 0 50%,#6cbcbc 50%);transition:width .18s linear}
-#xp-label{font-family:var(--px);font-size:11px;color:#a2c7bb;white-space:nowrap;text-shadow:1px 1px 0 var(--ink)}
-.song-row{display:flex;gap:9px;align-items:center;min-width:0;padding:0 3px}
-.stage-label{font-family:var(--px);font-size:11px;color:#cfe0c4;background:#142a2bd9;padding:3px 7px;white-space:nowrap;box-shadow:0 0 0 2px #2d4a43}
-#song{font-family:var(--px);font-size:12px;color:#b4d3cf;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:1px 1px 0 var(--ink)}
-#layers{font-size:10px;color:#b7bca8;padding:0 3px;text-shadow:0 2px 3px #050910;line-height:1.5}
-#team{font-family:var(--px);font-size:12px;color:#d0d3c1;line-height:1.7;padding-left:3px;text-shadow:1px 1px 0 var(--ink)}
-#hud.danger .player-panel{--edge:#e78273}#hud.danger #hp-value{color:#ffac8d}
+/* ---------- HUD: тонка смуга XP на всю ширину, таймер по центру, слоти партій ---------- */
+#hud{z-index:3;padding:max(4px,env(safe-area-inset-top)) env(safe-area-inset-right) 4px env(safe-area-inset-left);gap:5px;font-family:Rubik,system-ui,sans-serif}
+.xp-row,.hud-top,.hud-row3,#team{width:100%;max-width:1200px;margin-inline:auto}
+.hud-top,.hud-row3,#team{padding-inline:10px}
+/* ряд 3: слоти партій і рядок пісні (секція, акорд) в одній смузі */
+.hud-row3{display:flex;align-items:center;gap:10px;min-width:0}
+/* ряд 1: XP, бейдж рівня на правому кінці смуги */
+.xp-row{position:relative;display:flex;align-items:center}
+#xpw{flex:1;height:14px;background:#2a1a22;border:2px solid var(--ink);border-left:0;border-radius:0;box-shadow:0 2px 0 #0a0608aa}
+#xp{background:linear-gradient(180deg,#ffffff70 0 35%,#0000 35%),var(--xp);transition:width .18s linear}
+#xp-label{position:absolute;left:0;right:64px;top:50%;transform:translateY(-50%);text-align:center;pointer-events:none;
+  font:400 10px/1 var(--px);color:var(--paper);text-shadow:var(--o1);white-space:nowrap}
+.lv-badge{position:relative;z-index:1;flex:0 0 auto;margin:0 8px 0 -12px;padding:2px 10px 3px;color:#2a1606;background:var(--gold);
+  border:var(--line);border-radius:var(--r-s);box-shadow:0 3px 0 var(--ink);transform:rotate(-2deg)}
+#lv{font-family:var(--px);font-size:14px;white-space:nowrap}
+/* ряд 2: гравець | таймер | вбивства + пауза */
+.hud-top{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center}
+.player-panel{justify-self:start;display:flex;align-items:center;gap:8px;width:100%;max-width:290px;min-width:0;padding:3px 10px 3px 3px}
+.hud-portrait{width:52px;height:52px;flex-shrink:0}
+.player-info{flex:1;min-width:0}.player-heading{display:flex;align-items:center;margin-bottom:3px}
+#player-name{font-family:var(--px);font-size:14px;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--paper)}
+.health-row{position:relative;display:flex;align-items:center;gap:5px;font-size:11px;color:var(--hp)}
+.health-row .bar{flex:1;height:16px;background:#2a1018;border:2px solid var(--ink);border-radius:8px}
+#hp{background:linear-gradient(180deg,#ffffff55 0 32%,#0000 32%),var(--hp);transition:width .12s linear}
+#hp-value{position:absolute;left:14px;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;pointer-events:none;
+  font:400 11px/1 var(--px);color:var(--paper);text-shadow:var(--o1);font-variant-numeric:tabular-nums}
+.run-counters{justify-self:center;text-align:center}
+#time{display:block;font:400 30px/1 var(--px);font-variant-numeric:tabular-nums;color:#fff;text-shadow:var(--o3),0 5px 0 var(--ink)}
+.hud-right{justify-self:end;display:flex;align-items:center;gap:8px}
+#kills{display:block;font:400 14px/1.2 var(--px);color:var(--paper);padding:5px 10px;font-variant-numeric:tabular-nums;white-space:nowrap}
+#pause{display:grid;place-items:center;width:44px;height:44px;padding:0;background:var(--panel-hi);pointer-events:auto;font-family:var(--px);font-weight:400;font-size:18px;color:var(--paper);cursor:pointer}
+#pause:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+/* ряд 3: слоти партій і спорядження, як слоти зброї у Vampire Survivors */
+#layers{flex:0 1 auto;gap:7px;font-size:10px}
+#layers .hic{position:relative;flex:0 0 32px;width:32px;height:32px;padding:2px;background:var(--panel);border:var(--line);border-radius:9px;box-shadow:0 2px 0 var(--ink)}
+#layers .hic svg{width:100%;height:100%;display:block;image-rendering:pixelated}
+#layers .hic i{position:absolute;right:-6px;bottom:-7px;min-width:16px;padding:0 3px;font:400 10px/13px var(--px);font-style:normal;text-align:center;color:#2a1606;
+  background:var(--gold);border:2px solid var(--ink);border-radius:6px}
+#layers .sep{width:6px;height:1px}
+.song-row{display:flex;flex:1 1 0;gap:8px;align-items:center;min-width:0;overflow:hidden;padding:0 0 2px 4px}
+.stage-label{font-family:var(--px);font-size:10px;color:var(--gold);background:var(--panel);padding:2px 8px;white-space:nowrap;border:2px solid var(--ink);border-radius:8px}
+#song{flex:0 1 auto;min-width:0;font-family:var(--px);font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:var(--o1)}
+#sec{font-family:var(--px);font-size:11px;color:var(--gold);white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;text-shadow:var(--o1)}
+#chordfx{font-family:var(--px);font-size:12px;white-space:nowrap;padding:0 4px;border-left:3px solid transparent;text-shadow:var(--o1)}
+/* подія пісні — тост по центру під HUD, не зсуває решту */
+#songev{position:absolute;left:0;right:0;top:100%;margin-top:8px;padding:0 12px;text-align:center;font:400 16px/1.25 var(--px);text-shadow:var(--o2),0 4px 0 var(--ink)}
+#songev:empty{display:none}
+#team{font-family:var(--px);font-size:11px;color:var(--paper);line-height:1.35;text-shadow:var(--o1)}
+#team:empty{display:none}
+#hud.danger .player-panel{border-color:var(--hp)}#hud.danger #hp-value{color:#fff}
 
 /* ---------- адаптивність ---------- */
 @media(max-width:900px){.chips.genres{grid-template-columns:repeat(6,minmax(0,1fr))}#cards,#lobby-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:640px){
   .ov{padding:22px 16px;gap:11px}#menu,#lobby{padding-top:max(22px,env(safe-area-inset-top))}
-  #menu h1.logo{font-size:50px;text-shadow:3px 3px 0 var(--gold-deep),6px 6px 0 var(--ink)}#menu h1.logo span{text-shadow:3px 3px 0 #2f7d75,6px 6px 0 var(--ink)}
-  #menu .menu-copy{font-size:13px;max-width:360px}.section-label{font-size:15px;margin-top:6px}
-  .chips.genres{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.gi{width:40px;height:40px;background-size:440px 40px;background-position:calc(var(--i) * -40px) 0}.gn{font-size:11px}
-  .cards{gap:10px}.card.musician{padding:10px 10px 12px}.portrait{width:96px;height:96px}.musician b{font-size:16px}.musician small{font-size:11px;line-height:1.45}.musician .st{font-size:11px}
-  /* телефон у портреті: три картки в ряд не влазять — стовпчиком, іконка ліворуч */
-  #opts{grid-template-columns:1fr;max-width:420px;gap:10px}
-  #opts .card{flex-direction:row;text-align:left;min-height:0;padding:14px 16px;gap:12px}#opts .card .ic{width:56px;height:56px}#opts .card .tx{align-items:flex-start;gap:5px}
-  #opts .card.sel{transform:none}#opts .card.sel::after{display:none}#opts .card b{font-size:16px}#opts .card small{font-size:12px}
-  #lvl h1,#paused h1,#over h1{font-size:32px}
-  #hud{padding-left:10px;padding-right:10px;gap:6px}.hud-top{grid-template-columns:minmax(0,1fr) 60px 42px;gap:7px}
-  .player-panel{height:62px;padding-right:9px;gap:3px}.hud-portrait{width:54px;height:56px}.player-heading{gap:3px;margin-bottom:5px}
-  #player-name{font-size:13px}#lv{font-size:11px}.health-row{gap:4px}#hp-value{font-size:10px;min-width:38px}.health-row .bar{height:8px}
-  #time{font-size:15px}#kills{font-size:10px}.run-counters{padding:6px 2px 8px}#pause{width:42px;height:42px;font-size:18px}
-  #song{font-size:10px}#layers{font-size:9px}.stage-label{font-size:9px}#xp-label{font-size:10px}#lobby h1{font-size:24px}#team{font-size:10px}
+  #menu h1.logo{font-size:44px;text-shadow:var(--o3),0 6px 0 var(--ink),0 8px 0 var(--gold-deep)}
+  #menu .menu-copy{display:none}.section-label{font-size:15px;margin-top:2px}
+  /* порядок на телефоні (flex order): логотип, настрій (жанри), потім герої — тап по герою одразу стартує забіг, тож настрій обирають першим */
+  #lobby>*{order:6}
+  #lobby>h1,#lobby>p,#invite,#net-status,#roster{order:0}#lobby-cards{order:1}#lobby-modes,#lobby-mode-note,#lobby-genres{order:2}
+  /* жанри: один рядок плиток із прокруткою вбік і згасанням праворуч */
+  .chips.genres{display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;scroll-snap-type:x proximity;scrollbar-width:none;padding:2px 26px 8px 2px;
+    -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 34px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 34px),transparent)}
+  .chips.genres::-webkit-scrollbar{display:none}
+  .chips.genres button{flex:0 0 68px;scroll-snap-align:start;padding:6px 3px 6px;gap:3px;min-height:0}
+  .gi{width:36px;height:36px;background-size:396px 36px;background-position:calc(var(--i) * -36px) 0}.gn{font-size:10px}
+  .cards{gap:10px}.card.musician{padding:8px 8px 10px;gap:3px}.portrait{width:92px;height:92px;margin:0}.musician b{font-size:16px}.musician small{font-size:11px;line-height:1.35}#menu .musician small{display:none}.musician .st{font-size:11px}
+  #lvl h1{font-size:32px}.dialog h1{font-size:28px}
+  /* HUD телефона: ≈120px разом із верхом */
+  #hud{gap:2px;padding-top:max(2px,env(safe-area-inset-top));padding-bottom:2px}
+  #xpw{height:10px}#xp-label{display:none}
+  .lv-badge{padding:0 7px;margin:0 6px 0 -10px;border-width:2px;box-shadow:0 2px 0 var(--ink)}#lv{font-size:11px}
+  .hud-top,.hud-row3,#team{padding-inline:8px}.hud-top{gap:6px}.hud-row3{gap:6px}.song-row{justify-content:flex-end;padding-left:0}
+  .player-panel{gap:5px;padding:2px 7px 2px 2px;border-width:2px;box-shadow:0 3px 0 var(--ink)}
+  .hud-portrait{width:42px;height:42px}#player-name{font-size:12px}.player-heading{margin-bottom:2px}
+  .health-row{gap:0}.health-row>span[aria-hidden]{display:none}.health-row .bar{height:14px}#hp-value{left:0;font-size:10px}
+  #time{font-size:22px;text-shadow:var(--o2),0 3px 0 var(--ink)}
+  .hud-right{gap:6px}#kills{font-size:12px;padding:3px 7px;border-width:2px;box-shadow:0 2px 0 var(--ink)}
+  #pause{width:44px;height:44px;border-width:2px;box-shadow:0 3px 0 var(--ink)}
+  #layers{gap:6px}#layers .hic{flex-basis:26px;width:26px;height:26px;border-width:2px;border-radius:8px;padding:1px}
+  #layers .hic i{right:-5px;bottom:-6px;min-width:14px;font-size:9px;line-height:11px;border-width:2px}
+  .stage-label,#song{display:none}
+  #sec{font-size:10px}#chordfx{font-size:11px}#songev{font-size:14px;margin-top:6px}#team{font-size:10px}
+  /* телефон у портреті: три картки в ряд не влазять — вертикальний список, іконка ліворуч, кольорова планка збоку */
+  #opts{grid-template-columns:1fr;max-width:420px;width:100%;gap:10px;padding-top:4px}
+  #opts .card{flex-direction:row;align-items:center;text-align:left;min-height:0;padding:8px 10px 8px 8px;gap:12px}
+  #opts .card::before{top:0;bottom:0;right:auto;width:68px;height:auto;border-bottom:0;border-right:var(--line);border-radius:9px 0 0 9px}
+  #opts .card .ic{flex:0 0 52px;width:52px;height:52px;padding:3px;box-shadow:0 3px 0 var(--ink)}
+  #opts .card .tx{align-items:flex-start;gap:3px}
+  #opts .card b{font-size:15px;line-height:1.15}#opts .card small{font-size:12.5px;line-height:1.3}
+  #opts .card .st{margin-top:2px;align-self:flex-start;padding:2px 8px;font-size:10.5px}#opts .card .syn{font-size:12px}
+  #opts .card:not(:disabled):hover,#opts .card.sel{transform:none;box-shadow:var(--lift),0 0 16px #ffc93c88}
+  .card.new::after{top:-9px;right:-4px;font-size:11px;padding:2px 7px 3px;border-width:2px}
+  #gear-hint{font-size:12.5px}
+  #lobby h1{font-size:24px}
 }
-@media(prefers-reduced-motion:reduce){.card,.btn,#hp,#xp,#opts .card{transition:none}#opts .card.sel{transform:none}}
+@media(prefers-reduced-motion:reduce){.card,.btn,#hp,#xp,#opts .card{transition:none}#opts .card.sel,#opts .card:hover{transform:none}}
 
 /* ================= ЗВУК НА ЕКРАНІ ================= */
+/* ПК: правий нижній кут. Телефон (нижче): лише кнопка, угорі під паузою — нижній правий кут там під великим пальцем */
 #snd{position:fixed;right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));display:flex;align-items:center;gap:6px;
-  padding:3px 10px 3px 3px;background:#05090ecc;border:2px solid #2f474e;pointer-events:auto;z-index:6;touch-action:manipulation}
-#mute{width:40px;height:40px;padding:0;border:0;background:#15293a;color:#e2e6d2;font:400 18px var(--px);cursor:pointer;display:flex;align-items:center;justify-content:center}
-#mute.off{color:#e78273}
-#vol{width:96px;height:32px;margin:0;accent-color:#80d9cd;cursor:pointer;touch-action:none;background:transparent}
+  padding:3px 10px 3px 3px;pointer-events:auto;z-index:6;touch-action:manipulation}
+#mute{width:40px;height:40px;padding:0;border:0;border-radius:9px;background:var(--panel-hi);color:var(--paper);font:400 18px var(--px);cursor:pointer;display:flex;align-items:center;justify-content:center}
+#mute.off{color:var(--hot)}
+#vol{width:96px;height:32px;margin:0;accent-color:var(--gold);cursor:pointer;touch-action:none;background:transparent}
 
 /* ================= ТЕЛЕФОН ================= */
-html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;-webkit-touch-callout:none}
-#hud{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right));padding-top:max(10px,env(safe-area-inset-top))}
 #invite,input[type=text],input[type=url]{font-size:16px}
 .ov{padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 #lvl,#paused,#over{justify-content:flex-start}
 #lvl::before,#lvl::after,#paused::before,#paused::after,#over::before,#over::after{content:'';margin:auto}  /* центр, що не обрізає верх при прокручуванні */
 @media(pointer:coarse){
   .btn{min-height:48px}.chips button{min-height:44px}#lang-switch button{min-width:44px}#pause{width:48px;height:48px}
-  #mute{width:44px;height:44px}#vol{height:44px}
+  #snd{top:calc(max(2px,env(safe-area-inset-top)) + 90px);bottom:auto;padding:3px;gap:0}
+  #mute{width:38px;height:38px}#vol{display:none}
+  .hud-row3{padding-right:66px}  /* текст акорда закінчується до кнопки звуку (~49px + 10px відступ) */
 }
+/* поза грою (HUD сховано: меню, лобі, екрани) кнопка звуку — унизу праворуч, як на ПК; угорі вона лише в бою */
+@media(pointer:coarse){#hud.hide ~ #snd{top:auto;bottom:max(10px,env(safe-area-inset-bottom))}}
+@media(pointer:coarse) and (max-width:640px){#pause{width:44px;height:44px}#snd{top:calc(max(2px,env(safe-area-inset-top)) + 82px)}}
 @media(max-width:640px){
   /* меню / лобі: одна колонка, великі кнопки */
   #menu .menu-copy,.ov p{font-size:14px}
   .ov>.btn,.menu-foot .btn{width:100%;max-width:420px;min-height:52px;font-size:17px}
   .menu-foot{flex-direction:column;align-items:stretch;gap:10px;width:100%;max-width:420px}
   #lang-switch{justify-content:center}#lang-switch button{min-height:44px;min-width:48px;font-size:14px}
-  .chips button{font-size:14px}.gn{font-size:12px}
-  #cards,#lobby-cards{max-width:100%}.musician small,.musician .st{font-size:12px}
+  .chips button{font-size:14px}
+  #cards,#lobby-cards{max-width:100%}.musician small,.musician .st{font-size:11px}
   #roster{width:100%}.member{font-size:14px;padding:10px 12px}
   #net-status{font-size:14px}
-  /* рівень: великі картки, читабельний опис */
-  #opts{max-width:560px;width:100%;gap:12px}
-  #opts .card{min-height:92px;padding:14px 14px;gap:14px}
-  #opts .card .ic{flex:0 0 64px;width:64px;height:64px}
-  #opts .card b{font-size:18px;line-height:1.2}#opts .card small{font-size:15px;line-height:1.4}#opts .card .st,#opts .card .syn{font-size:13px}
-  #gear-hint{font-size:15px}
-  /* HUD: компактніше, не закриває поле */
-  .stage-label,#xp-label{display:none}
-  #layers{max-height:34px;overflow:hidden}
-  #team{font-size:11px;line-height:1.4}
-  #hud{gap:4px}
   #snd #vol{width:84px}
 }
 /* телефон у ландшафті: низький екран */
 @media(max-height:450px) and (orientation:landscape){
   .ov{padding-top:max(10px,env(safe-area-inset-top));padding-bottom:max(10px,env(safe-area-inset-bottom));gap:8px}
-  .ov h1,#lvl h1,#paused h1,#over h1,#lobby h1{font-size:24px}
+  .ov h1,#lvl h1,#lobby h1{font-size:24px}.dialog h1{font-size:22px}.dialog{padding:14px 16px;gap:8px}
   #menu h1.logo{font-size:40px}
   #menu .menu-copy{display:none}
   #cards,#lobby-cards{grid-template-columns:repeat(4,minmax(0,1fr))}.portrait{width:72px;height:72px}
   .chips.genres{grid-template-columns:repeat(8,minmax(0,1fr))}.gi{width:32px;height:32px;background-size:352px 32px;background-position:calc(var(--i) * -32px) 0}
-  #opts{grid-template-columns:repeat(auto-fit,minmax(230px,1fr));max-width:min(100%,900px)}
-  #opts .card{min-height:0}#opts .card .ic{flex-basis:48px;width:48px;height:48px}
-  #opts .card small{font-size:14px}#opts .card b{font-size:16px}
+  /* покращення: три компактні картки в ряд, без прокрутки */
+  #opts{grid-template-columns:repeat(3,minmax(0,1fr));max-width:min(100%,900px);gap:12px;padding-top:6px}
+  #opts .card{flex-direction:column;align-items:center;text-align:center;min-height:0;padding:8px 8px 8px;gap:5px}
+  #opts .card::before{top:0;bottom:auto;left:0;right:0;width:auto;height:36px;border-right:0;border-bottom:var(--line);border-radius:9px 9px 0 0}
+  #opts .card .ic{flex:0 0 44px;width:44px;height:44px;padding:3px;margin-top:-2px}
+  #opts .card .tx{align-items:center;gap:3px}
+  #opts .card b{font-size:14px}#opts .card small{font-size:11.5px;line-height:1.3}
+  #opts .card .st{align-self:center;margin-top:auto;font-size:10px;padding:2px 8px}#opts .card .syn{font-size:11px}
+  #lvl h1{font-size:28px}#gear-hint{font-size:12px}#lvl .keys{display:none}
   .ov>.btn,.menu-foot{max-width:360px}
-  #layers,.stage-label,#xp-label{display:none}
-  .player-panel{height:54px}.hud-portrait{width:44px;height:46px}
-  #hud{gap:3px}
+  /* HUD: слоти лишаємо, зайвий підпис ховаємо */
+  .stage-label,#xp-label,#song{display:none}
+  #hud{gap:2px;padding-bottom:2px}
+  #xpw{height:8px}.hud-portrait{width:34px;height:34px}.player-panel{max-width:210px}#time{font-size:22px}#pause{width:44px;height:44px}
+  .lv-badge{padding:0 7px;margin:0 6px 0 -10px;border-width:2px;box-shadow:0 2px 0 var(--ink)}#lv{font-size:11px}
+  /* слоти — вертикальною колонкою під панеллю гравця; рядок пісні — власна вузька смуга під рядком таймера (у потоці, тож нічого не перекриває): разом ≈ 85px */
+  .hud-row3{display:contents}
+  #layers{position:absolute;left:max(8px,env(safe-area-inset-left));top:76px;width:auto;flex-direction:column;flex-wrap:wrap;max-height:calc(100vh - 100px);gap:8px 10px}
+  .song-row{flex:none;width:100%;justify-content:center;padding:0;margin:0;pointer-events:none;overflow:visible;min-height:14px}
+  #songev{margin-top:10px}
 }
-@media(max-width:430px){.chips.genres{grid-template-columns:repeat(3,minmax(0,1fr))}.gn{overflow-wrap:break-word;hyphens:auto}}
-
+@media(max-height:450px) and (orientation:landscape) and (pointer:coarse){#snd{top:calc(max(2px,env(safe-area-inset-top)) + 84px)}}
+@media(max-width:430px){.gn{overflow-wrap:break-word;hyphens:auto}}
 /* меню: жанри згорнуті під інструментами; гучність не перекриває картки */
-.genre-toggle{font-family:var(--px);font-size:15px;color:var(--paper);background:#122230;border:2px solid #2f474e;padding:10px 16px;cursor:pointer;width:100%;max-width:880px;text-align:left;text-shadow:2px 2px 0 var(--ink)}
+.genre-toggle{font-family:var(--px);font-size:15px;color:var(--paper);background:var(--panel);border:var(--line);border-radius:var(--r);box-shadow:var(--lift);padding:10px 16px;cursor:pointer;width:100%;max-width:880px;text-align:left;text-shadow:2px 2px 0 var(--ink)}
 .genre-toggle:hover,.genre-toggle[aria-expanded=true]{border-color:var(--gold)}
 #own-room{margin:0 auto}
 .ov{padding-bottom:max(76px,calc(env(safe-area-inset-bottom) + 66px))} /* місце під кнопку гучності, щоб вона не лежала на кнопках і картках */
@@ -240,6 +330,4 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;-webkit-touch-c
 #vol{width:0;opacity:0;pointer-events:none;transition:width .15s,opacity .15s}
 #snd:hover,#snd:focus-within{gap:6px;padding:2px 10px 2px 2px}
 #snd:hover #vol,#snd:focus-within #vol{width:96px;opacity:1;pointer-events:auto}
-@media(pointer:coarse){#snd{gap:6px;padding:2px 10px 2px 2px}#vol{width:96px;opacity:1;pointer-events:auto}}
-/* у меню й лобі кнопка гучності — у верхньому правому куті, де нема карток */
-body:has(#menu:not(.hide)) #snd,body:has(#lobby:not(.hide)) #snd{bottom:auto;top:max(10px,env(safe-area-inset-top))}
+@media(pointer:coarse){#hud.hide ~ #snd{gap:6px;padding:2px 10px 2px 2px}#hud.hide ~ #snd #vol{width:96px;opacity:1;pointer-events:auto}} /* у грі на телефоні — лише кнопка */

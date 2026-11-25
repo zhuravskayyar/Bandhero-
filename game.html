@@ -9,88 +9,66 @@
 <link rel="preload" href="assets/bh-pixel.ttf" as="font" type="font/ttf" crossorigin>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;height:100%;overflow:hidden;background:#0e0f14;color:#e8e6df;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;user-select:none;-webkit-user-select:none}
+html,body{margin:0;height:100%;overflow:hidden;user-select:none;-webkit-user-select:none}
 canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
-#hud{position:fixed;left:0;right:0;top:0;padding:10px 12px;display:flex;flex-direction:column;gap:6px;pointer-events:none;font-size:13px}
-.hr{display:flex;align-items:center;gap:10px}
-.bar{flex:0 1 220px;height:12px;border-radius:99px;background:#0008;border:1px solid #fff2;overflow:hidden}
-.bar i{display:block;height:100%;width:100%}
-#hp{background:linear-gradient(90deg,#d6604d,#e0b252)}
-#xpw{flex:1 1 auto;max-width:none;height:7px}
-#xp{background:#8fd0ff;width:0}
-.hv{background:#0008;border:1px solid #fff1;border-radius:8px;padding:3px 8px;color:#f1dba0;font-variant-numeric:tabular-nums}
-#layers,#song{font-size:11px;color:#cfcab8;text-shadow:0 1px 2px #000}
-#song{color:#8fd0ff}
-#sec{font-size:10px;font-weight:700;color:#ffd54a;white-space:nowrap;text-shadow:0 1px 2px #000;text-transform:uppercase;letter-spacing:.04em}
-#chordfx{font-size:11px;font-weight:700;white-space:nowrap;text-shadow:0 1px 2px #000;padding:0 4px;border-left:3px solid transparent}
-#songev{font-size:12px;font-weight:700;text-shadow:0 1px 2px #000;min-height:0;padding:0 3px}
-#pause{pointer-events:auto;margin-left:auto;background:#0009;border:1px solid #fff2;color:#e8e6df;border-radius:10px;padding:6px 12px;font-size:14px}
-.ov{position:fixed;inset:0;background:#0e0f14ee;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;z-index:5;text-align:center;overflow:auto}
-.ov h1{margin:0;font-size:22px;color:#f1dba0;letter-spacing:.04em}
-.ov p{margin:0;color:#a9a592;font-size:14px;max-width:420px;line-height:1.45}
-.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:100%;max-width:520px}
-#opts{grid-template-columns:1fr;max-width:380px}
-.card{background:#151720;border:1px solid var(--c);border-radius:16px;padding:14px 12px;text-align:left;color:#e8e6df;font:inherit;display:flex;flex-direction:column;gap:6px;cursor:pointer}
-.card:hover,.card:focus-visible{background:#1c1e29;outline:none}
-.card b{font-size:17px;color:var(--c)}
-.card small{color:#a9a592;font-size:12px;line-height:1.35}
-.card .st{font-size:11px;color:#7f7c6e}
-.btn{font-size:17px;padding:12px 24px;border-radius:14px;border:1px solid #e0b252;background:#2a2412;color:#f1dba0;font-weight:700;cursor:pointer}
-.btn.s{border-color:#2c2f3b;background:#1c1e27;color:#bbb;font-weight:500}
 .hide{display:none!important}
-.chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:520px}
-.chips button{font:inherit;font-size:13px;padding:6px 11px;border-radius:99px;border:1px solid #2c2f3b;background:#171922;color:#a9a592;cursor:pointer}
-.chips button.on{border-color:#8fd0ff;color:#e8f6ff;background:#152330}
-.card .syn{font-size:12px;font-weight:600}
-.card .syn.good{color:#8fe0a0}.card .syn.bad{color:#f08a7a}.card .syn.crown{color:#ffd76a}
-#load{position:fixed;left:0;right:0;bottom:18px;text-align:center;font-size:13px;color:#e0b252;z-index:9;pointer-events:none;text-shadow:0 1px 3px #000}
-.btn:disabled,.card:disabled{opacity:.45;cursor:default}
-#lobby{justify-content:flex-start;padding-top:max(24px,env(safe-area-inset-top));touch-action:pan-y}
-#lobby .cards{flex-shrink:0}#roster{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;max-width:540px}
-.member{border:1px solid #ffffff24;border-radius:10px;padding:8px 12px;font-size:13px}
-#invite{width:min(100%,520px);padding:10px;border:1px solid #ffffff30;border-radius:8px;background:#151720;color:#8fd0ff;font:inherit;user-select:text;touch-action:auto}
-#net-status{min-height:20px;color:#8fd0ff}#team{font-size:12px;text-shadow:0 1px 3px #000;line-height:1.6}
-#lobby-genres button:disabled{opacity:.5}#audio-resume{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:8;font-size:14px}
-@media(max-height:680px){#lobby{gap:9px}#lobby .card{padding:10px}#lobby .card small{font-size:11px}}
-/* іконки скілів */
-#opts .card{flex-direction:row;align-items:center;gap:14px}
-.card .ic{flex:0 0 72px;width:72px;height:72px;filter:drop-shadow(0 2px 3px #0009)}
+/* Тут лише розкладка й анімація; вигляд (кольори, рамки, шрифти, токени) — у game-effects.css */
+#hud{position:fixed;left:0;right:0;top:0;display:flex;flex-direction:column;pointer-events:none}
+.bar{overflow:hidden}.bar i{display:block;height:100%;width:100%}#xp{width:0}
+#pause{pointer-events:auto}
+.ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;z-index:5;text-align:center;overflow:auto}
+.ov h1,.ov p{margin:0}
+.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;max-width:520px;gap:10px}
+.card{display:flex;flex-direction:column;text-align:left;font:inherit;cursor:pointer}
 .card .ic svg{width:100%;height:100%;display:block;image-rendering:pixelated}
-.card .tx{display:flex;flex-direction:column;gap:6px;min-width:0}
-#layers{display:flex;flex-wrap:wrap;gap:5px;align-items:center;min-height:30px}
-#layers .hic{position:relative;width:24px;height:24px;flex:0 0 24px}
-#layers .hic svg{width:24px;height:24px;display:block;image-rendering:pixelated}
-#layers .hic i{position:absolute;right:-3px;bottom:-4px;font:600 9px Rubik,sans-serif;font-style:normal;color:#e7dfc6;background:#0b1928;border:1px solid #466262;border-radius:6px;padding:0 3px;line-height:12px}
-#layers .sep{width:1px;height:22px;background:#466262;margin:0 3px}
+.card .tx{display:flex;flex-direction:column;min-width:0}
+.chips{display:flex;flex-wrap:wrap;justify-content:center;max-width:520px}
+#load{position:fixed;left:0;right:0;bottom:18px;text-align:center;z-index:9;pointer-events:none}
+#lobby{justify-content:flex-start;touch-action:pan-y}
+#lobby .cards{flex-shrink:0}#roster{display:flex;flex-wrap:wrap;justify-content:center}
+#invite{touch-action:auto;user-select:text;-webkit-user-select:text}
+#lobby-genres button:disabled{opacity:.5}
+#audio-resume{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:8}
+#layers{display:flex;flex-wrap:wrap;align-items:center}
+/* анімація інтерфейсу — лише тут (game-effects.css без @keyframes) і лише коли рух дозволено */
+@keyframes cardPop{from{opacity:0;transform:translateY(28px) scale(.9)}}
+@keyframes titlePop{from{opacity:0;transform:rotate(-2deg) scale(.6)}}
+@keyframes dangerPulse{50%{box-shadow:0 4px 0 var(--ink),0 0 0 4px #ff3b4f99}}
+@media(prefers-reduced-motion:no-preference){
+  #opts .card{animation:cardPop .34s cubic-bezier(.2,1.3,.4,1) backwards}  /* backwards: після анімації знов діє transform від .sel */
+  #opts .card:nth-child(2){animation-delay:.07s}#opts .card:nth-child(3){animation-delay:.14s}#opts .card:nth-child(4){animation-delay:.21s}
+  #lvl:not(.hide) #lvlT{animation:titlePop .4s cubic-bezier(.2,1.4,.4,1) backwards}
+  #hud.danger .player-panel{animation:dangerPulse .8s ease-in-out infinite}
+}
+/* нові екрани (підсумок, підказки, режими, рекорди) — у палітрі теми */
 /* підсумок забігу на екрані кінця */
 #recap{width:100%;max-width:640px;display:flex;flex-direction:column;gap:10px;text-align:left}
 #recap:empty{display:none}
 #recap .rstats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
-#recap .rstat{background:#0b1928cc;border:1px solid #466262;border-radius:8px;padding:6px 4px;text-align:center;min-width:0}
-#recap .rstat b{display:block;font-size:17px;color:#f1dba0;white-space:nowrap}
-#recap .rstat span{display:block;font-size:11px;color:#a9a592;margin-top:2px}
-#recap .rsong,#recap .rp{background:#0b1928cc;border:1px solid #466262;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:6px}
-#recap .rh{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px;color:#e7dfc6}
-#recap .rh span{color:#a9a592}
+#recap .rstat{background:var(--panel);border:3px solid var(--ink);border-radius:10px;padding:6px 4px;text-align:center;min-width:0}
+#recap .rstat b{display:block;font-size:17px;color:var(--gold);white-space:nowrap}
+#recap .rstat span{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+#recap .rsong,#recap .rp{background:var(--panel);border:3px solid var(--ink);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+#recap .rh{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--paper)}
+#recap .rh span{color:var(--muted)}
 #recap .rchips{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
 #recap .chip{border:1px solid currentColor;border-radius:10px;padding:1px 8px;font-size:12px}
 #recap .hic{position:relative;width:24px;height:24px;flex:0 0 24px}
 #recap .hic svg{width:24px;height:24px;display:block;image-rendering:pixelated}
-#recap .hic i{position:absolute;right:-3px;bottom:-4px;font:600 9px Rubik,sans-serif;font-style:normal;color:#e7dfc6;background:#0b1928;border:1px solid #466262;border-radius:6px;padding:0 3px;line-height:12px}
-#recap .sep{width:1px;height:22px;background:#466262;margin:0 3px}
-#recap .rv{font-size:12px;color:#a9a592}
+#recap .hic i{position:absolute;right:-3px;bottom:-4px;font:600 9px Rubik,sans-serif;font-style:normal;color:var(--paper);background:var(--ink);border:1px solid var(--ink);border-radius:6px;padding:0 3px;line-height:12px}
+#recap .sep{width:1px;height:22px;background:var(--ink);margin:0 3px}
+#recap .rv{font-size:12px;color:var(--muted)}
 @media(max-width:620px){#recap .rstats{grid-template-columns:repeat(3,minmax(0,1fr))}#recap .rstat b{font-size:15px}}
-@media(max-width:620px){.card .ic{flex-basis:48px;width:48px;height:48px}#opts .card{gap:11px}#layers .hic,#layers .hic svg{width:24px;height:24px;flex-basis:24px}}
-#hint{position:fixed;left:50%;top:128px;transform:translateX(-50%);max-width:min(92vw,460px);z-index:7;padding:8px 14px;border:1px solid #f1dba066;border-radius:8px;background:#0b1928ee;color:#f1dba0;font:600 13px/1.35 Rubik,sans-serif;text-align:center;pointer-events:none;box-shadow:0 2px 10px #0008}
-#lvl-hint{color:#f1dba0!important;font-weight:600}
+#hint{position:fixed;left:50%;top:128px;transform:translateX(-50%);max-width:min(92vw,460px);z-index:7;padding:8px 14px;border:3px solid var(--ink);border-radius:10px;background:#241820f0;color:var(--gold);font:600 13px/1.35 Rubik,sans-serif;text-align:center;pointer-events:none;box-shadow:0 2px 10px #0008}
+#lvl-hint{color:var(--gold)!important;font-weight:600}
 .hints-row{margin-top:2px;flex-wrap:wrap;justify-content:center}
 .chips.modes{justify-content:center;max-width:520px}.chips.modes button:disabled{opacity:.55;cursor:default}
-.mode-note{min-height:18px;font-size:12px!important;color:#a9a592;white-space:pre-line}.mode-note:empty{display:none}
+.mode-note{min-height:18px;font-size:12px!important;color:var(--muted);white-space:pre-line}.mode-note:empty{display:none}
 .records{width:100%;max-width:520px;display:flex;flex-direction:column;gap:6px}.records .section-label{text-align:center}
-.records .rrow{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px;color:#e7dfc6;background:#0b1928cc;border:1px solid #466262;border-radius:8px;padding:7px 10px;text-align:left}
-.records .rrow span{color:#a9a592}.records .rtotal{font-size:12px;color:#7f7c6e}
-#recap .rnote{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px;color:#e7dfc6}
-#recap .rnew{color:#ffd76a;font-size:15px}#recap .runl{color:#8fe0a0}
+.records .rrow{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--paper);background:var(--panel);border:3px solid var(--ink);border-radius:10px;padding:7px 10px;text-align:left}
+.records .rrow span{color:var(--muted)}.records .rtotal{font-size:12px;color:var(--dim)}
+#recap .rnote{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px;color:var(--paper)}
+#recap .rnew{color:var(--gold);font-size:15px}#recap .runl{color:#8fe0a0}
 </style>
 <link rel="stylesheet" href="game-effects.css">
 <script src="i18n.js"></script>
@@ -105,20 +83,20 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
 <canvas id="cv"></canvas>
 <div id="world-vignette" aria-hidden="true"></div>
 <div id="hud" class="hide">
+  <div class="xp-row"><div class="bar" id="xpw"><i id="xp"></i></div><span id="xp-label">Досвід</span><span class="lv-badge"><span id="lv">Рів. 1</span></span></div>
   <div class="hud-top">
     <div class="player-panel">
       <span id="player-portrait" class="hud-portrait portrait-guitar" aria-hidden="true"></span>
-      <div class="player-info"><div class="player-heading"><b id="player-name">Жива гітара</b><span id="lv">Рів. 1</span></div>
+      <div class="player-info"><div class="player-heading"><b id="player-name">Жива гітара</b></div>
         <div class="health-row"><span aria-hidden="true">♥</span><div class="bar"><i id="hp"></i></div><span id="hp-value">100/100</span></div>
       </div>
     </div>
-    <div class="run-counters"><span id="time">0:00</span><span id="kills">☠ 0</span></div>
-    <button id="pause" aria-label="Пауза">Ⅱ</button>
+    <div class="run-counters"><span id="time">0:00</span></div>
+    <div class="hud-right"><span id="kills">☠ 0</span><button id="pause" aria-label="Пауза">Ⅱ</button></div>
   </div>
-  <div class="xp-row"><div class="bar" id="xpw"><i id="xp"></i></div><span id="xp-label">Досвід</span></div>
-  <div class="song-row"><span class="stage-label">НІЧНИЙ ГАЙ</span><div id="song"></div><div id="sec"></div><div id="chordfx"></div></div>
+  <div class="hud-row3"><div id="layers"></div>
+  <div class="song-row"><span class="stage-label">НІЧНИЙ ГАЙ</span><div id="song"></div><div id="sec"></div><div id="chordfx"></div></div></div>
   <div id="songev"></div>
-  <div id="layers"></div>
   <div id="team"></div>
 </div>
 <div id="load"></div>
@@ -169,19 +147,19 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
   <div class="keys" aria-hidden="true"><span><kbd>Q</kbd><kbd>E</kbd> вибір</span><span><kbd>Пробіл</kbd> взяти</span></div>
 </div>
 
-<div id="paused" class="ov hide">
+<div id="paused" class="ov hide"><div class="dialog">
   <h1 id="pause-title">Пауза</h1>
   <button class="btn" id="resume">▶ Далі</button>
   <button class="btn s" id="quit">У меню</button>
-</div>
+</div></div>
 
-<div id="over" class="ov hide">
+<div id="over" class="ov hide"><div class="dialog">
   <h1>Тебе заглушили</h1>
   <p id="sum"></p>
   <div id="recap"></div>
   <button class="btn" id="again">Ще раз (нова пісня)</button>
   <button class="btn s" id="other">Інший персонаж</button>
-</div>
+</div></div>
 
 <script>
 (()=>{
@@ -2787,7 +2765,7 @@ function renderChoices(opts,submit){
   $('#opts').innerHTML='';hintLevelScreen();
   const col=CHARS[charKey].col;
   for(const o of opts){
-    const b=document.createElement('button');b.className='card';b.style.setProperty('--c',o.pd?'#8fd0ff':o.note?CHORD_FN[chordFnId(SONG.prog[o.slot].off)].col:o.hp?'#ff6a85':o.rhythm||o.voicing||o.xpb?'#ffd76a':col);
+    const b=document.createElement('button');b.className='card';b.style.setProperty('--c',o.pd?'#c58cff':o.note?CHORD_FN[chordFnId(SONG.prog[o.slot].off)].col:o.hp?'#ff6a85':o.rhythm||o.voicing||o.xpb?'#ffd76a':col);
     if(o.hp)b.innerHTML=`<b>${T('♥ +10% макс. HP')}</b><small>${TF('Максимум і поточне здоров’я +{0}. Лікують лише серця з ворогів.',Math.round(CHARS[charKey].hp*.1*10)/10)}</small><span class="st">${TF('здоров’я · {0} з {1}',hpCount()+1,MAXHPCARD)}</span>`;
     else if(o.xpb)b.innerHTML=`<b>${T('♪ Репетиція')}</b><small>${T('+50% досвіду до наступного рівня.')}</small>`;
     else if(o.note){const ch=SONG.prog[o.slot],tgt=mkChord(SONG,ch.off,o.lvl),k=chordFnId(ch.off),fn=CHORD_FN[k],fx=`<span style="color:${fn.col}">${fn.name}: ${chordFxText(k,Math.max(o.lvl,ch.lvl||1))}</span>`;
@@ -2805,6 +2783,7 @@ function renderChoices(opts,submit){
     else{const cur=G.layers[o.l.id],what=TF(rhythmChanges(o.l,cur,cur+1)?'Шкода шару ×{0} → ×{1}; новий рисунок ритму':'Шкода шару ×{0} → ×{1}; ритм лишається тим самим',(1+.3*(cur-1)).toFixed(1),(1+.3*cur).toFixed(1));
       b.innerHTML=`<b>▲ ${o.l.name}</b><small>${what}.</small><span class="st">${TF('рівень {0} → {1}',cur,cur+1)}</span>`;}
     b.innerHTML=`<span class="ic">${optionIcon(o)}</span><span class="tx">${b.innerHTML}</span>`;
+    if(o.isNew||o.add||o.voicing||(o.note&&o.lvl===1)){b.classList.add('new');b.dataset.badge=T('Нове!');} // наліпка «Нове!» на картках, що додають щось нове
     b.onclick=async()=>{
       if(!choosing||levelBusy)return;levelBusy=true;
       try{
@@ -3524,9 +3503,9 @@ function drawBandFinder(p){
   // 2) радар у правому нижньому куті: ти в центрі, друзі кольором свого інструмента, вороги — дрібні точки
   const R=W<520?46:60,mx=W-R-12,my=H-R-14,k=R/MAP_RANGE;
   g2.save();
-  g2.beginPath();g2.arc(mx,my,R,0,Math.PI*2);g2.fillStyle='#0b1928d0';g2.fill();g2.lineWidth=2;g2.strokeStyle='#466262';g2.stroke();
+  g2.beginPath();g2.arc(mx,my,R,0,Math.PI*2);g2.fillStyle='#140d12d0';g2.fill();g2.lineWidth=2;g2.strokeStyle='#0a0608';g2.stroke();
   g2.clip();
-  g2.strokeStyle='#46626255';g2.lineWidth=1;g2.beginPath();g2.arc(mx,my,R/2,0,Math.PI*2);g2.moveTo(mx-R,my);g2.lineTo(mx+R,my);g2.moveTo(mx,my-R);g2.lineTo(mx,my+R);g2.stroke();
+  g2.strokeStyle='#ffc93c33';g2.lineWidth=1;g2.beginPath();g2.arc(mx,my,R/2,0,Math.PI*2);g2.moveTo(mx-R,my);g2.lineTo(mx+R,my);g2.moveTo(mx,my-R);g2.lineTo(mx,my+R);g2.stroke();
   g2.fillStyle='#e7826fb0';
   for(const m of G.mobs){const x=(m.x-p.x)*k,y=(m.y-p.y)*k;if(x*x+y*y<R*R)g2.fillRect(mx+x-1,my+y-1,2,2);}
   g2.restore();
@@ -3888,10 +3867,10 @@ function hideScreens(){['#menu','#lobby','#over','#paused','#lvl','#hud'].forEac
 function renderLobby(){
   if(!net.active)return;
   const me=net.roster.find(p=>p.id===net.id),busy=net.phase!=='lobby';
-  $('#roster').innerHTML=net.roster.map(p=>`<span class="member">${p.id===net.id?T('Ти'):p.id} · ${p.char?CHARS[p.char].name:T('обирає інструмент')}${p.host?' · '+T('хост'):''}${p.ready?' ✓':''}</span>`).join('');
+  $('#roster').innerHTML=net.roster.map(p=>`<span class="member${p.host?' host':''}${p.ready?' ready':''}">${p.id===net.id?T('Ти'):p.id} · ${p.char?CHARS[p.char].name:T('обирає інструмент')}${p.host?' · '+T('хост'):''}${p.ready?' ✓':''}</span>`).join('');
   $('#lobby-cards').innerHTML=Object.entries(CHARS).map(([k,c])=>{
     const taken=net.roster.some(p=>p.char===k&&p.id!==net.id),selected=me&&me.char===k,lock=charLocked(k);
-    return `<button class="card musician" data-k="${k}" style="--c:${c.col}" ${taken||busy||lock?'disabled':''}><span class="portrait portrait-${k}" aria-hidden="true"></span><b>${lock?'🔒 ':''}${c.name}${selected?' ✓':''}</b><small>${lock?charLockText():taken?T('Уже в гурті'):c.desc}</small><span class="st">${c.role} · ♥ ${c.hp}</span></button>`;
+    return `<button class="card musician${taken||lock?' taken':''}${selected?' mine':''}" data-k="${k}" style="--c:${c.col}" ${taken||busy||lock?'disabled':''}><span class="portrait portrait-${k}" aria-hidden="true"></span><b>${lock?'🔒 ':''}${c.name}${selected?' ✓':''}</b><small>${lock?charLockText():taken?T('Уже в гурті'):c.desc}</small><span class="st">${c.role} · ♥ ${c.hp}</span></button>`;
   }).join('');
   $('#lobby-cards').querySelectorAll('button').forEach(b=>b.onclick=()=>{if(!charLocked(b.dataset.k))wire({t:'pick',char:b.dataset.k});});
   modeButtons($('#lobby-modes'),chosenMode,net.isHost&&!busy,$('#lobby-mode-note')); // режим обирає хост (за своїми відкриттями); гості бачать його
