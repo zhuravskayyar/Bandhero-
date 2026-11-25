@@ -427,7 +427,7 @@ function buildInstrumentExpansion(api) {
   function damage(f,m,kx=0,ky=0) {api.withAttack(f,()=>api.hurtMob(m,f.dmg,kx,ky));}
   function burn(f,m,secs,k) {
     if(!(m.burn>0))m.burnDmg=0; /* попередній підпал скінчився: не успадковуємо чужу (гітарну) шкоду й заслугу */
-    m.burn=Math.max(m.burn||0,secs+.3*f.heat);m.burnOwner=f.owner;m.burnDmg=Math.max(m.burnDmg||0,(k+.3*f.heat)*f.dmg);
+    m.burn=Math.max(m.burn||0,secs+.3*f.heat);m.burnOwner=f.owner;m.burnDmg=Math.max(m.burnDmg||0,(k+.3*f.heat)*f.dmg*(api.dmgMul?api.dmgMul(f):1));
   }
   /* бойова логіка нових видів; true — вид оброблено тут, класичний цикл по ворогах пропускається */
   function stepNew(f,w,dt) {
@@ -528,9 +528,9 @@ function buildInstrumentExpansion(api) {
         } else if(f.kind==='beam'){
           const a=Math.abs(((Math.atan2(dy,dx)-f.dir+Math.PI*3)%(Math.PI*2))-Math.PI);
           if(d>f.range+m.r||d>m.r&&a>f.w/2+Math.asin(Math.min(1,m.r/d))||last!==undefined&&f.age-last<f.tick)continue;
-          damage(f,m,Math.cos(f.dir)*f.kb,Math.sin(f.dir)*f.kb);if(f.heat){if(!(m.burn>0))m.burnDmg=0;m.burn=Math.max(m.burn||0,1+.3*f.heat);m.burnOwner=f.owner;m.burnDmg=Math.max(m.burnDmg||0,.3*f.heat*f.dmg);}f.hit.set(m,f.age);
+          damage(f,m,Math.cos(f.dir)*f.kb,Math.sin(f.dir)*f.kb);if(f.heat){if(!(m.burn>0))m.burnDmg=0;m.burn=Math.max(m.burn||0,1+.3*f.heat);m.burnOwner=f.owner;m.burnDmg=Math.max(m.burnDmg||0,.3*f.heat*f.dmg*(api.dmgMul?api.dmgMul(f):1));}f.hit.set(m,f.age);
         } else if(f.kind==='noteRing'){
-          if(last===undefined&&d<=f.r+m.r){damage(f,m,dx/d*f.kb,dy/d*f.kb);if(f.slow&&!api.isBoss?.(m)){m.slow=Math.max(m.slow||0,.5);m.slowAmt=Math.max(m.slowAmt||0,.05+.1*f.slow);}if(f.poison){if(!(m.burn>0))m.burnDmg=0;m.burn=Math.max(m.burn||0,1+.5*f.poison);m.burnOwner=f.owner;m.burnDmg=Math.max(m.burnDmg||0,.7*f.poison*f.dmg);}f.hit.set(m,1);}
+          if(last===undefined&&d<=f.r+m.r){damage(f,m,dx/d*f.kb,dy/d*f.kb);if(f.slow&&!api.isBoss?.(m)){m.slow=Math.max(m.slow||0,.5);m.slowAmt=Math.max(m.slowAmt||0,.05+.1*f.slow);}if(f.poison){if(!(m.burn>0))m.burnDmg=0;m.burn=Math.max(m.burn||0,1+.5*f.poison);m.burnOwner=f.owner;m.burnDmg=Math.max(m.burnDmg||0,.7*f.poison*f.dmg*(api.dmgMul?api.dmgMul(f):1));}f.hit.set(m,1);}
         } else if(f.kind==='bellows'){
           const phase=f.age<f.delay?1:2,mask=last||0;
           if(!(mask&phase)&&d<=f.r+m.r){const push=phase===1?-f.kb*.7:f.kb;damage(f,m,dx/d*push,dy/d*push);f.hit.set(m,mask|phase);}

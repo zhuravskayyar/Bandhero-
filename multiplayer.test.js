@@ -3121,3 +3121,201 @@ test('genre gear: new tone items change the sound path while combat uses their m
   assert.equal(bus.tdepth.gain.value, 0, 'tremolo depth resets to 0 when the pedal is gone in the next run');
   assert.deepEqual(s.errors, []);
 });
+
+test('enemy hazard zones: five new enemies, damage only inside, compact wire', async t => {
+  const s = session('http://127.0.0.1:8080', true); t.after(() => s.close());
+  s.game.setGenre('lofi'); await s.game.pick('drums');
+  const g = s.game, G = g.G, p = G.p;
+  const NEW = ['litavra', 'dyson', 'metro', 'sub', 'glitch'];
+  for (const k of NEW) assert.ok(g.MOBS[k] && g.MOBS[k].name, k + ' is defined');
+  G.t = 20; // після стартового щита (SPAWN_SHIELD), інакше hurtPlayer нічого не знімає
+  // тип їде по дроту індексом у MOB_KEYS і повертається назад
+  G.layers = {}; G.mobs = []; G.hazards = [];
+  for (const k of NEW) g.addMob(k, p.x + 3000, p.y);
+  G.players = [{ id: 'solo', char: 'drums', p, layers: G.layers, pedals: {} }]; // соло не має G.players, а cleanState його читає
+  const wired = JSON.parse(JSON.stringify(g.cleanState())); g.unpackMobs(wired);
+  assert.deepEqual(wired.mobs.map(m => m.type), NEW, 'new enemy types survive the wire');
+  // шкода: всередині є, ззовні нема (синхронно, без втручання ігрового циклу)
+  const hurt = (spec, dts, dx = 0) => { G.hazards = []; p.hp = p.max; const h = g.addHazard({ x: p.x + dx, y: p.y, ...spec }); assert.ok(h);
+    for (const dt of dts) g.updateHazards(dt); return p.max - p.hp; };
+  assert.ok(hurt({ R: 70, k: 'boom', wind: .1, life: .5, dmg: 20 }, [.05, .1]) >= 19, 'boom hurts inside');
+  assert.equal(hurt({ R: 70, k: 'boom', wind: .1, life: .5, dmg: 20 }, [.05, .1], 300), 0, 'boom spares outside');
+  assert.equal(hurt({ R: 70, k: 'boom', wind: 1, life: 1.4, dmg: 20 }, [.5]), 0, 'no damage during the warning');
+  assert.ok(hurt({ R: 60, k: 'pool', wind: .1, life: 3, dmg: 10 }, [.05, .5, .5]) > 5, 'pool ticks every second');
+  assert.equal(hurt({ R: 60, k: 'pool', wind: .1, life: 3, dmg: 10 }, [.05, .5, .5], 300), 0, 'pool spares outside');
+  const shock = hurt({ R: 170, k: 'shock', wind: .2, life: 1, dmg: 20 }, [.1, .15, .15, .15]);
+  assert.ok(shock >= 19 && shock <= 21, 'shockwave hits inside the ring exactly once, got ' + shock);
+  assert.equal(hurt({ R: 170, k: 'shock', wind: .2, life: 1, dmg: 20 }, [.1, .15, .15, .15], 400), 0, 'shockwave spares outside R');
+  assert.ok(hurt({ R: 75, k: 'mine', wind: .1, arm: .1, trig: 45, life: 6, dmg: 20 }, [.2, .2, .2]) >= 19, 'mine blows up near the player');
+  assert.equal(hurt({ R: 75, k: 'mine', wind: .1, arm: .1, trig: 45, life: 6, dmg: 20 }, [.2, .2, .2], 300), 0, 'mine ignores a distant player');
+  G.hazards = []; for (let i = 0; i < 80; i++) g.addHazard({ x: p.x + 900, y: p.y, R: 50, k: 'boom', wind: 1, life: 2, dmg: 1 });
+  assert.ok(G.hazards.length <= 60, 'hazard cap');
+  // гості бачать зони: компактно, переживають JSON, малюються
+  G.hazards = []; p.hp = p.max;
+  g.addHazard({ x: p.x + 200.7, y: p.y - 80.3, sx: p.x + 500.2, sy: p.y - 90.9, R: 70, k: 'boom', wind: 1.1, life: 1.45, dmg: 26 });
+  g.addHazard({ x: p.x + 300, y: p.y + 100, R: 75, k: 'mine', wind: .6, arm: .6, trig: 45, life: 6, dmg: 28 });
+  const state = JSON.parse(JSON.stringify(g.cleanState())); assert.ok(Array.isArray(state.hazards[0]) && state.hazards[0].length <= 9, 'hazards ride as compact positional arrays'); g.unpackMobs(state);
+  assert.equal(state.hazards.length, 2); assert.equal(state.hazards[1].k, 'mine'); assert.equal(state.hazards[1].arm, .6); assert.equal(state.hazards[0].k, 'boom'); assert.equal(state.hazards[0].R, 70);
+  assert.ok(Number.isInteger(state.hazards[0].x) && Number.isInteger(state.hazards[0].sx), 'coordinates rounded');
+  assert.ok(!('dmg' in state.hazards[0]) && !('hit' in state.hazards[0]), 'guests get only what is drawn');
+  delete G.players; g.draw(); assert.deepEqual(s.errors, []);
+  // Литавра справді кидає: з'являється зона-попередження в місці гравця
+  G.hazards = []; G.mobs = []; const lit = g.addMob('litavra', p.x + 250, p.y); lit.cd = 0; lit.spd = 0;
+  await until(() => G.hazards.some(h => h.k === 'boom' && h.sx !== undefined), 'mortar lobs a shell');
+  // решта нових ворогів поводиться без помилок і лишає зони (міна, хвиля, телепорт-попередження)
+  G.hazards = []; G.mobs = []; p.hp = p.max = 1e6;
+  for (const k of ['dyson', 'metro', 'sub', 'glitch']) { const m = g.addMob(k, p.x + 150, p.y); m.cd = 0; m.spd = 0; }
+  await until(() => ['pool', 'mine', 'shock', 'glitch'].every(k => G.hazards.some(h => h.k === k)), 'every new enemy leaves its zone', 8000);
+  g.draw(); assert.deepEqual(s.errors, []);
+});
+
+// ---------- прокачка героїв: Ноти слави й пасивки (окремий ключ bandhero.passives, рекорди — bandhero.meta) ----------
+const memStorage = (init = {}) => { const m = new Map(Object.entries({ 'bandhero.hints': '0', ...init })); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k), map: m }; };
+const PK = 'bandhero.passives';
+
+test('passives save: sanitizeProg cleans broken data, loadProg survives corrupt JSON, saveProg round-trips', t => {
+  const st = memStorage({ [PK]: '{not json' });
+  const s = session('http://127.0.0.1:8080', false, { localStorage: st }); t.after(() => s.close());
+  const g = s.game;
+  assert.deepEqual(JSON.parse(JSON.stringify(g.loadProg())), { v: 1, notes: 0, passives: {}, storySeen: {} });
+  for (const bad of ['text', 42, null, undefined, [], { notes: 'a', passives: 'x', storySeen: 5 }])
+    assert.deepEqual(JSON.parse(JSON.stringify(g.sanitizeProg(bad))), { v: 1, notes: 0, passives: {}, storySeen: {} });
+  const m = g.sanitizeProg(JSON.parse('{"notes":-5.9,"passives":{"guitar":{"dmg":99,"spd":-3,"hp":"2","mag":2.9,"armor":null,"sig":5,"nope":3},"ghost":{"dmg":5},"drums":"x","piano":null},"storySeen":{"a":1,"bad key!":1,"b":0,"__proto__":1}}'));
+  assert.equal(m.notes, 0);
+  assert.deepEqual(JSON.parse(JSON.stringify(m.passives)), { guitar: { dmg: 5, hp: 2, mag: 2, sig: 5 } });
+  assert.deepEqual(JSON.parse(JSON.stringify(m.storySeen)), { a: true });
+  assert.equal(g.sanitizeProg({ notes: 12.7 }).notes, 12); assert.equal(g.sanitizeProg({ notes: 1e30 }).notes, 1e9);
+  for (const k of Object.keys(g.CHARS)) assert.ok(g.passiveList(k).length === 6 && g.passiveList(k).some(p => p.id === 'sig'), k + ' has 5 shared + 1 own passive');
+  assert.equal(Object.keys(g.CHARS).length, 8);
+  g.PROG = { notes: 100, passives: { bass: { dmg: 1 } } }; g.saveProg();
+  assert.deepEqual(JSON.parse(st.map.get(PK)), { v: 1, notes: 100, passives: { bass: { dmg: 1 } }, storySeen: {} });
+  assert.equal(g.loadProg().notes, 100);
+  assert.equal(g.buyPassive('bass', 'dmg'), true); assert.equal(g.PROG.notes, 80); assert.equal(g.PROG.passives.bass.dmg, 2); // 2-й рівень → ціна 20
+  g.PROG.notes = 5; assert.equal(g.buyPassive('bass', 'armor'), false); assert.equal(g.PROG.notes, 5); // не вистачає
+  g.PROG.notes = 999; for (let i = 0; i < 9; i++) g.buyPassive('bass', 'hp'); assert.equal(g.PROG.passives.bass.hp, 5, 'level capped');
+  assert.equal(g.PROG.notes, 999 - (10 + 20 + 35 + 55 + 80));
+  assert.equal(g.buyPassive('bass', 'unknown'), false); assert.equal(g.buyPassive('ghost', 'dmg'), false);
+  assert.equal(JSON.parse(st.map.get(PK)).passives.bass.hp, 5);
+  g.PROG = { notes: 15 }; g.openMeta(); // панель: 8 інструментів, 6 пасивок, купувати можна лише те, на що вистачає нот
+  assert.equal(s.elements.get('#meta-chars').children.length, 8); const buy = s.elements.get('#meta-list').children;
+  assert.equal(buy.length, 6); assert.ok(buy.every(b => !b.disabled)); buy[0].onclick(); assert.equal(g.PROG.notes, 5);
+  assert.ok(s.elements.get('#meta-list').children.every(b => b.disabled)); assert.match(s.elements.get('#meta-bal').textContent, /5 ♫/);
+  assert.deepEqual(s.errors, []);
+});
+
+test('passives and records never overwrite each other; "reset progress" clears notes and passives too', async t => {
+  const st = memStorage({ 'bandhero.meta': JSON.stringify({ runs: 3, bosses: 2, modes: { concert: { runs: 3, wins: 1, time: 600, level: 12, fast: 600 } } }), [PK]: JSON.stringify({ v: 1, notes: 40, passives: { guitar: { dmg: 2 } }, storySeen: { intro: true } }) });
+  const s = session('http://127.0.0.1:8080', true, { localStorage: st }); t.after(() => s.close());
+  const g = s.game; assert.equal(g.meta.runs, 3); assert.equal(g.PROG.notes, 40); assert.equal(g.PROG.passives.guitar.dmg, 2);
+  g.buyPassive('guitar', 'dmg'); g.saveProg();
+  assert.equal(JSON.parse(st.map.get('bandhero.meta')).runs, 3, 'records untouched by a purchase'); assert.equal(JSON.parse(st.map.get(PK)).notes, 5); // рівень 3 коштує 35
+  assert.equal(g.PROG.storySeen.intro, true);
+  await s.click('#meta-reset'); await s.click('#meta-reset');
+  assert.equal(g.meta.runs, 0); assert.equal(st.map.has('bandhero.meta'), false);
+  assert.equal(g.PROG.notes, 0); assert.deepEqual(JSON.parse(JSON.stringify(g.PROG.passives)), {});
+  const saved = JSON.parse(st.map.get(PK)); assert.equal(saved.notes, 0); assert.deepEqual(saved.passives, {});
+  assert.match(s.elements.get('#menu-notice').textContent, /Прогрес скинуто/); assert.deepEqual(s.errors, []);
+});
+
+test('passiveMods turns levels into multipliers', t => {
+  const s = session('http://127.0.0.1:8080'); t.after(() => s.close());
+  const g = s.game, near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, (msg || '') + a + ' ≈ ' + b);
+  const none = g.passiveMods({}, 'guitar'); assert.deepEqual({ ...none }, { dmg: 1, spd: 1, hp: 1, mag: 0, armor: 1, xp: 1 });
+  assert.deepEqual({ ...g.passiveMods(null, 'guitar') }, { ...none });
+  const m = g.passiveMods({ guitar: { dmg: 5, spd: 5, hp: 5, mag: 5, armor: 5, sig: 2 } }, 'guitar');
+  near(m.dmg, 1 + .3 + .1); near(m.spd, 1.2); near(m.hp, 1.4); near(m.mag, 2); near(m.armor, .8); near(m.xp, 1);
+  near(g.passiveMods({ drums: { sig: 5, hp: 1 } }, 'drums').hp, 1 + .5 + .08);
+  near(g.passiveMods({ piano: { sig: 5 } }, 'piano').xp, 1.4);
+  near(g.passiveMods({ bass: { armor: 5, sig: 5 } }, 'bass').armor, 1 - .2 - .15);
+  assert.deepEqual({ ...g.passiveMods({ guitar: { dmg: 5 } }, 'drums') }, { ...none }, 'other instruments are unaffected');
+  near(g.passiveMods({ guitar: { dmg: 999 } }, 'guitar').dmg, 1.3, 'levels are clamped ');
+});
+
+test('solo: passives scale hero, damage, armor, pickup and XP; notes are paid once per run', async t => {
+  const st = memStorage({ [PK]: JSON.stringify({ v: 1, notes: 7, passives: { guitar: { dmg: 5, spd: 5, hp: 5, mag: 5, armor: 5 } } }) });
+  const s = session('http://127.0.0.1:8080', true, { localStorage: st }); t.after(() => s.close());
+  const g = s.game; assert.equal(g.PROG.notes, 7);
+  g.setGenre('pop'); await g.pick('guitar');
+  const base = g.CHARS.guitar;
+  assert.equal(g.G.p.max, Math.round(base.hp * 1.4)); assert.ok(Math.abs(g.G.p.spd - base.spd * 1.2 * 1.2) < 1e-9);
+  g.G.t = 100; // після стартового щита
+  const hit = () => { const m = g.addMob('glush', 100, 0); m.hp = m.max = 1e6; g.hurtMob(m, 10, 0, 0); return 1e6 - m.hp; };
+  const keep = g.PROG.passives; const withP = hit(); g.PROG = { notes: 7, passives: {} }; const without = hit(); g.PROG = { notes: 7, passives: keep };
+  assert.ok(Math.abs(withP / without - 1.3) < .02, 'damage x1.3, got ' + withP / without);
+  const a = { p: { hp: 100, max: 100, x: 0, y: 0 }, char: 'guitar', pedals: {} }; g.hurtPlayer(a, 10); assert.ok(Math.abs(a.p.hp - 92) < 1e-9, 'armor 0.8, hp ' + a.p.hp);
+  // магніт: база GEM_MAGNET (120) + 30 за «педаль» · 2 = 180 — кристал на 170 px береться лише з пасивкою, на 190 — ні
+  g.G.p.x = 0; g.G.p.y = 0; g.G.mobs.length = 0; g.G.gems.length = 0; g.G.gems.push({ x: 170, y: 0, v: 1, age: 0, mag: false }, { x: 0, y: 190, v: 1, age: 0, mag: false });
+  const [near1, far1] = g.G.gems; g.update(.001); assert.ok(near1.mag, 'gem at 170 px is pulled by the extended radius'); assert.ok(!far1.mag, 'gem at 190 px is not');
+  g.G.t = 100; g.G.kills = 60; g.G.bosses = 1; g.G.mobs.length = 0;
+  assert.equal(g.runNotes(), 22);
+  g.G.p.hp = 0; await until(() => !g.running, 'run ends');
+  assert.equal(g.PROG.notes, 7 + 22); assert.match(s.elements.get('#sum').textContent, /\+22 ♫/);
+  assert.equal(g.awardNotes(), 22); assert.equal(g.PROG.notes, 29, 'paid once');
+  assert.equal(JSON.parse(st.map.get(PK)).notes, 29);
+  assert.deepEqual(s.errors, []);
+});
+
+test('band: a guest sends its passives to the host, who clamps them; both clients get notes once', async t => {
+  const srv = await startServer(t);
+  const a = session(srv.origin, true, { localStorage: memStorage() }); t.after(() => a.close());
+  await a.click('#multiplayer'); await until(() => a.game.net.id, 'host welcome');
+  const b = session(roomUrl(srv.origin, a), true, { localStorage: memStorage() }); t.after(() => b.close());
+  await b.click('#multiplayer'); await until(() => b.game.net.id, 'guest welcome');
+  b.game.PROG = { notes: 3, passives: { drums: { hp: 5, sig: 5, armor: 5 }, guitar: { dmg: 5 } } };
+  await a.pick('guitar'); await b.pick('drums'); await until(() => a.game.net.roster.every(p => p.char), 'picks');
+  await a.click('#ready'); await b.click('#ready'); await until(() => a.game.net.roster.every(p => p.ready), 'ready');
+  await a.click('#start-band'); await until(() => a.game.running && b.game.running, 'both playing');
+  const gp = a.game.G.players.find(p => p.id === b.game.net.id), hp = a.game.G.players.find(p => p.id === a.game.net.id);
+  assert.deepEqual(JSON.parse(JSON.stringify(gp.passives)), { drums: { hp: 5, sig: 5, armor: 5 } }, 'only the guest instrument is accepted');
+  assert.equal(gp.p.max, Math.round(a.game.CHARS.drums.hp * (1 + .4 + .5))); assert.equal(hp.p.max, a.game.CHARS.guitar.hp);
+  assert.ok(Math.abs(a.game.modsFor(gp).armor - .8) < 1e-9);
+  a.game.G.t = 20; const before = gp.p.hp; a.game.hurtPlayer(gp, 10); assert.ok(Math.abs(before - gp.p.hp - 8) < 1e-9, 'host applies guest armor');
+  a.game.G.t = 100; a.game.G.kills = 0;
+  for (const p of a.game.G.players) p.p.hp = 0;
+  await until(() => !a.game.running && !b.game.running, 'band over');
+  await until(() => /♫/.test(b.elements.get('#sum').textContent) && /♫/.test(a.elements.get('#sum').textContent), 'notes shown on both');
+  await delay(300);
+  assert.equal(a.game.PROG.notes, 5); assert.equal(b.game.PROG.notes, 3 + 5, 'repeated snapshots do not pay twice');
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+});
+
+test('story: intro sets storySeen.intro and saves; boss banner is queued once, banners go one at a time', async t => {
+  const st = memStorage();
+  const s = session('http://127.0.0.1:8080', true, { localStorage: st }); t.after(() => s.close());
+  const g = s.game, el = s.elements;
+  assert.equal(el.get('#story').classList.contains('hide'), false, 'intro shows on first open');
+  assert.equal(g.PROG.storySeen.intro, undefined);
+  el.get('#story-next').onclick(); el.get('#story-next').onclick(); el.get('#story-next').onclick();
+  assert.equal(g.PROG.storySeen.intro, undefined, 'not saved before the last slide');
+  el.get('#story-next').onclick();
+  assert.equal(el.get('#story').classList.contains('hide'), true);
+  assert.equal(g.PROG.storySeen.intro, true);
+  assert.equal(JSON.parse(st.map.get(PK)).storySeen.intro, true);
+  el.get('#story-open').onclick(); assert.equal(el.get('#story').classList.contains('hide'), false, 'the menu button replays it');
+  el.get('#story-skip').onclick(); assert.equal(el.get('#story').classList.contains('hide'), true);
+  // пропустити одразу теж зберігає
+  const st2 = memStorage(), s2 = session('http://127.0.0.1:8080', false, { localStorage: st2 }); t.after(() => s2.close());
+  s2.elements.get('#story-skip').onclick(); assert.equal(JSON.parse(st2.map.get(PK)).storySeen.intro, true);
+
+  g.setGenre('pop'); await g.pick('guitar');
+  g.G.mobs.length = 0; g.addMob('boss1', 100, 0); g.addMob('litavra', 120, 0); g.addMob('litavra', 140, 0);
+  g.storyTick(); g.storyTick(); g.storyTick();
+  const shown = () => g.story.shown.concat(g.story.q);
+  assert.equal(shown().filter(x => /Фонограма/.test(x)).length, 1, 'boss line once');
+  assert.equal(shown().filter(x => /Литавра/.test(x)).length, 1, 'enemy hint once');
+  assert.equal(g.story.q.length, 1, 'one banner at a time, the rest wait in the queue');
+  assert.equal(s.elements.get('#story-banner').classList.contains('hide'), false);
+  g.G.mobs = g.G.mobs.filter(m => m.type !== 'boss1'); g.storyTick(); // бос зник зі стану (загинув)
+  assert.equal(shown().filter(x => /Плівка/.test(x)).length, 1, 'death line');
+  g.G.t = 160; g.storyTick(); g.storyTick(); assert.equal(shown().filter(x => /Глава 1/.test(x)).length, 1);
+  g.story.until = 0; g.storyTick(); // показаний банер спливає, наступний із черги
+  assert.equal(g.story.q.length + g.story.shown.length, 4);
+  assert.deepEqual(s.errors, []);
+});
+
+test('new progression strings are translated in every language', () => {
+  for (const lang of ['en', 'de', 'ru']) for (const w of ['Литавра', 'Дисонанс', 'Метроном', 'Сабвуфер', 'Глітч', 'Гучність', 'Слух', 'Сцена', 'Гострий риф', 'Міцні міхи',
+    '+{0} ♫ Ноти слави.', 'Ноти слави й пасивки теж.', 'Ноти слави: {0} ♫', 'Прокачка ♫', 'Історія', 'Історія гаю', 'Пропустити', 'Назад', 'Далі', 'Гайда!', 'Макс',
+    'Диригент Тиші: «Тссс… Чуєте? Так набагато краще».', 'Литавра кидає снаряди: виходь з помаранчевого кола!', 'Глава 2. Далі гай темнішає, а тиша густішає. До Диригента ближче, ніж до дому.'])
+    assert.ok(dictionary[lang][w], lang + ': ' + w);
+});
