@@ -6,3 +6,6 @@ node_modules/
 
 # граф коду (graphify) — локальний, перебудовується
 graphify-out/
+
+# згенеровані WAV для прослуховування хуків (tools/hook-dump.js)
+tools/out/

@@ -269,7 +269,18 @@ const GEAR_ART={
  heavyLow:d=>{d.wave(0,4,14,3,2,7);d.arrow(7,6,7,13,1);},
  subHit:d=>{d.disc(7,7,5,3);d.disc(7,7,3,2);d.disc(7,7,1,0);d.burst(7,7,6,3,3);},
  pierce:d=>{d.arrow(0,7,13,7,1);d.ring(4,7,3,2);d.ring(9,7,3,2);},
- vibration:d=>{d.wave(0,4,14,2,1,3);d.wave(0,10,14,2,2,3);}
+ vibration:d=>{d.wave(0,4,14,2,1,3);d.wave(0,10,14,2,2,3);},
+ // жанрові предмети
+ nylon:d=>{d.strings(1,2,12,4,3,1);d.disc(9,8,2,2);d.p(9,8,0);},
+ tremolo:d=>{[2,5,8,5,2,5,8].forEach((h,i)=>d.rect(i*2,12-h,1,h,i%2?1:2));},
+ warm:d=>{d.rect(1,3,12,8,3);d.rect(1,3,12,1,1);d.rect(2,5,10,2,2);d.rect(2,8,10,2,2);[3,5,7,9,11].forEach(x=>{d.p(x,5,0);d.p(x,8,0);});},
+ spring:d=>d.st(['.llllll.','l......l','.mmmmmm.','l......l','.mmmmmm.','l......l','.dddddd.'],3,3),
+ body:d=>{d.disc(7,10,4,2);d.disc(7,5,3,2);d.rect(6,0,2,3,3);d.disc(7,9,1,3);},
+ plate:d=>{d.rect(1,2,12,10,3);d.rect(1,2,12,1,1);d.wave(2,5,10,1,1,5);d.wave(2,8,10,1,2,5);},
+ brushes:d=>{d.line(1,13,8,6,2);d.st(['l.l.l.l','mlmlmlm','.d.d.d.'],7,1);},
+ gated:d=>{d.rect(1,4,2,6,1);d.rect(3,3,3,8,2);d.rect(6,2,3,10,1);d.rect(9,2,1,10,0);d.dots([[11,7],[13,7]],2,1);},
+ upright:d=>{d.disc(7,10,3,2);d.disc(7,6,2,2);d.rect(7,0,1,5,1);d.rect(6,9,1,3,3);},
+ wobble:d=>{d.wave(0,4,14,2,1,7);d.wave(2,9,12,3,2,9);}
 };
 // «поступалка» для невідомого ключа: візерунок із хешу, щоб іконка завжди була й різнилася
 function hashRows(key){let h=7;for(const ch of String(key))h=(h*31+ch.charCodeAt(0))>>>0;const rows=[];for(let y=0;y<6;y++){let r='';for(let x=0;x<3;x++){h=(h*1103515245+12345)>>>0;r+=(h>>>16)&1?'m':'.';}rows.push(r+r.split('').reverse().join(''));}return rows;}

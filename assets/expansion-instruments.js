@@ -62,17 +62,18 @@ function buildInstrumentExpansion(api) {
   /* Пісенна мелодія (SONG.mel на позиціях SONG.phrases.mel): ту саму лінію грає герой. Без пісні (тести) — запасна лінія. */
   const FALLBACK_POS=[0,4,8,12,18,22,26,30],FALLBACK_DEG=[2,3,2,1,2,3,1,0];
   const snapTo=(m,ch)=>{if(!ch.pcs)return m;let best=m,bd=99;for(let d=-3;d<=3;d++){if(ch.pcs.includes((((m+d)%12)+12)%12)&&Math.abs(d)<bd){bd=Math.abs(d);best=m+d;}}return best;};
+  const place=(m,ch,s)=>!ch||!ch.pcs?m:api.hookMove?api.hookMove(m,ch,s):snapTo(m,ch); /* мотив на акорді: діатонічний перенос з game.html (hookMove); без нього — притискання */
   const fold=(m,lo,hi)=>{while(m<lo)m+=12;while(m>hi)m-=12;return m;};
   function melodyAt(ch,s,b,lo,hi){
     const S=api.SONG||{},H=api.hookPhrase&&S.phrases&&S.mel?api.hookPhrase('mel',b):null,pos=H?H.pos:S.phrases?.mel,mot=H?H.mot:S.mel,real=Array.isArray(pos)&&pos.length&&mot; /* фраза A, A′, B чи A″ — за секцією пісні */
     const sorted=(real?pos.filter(p=>p<32):FALLBACK_POS).slice().sort((a,c)=>a-c),p=(b%2)*16+s;
     const i=sorted.indexOf(p);if(i<0)return null;
     const next=sorted[i+1]??sorted[0]+32,prev=sorted[i-1]??sorted[sorted.length-1];
-    let m=real?fold(snapTo(mot[p],ch),lo,hi):cn(ch,FALLBACK_DEG[i%FALLBACK_DEG.length],lo+(hi-lo>14?5:0));
+    let m=real?fold(place(mot[p],ch,s),lo,hi):cn(ch,FALLBACK_DEG[i%FALLBACK_DEG.length],lo+(hi-lo>14?5:0));
     /* Поки відкрито один акорд, мотив після притискання до його тонів може звестися до 1–2 висот («дрон»). Тоді лінія ходить тонами акорду
        (0, +1, +2, +1 щаблі знизу вгору; назад, якщо угорі тісно) — ті самі кроки, ті самі атаки, змінюється лише висота. Детерміновано від пісні. */
     if(real&&(S.have||4)<=1&&sorted.length>=3){
-      const snapped=sorted.map(q=>fold(snapTo(mot[q],ch),lo,hi));
+      const snapped=sorted.map(q=>fold(place(mot[q],ch,q%16),lo,hi));
       if(new Set(snapped).size<3){
         const pcs=chordPcs(ch),lad=[];for(let x=lo;x<=hi;x++)if(pcs.includes(((x%12)+12)%12))lad.push(x);
         let at=lad.indexOf(snapped[0]);if(at<0)at=0;const dir=at+2<lad.length?1:-1;

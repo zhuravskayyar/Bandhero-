@@ -420,16 +420,94 @@ function hookVariants(rng,song,role){
   if(N>2)app[last-1]=clamp(Math.max(app[last-1],app[last]+1));
   return {Ap:build(apPos,ap),B:build(bPos,b),App:build(A.pos.slice(),app)};
 }
-function composeHook(song,rng){ // → A у song.phrases/lead/mel; A′, B, A″ → song.hk
-  const plan=MUSIC_PLANS[song.genre];
+/* ===== БІБЛІОТЕКА ШАБЛОНІВ ХУКІВ =====
+   Шаблон — не ноти, а КОНТУР у щаблях ладу пісні (7-ступеневий DIA: у мінорі b3/b6/b7 уже «вбудовані», у мажорі — 3/6/7), відносно тоніки.
+   Дві половини (такт 1 = a, такт 2 = b); слот = [щабель, вага, зміна?]: щабель 0 = 1-й, 7 = октавою вище, від'ємні — нижче;
+   вага 5 — опора (стартова нота, стрибок, верх, закінчення), 1 — прохідна; зміна: число (півтони, хроматична допоміжна на слабкому кроці)
+   або 'h' — піднятий вводний тон лише в мінорі (гармонічний мінор над V).
+   Кількість нот задає жанр (довжина заготовки MUSIC_PLANS): з кожної половини лишаються n найвагоміших слотів (hookTplPick), прохідні — коли n дозволяє.
+   Сильні кроки (s%4===0) кладуться на тони тонічного акорда (щаблі 0, 2, 4 за модулем 7), решта — крок ладу. Як додати шаблон з референсу — docs/music-generation.md, 11.1. */
+const HOOK_TPLS=[
+  // «Розгін і злет» (гітарний рок-хук, мі мінор): 1–2–b3, стрибок на октавну тоніку, ще вище; відповідь — спуск до 5-го
+  {id:'ref_rise',moods:['anthem','fierce'],genres:{rock:3,rockfast:3,newwave:3,metal:1.5,industrial:1.5,pop:2,synthwave:2.5,dnb:2,lofi:1,funk:1,jazz:.5,reggae:1,chanson:.2,chanson_ua:.3,folkrock:.3,blues:.5},
+    a:[[0,5],[1,3],[2,5],[1,1],[2,2],[3,1]],b:[[7,5],[9,4],[8,1],[6,2],[4,5]]},
+  // «Риф-повтор із відскоком»: повтор кореня/терції, стрибок угору й відскок вниз
+  {id:'riff_bounce',moods:['fierce'],genres:{rock:1.5,rockfast:1.5,metal:3,industrial:3,newwave:1,dnb:2,funk:2,pop:.5},
+    a:[[0,5],[0,3],[2,4],[0,2],[0,1],[2,1]],b:[[7,5],[4,3],[2,2],[4,4],[2,3]]},
+  // «Спів-спад» (шансон, ре мінор): 5 → 1↑, підйом до b3, зітхання b7–b6–5, хроматичний #3→4, повтор b3 і до тоніки
+  {id:'sigh',moods:['wistful','anthem'],genres:{chanson:3,chanson_ua:2.5,lofi:2,jazz:2,reggae:1.5,pop:.5,newwave:.8,synthwave:1,blues:1,folkrock:.5},
+    a:[[4,5],[7,5],[8,1],[9,4],[8,2],[9,1]],b:[[6,3],[5,1],[4,4],[2,1,1],[3,4],[2,3],[0,5]]},
+  // «Тарантела» (акордеон, ля мінор): педаль на 5-му, #7↔5, відскок 1↑, біг b6–5–4 і спуск b3–2–1
+  {id:'tarantella',moods:['playful','anthem'],genres:{chanson_ua:2.5,folkrock:3,reggae:1,rockfast:.5,pop:.3},
+    a:[[4,5],[6,4,'h'],[4,4],[6,1,'h'],[4,2],[7,5]],b:[[5,4],[4,5],[3,1],[5,1],[2,3],[1,2],[0,5]]},
+  // «Танка» (сопілка, соль мінор): розгін 1–2–b3–4–5, трель на верхній 5, #4 як допоміжна, повернення b3 → 1
+  {id:'tanka',moods:['playful','anthem'],genres:{folkrock:3,chanson_ua:1.5,rockfast:.4},
+    a:[[-3,4.5],[0,5],[1,1],[2,4],[3,1],[4,5]],b:[[5,3],[4,5],[3,1,1],[4,2],[2,4],[0,5]]}
+];
+const hookTplById=id=>HOOK_TPLS.find(t=>t.id===id);
+// вибір шаблону з окремого потоку зерна (не чіпає rng ритму/варіантів: позиції нот лишаються тими самими)
+function hookPickTpl(trng,song){return HOOK_TPLS[hookPick(trng,HOOK_TPLS.map(t=>(t.genres[song.genre]??.04)*(t.moods.includes(song.hook.mood)?2:1)))];}
+const hookIsCT=(d,alt,pw)=>!alt&&(pw?[0,4]:[0,2,4]).includes(((d%7)+7)%7); // pw — квінтакорди (метал, індастріал, драйвовий рок): тони акорда лише 1 і 5
+// з половини шаблону — рівно P.length слотів: найвагоміші, що найкраще лягають на сильні кроки P
+function hookTplPick(rng,slots,P,pw){
+  const n=P.length,L=slots.length,w=slots.map(x=>x[1]+rng()*.3);let res;
+  if(n>=L){res=slots.map(x=>x.slice());for(let i=1;res.length<n;i+=2){const j=Math.min(i,res.length-1);res.splice(j+1,0,[res[j][0]+(j%2?-1:1),1]);}return res;}
+  let best=1e9,bm=0;
+  for(let mask=0;mask<1<<L;mask++){let c=0,k=0,cost=0;for(let i=0;i<L;i++)if(mask>>i&1)c++;if(c!==n)continue;
+    for(let i=0;i<L;i++){if(mask>>i&1){const s=P[k++],ct=hookIsCT(slots[i][0],slots[i][2],pw);if(!ct)cost+=s%8===0?3:s%4===0?2:0;}else cost+=w[i];}
+    if(cost<best-1e-9){best=cost;bm=mask;}}
+  return slots.filter((_,i)=>bm>>i&1).map(x=>x.slice());
+}
+// фраза A із шаблону: щаблі → MIDI у регістрі партії
+function hookTplA(rng,song,role,tpl,pos){
+  const r=MUSIC_PLANS[song.genre].range,lo=role==='mel'?r[0]+5:r[0],hi=role==='mel'?r[1]+3:r[1],sc=DIA[song.mode]||DIA.major,N=pos.length,n1=Math.ceil(N/2),pw=GENRES[song.genre].st==="power";
+  const seq=hookTplPick(rng,tpl.a,pos.slice(0,n1).map(x=>x%16),pw).concat(hookTplPick(rng,tpl.b,pos.slice(n1).map(x=>x%16),pw));
+  seq.forEach((x,k)=>{ // сильний крок — тон тонічного акорда: найближчий за щаблем, у бік наступної ноти
+    if(pos[k]%4!==0||hookIsCT(x[0],x[2],pw))return;
+    const dir=Math.sign(((seq[k+1]||seq[k-1]||x)[0])-x[0])||1;let fix=null;
+    const prev=k?seq[k-1][0]:null; // не повторюємо попередню ноту, якщо є інший тон поруч (квінтакорди мають лише 1 і 5 — інакше фраза зводиться до двох висот)
+    for(const dl of [dir,-dir,2*dir,-2*dir,3*dir,-3*dir,4*dir,-4*dir])if(hookIsCT(x[0]+dl,0,pw)&&x[0]+dl!==prev){fix=dl;break;}
+    if(fix===null)for(const dl of [0,dir,-dir,2*dir,-2*dir,3*dir,-3*dir])if(hookIsCT(x[0]+dl,0,pw)){fix=dl;break;}
+    x[0]+=fix||0;x[2]=0;});
+  const alt=x=>x[2]==='h'?(song.mode==='minor'?1:0):(x[2]||0),pitch=(base,x)=>base+12*Math.floor(x[0]/7)+sc[((x[0]%7)+7)%7]+alt(x);
+  let bestB=null,bc=1e9;
+  for(let k=-1;k<=7;k++){const base=song.key+12*k,ms=seq.map(x=>pitch(base,x));let c=0;for(const m of ms)c+=m<lo?lo-m:m>hi?m-hi:0;
+    c=c*10+Math.abs(ms.reduce((a,b)=>a+b,0)/ms.length-(lo+hi)/2);if(c<bc){bc=c;bestB=base;}}
+  return seq.map(x=>{let m=pitch(bestB,x);while(m>hi+6)m-=12;while(m<lo-9)m+=12;return m;});
+}
+function composeHook(song,rng,fix){ // → A у song.phrases/lead/mel; A′, B, A″ → song.hk. fix.legacy — старий генератор (лише для інструментів/тестів), fix.tpl — примусовий шаблон
+  const plan=MUSIC_PLANS[song.genre],trng=hookRng((song.seed^0x9E3779B9)>>>0);
+  let tpl=hookPickTpl(trng,song);if(fix&&fix.tpl)tpl=hookTplById(fix.tpl)||tpl;if(fix&&fix.legacy)tpl=null;
+  song.hook.tpl=tpl?tpl.id:null;
   for(const role of ['lead','mel']){
-    const tpl=plan[role][Math.floor(rng()*plan[role].length)],odd=tpl.some(p=>p%2),sync=song.hook.mood==='playful'||['funk','reggae','blues','jazz'].includes(song.genre);
-    song.phrases[role]=hookRhythm(rng,tpl.length,odd,sync);
-    const notes=hookComposeA(rng,song,role,song.phrases[role]);
+    const t0=plan[role][Math.floor(rng()*plan[role].length)],odd=t0.some(p=>p%2),sync=song.hook.mood==='playful'||['funk','reggae','blues','jazz'].includes(song.genre);
+    song.phrases[role]=hookRhythm(rng,t0.length,odd,sync);
+    const old=hookComposeA(rng,song,role,song.phrases[role]); // старий композитор завжди спалює свої числа rng: ритм і варіанти B/A′/A″ від шаблону не залежать
+    const notes=tpl?hookTplA(trng,song,role,tpl,song.phrases[role]):old;
     song[role]=Object.fromEntries(song.phrases[role].map((p,i)=>[p,notes[i]]));
   }
+  if(tpl){for(const role of ['lead','mel'])hookNoBigLeaps(song[role],song,role);hookNoSeconds(song.lead,song.mel,song);}
 }
-function deriveHook(song,rng){song.hk={lead:hookVariants(rng,song,'lead'),mel:hookVariants(rng,song,'mel')};}
+// шаблон кладе верхню ноту в кінець 1-ї половини, а A′/B переписують кінець фрази — стрибок між сусідніми нотами може вийти >12 півтонів: нота (не перша у фразі) переходить на октаву до сусідньої, тон-клас лишається; регістр — як у hookTplA (lo−9…hi+6)
+function hookNoBigLeaps(mot,song,role,from=1){ // from — індекс, з якого ноти можна чіпати (A′ лишає мотив і міняє лише кінець: N−2…)
+  const r=MUSIC_PLANS[song.genre].range,lo=(role==='mel'?r[0]+5:r[0])-9,hi=(role==='mel'?r[1]+3:r[1])+6,P=Object.keys(mot).map(Number).sort((a,b)=>a-b),v=P.map(p=>mot[p]),f=Math.max(1,from);
+  const over=()=>{let c=0;for(let j=1;j<v.length;j++)c+=Math.max(0,Math.abs(v[j]-v[j-1])-12);return c;}; // скільки півтонів «понад октаву» у фразі
+  for(let i=1;i<v.length;i++){if(Math.abs(v[i]-v[i-1])<=12)continue;
+    let best=null,bc=over();const d=v[i]>v[i-1]?-12:12;
+    // кандидати: нота i; нота i−1 (в інший бік); i разом з наступною (хвіст фрази зсувається цілим, контур лишається)
+    for(const [idx,dd] of [[[i],d],[[i-1],-d],[[i,i+1],d]]){if(idx.some(j=>j<f||j>=v.length||v[j]+dd<lo||v[j]+dd>hi))continue;
+      for(const j of idx)v[j]+=dd;const c=over();for(const j of idx)v[j]-=dd;if(c<bc){bc=c;best=[idx,dd];}}
+    if(best)for(const j of best[0])v[j]+=best[1];}
+  P.forEach((p,i)=>{mot[p]=v[i];});
+}
+// lead і mel грають один контур: на збігу позицій слабка нота mel не має бути секундою до lead (скрегіт м2/в2; у переносі на інший акорд крок ладу між ними лишається) — зсув на найближчий крок ладу
+function hookNoSeconds(L,M,song){
+  const sc=DIA[song.mode]||DIA.major,bad=(m,l)=>Math.abs(m-l)===1||Math.abs(m-l)===2;
+  for(const p of Object.keys(M)){const l=L[p];if(l===undefined||p%4===0||!bad(M[p],l))continue;
+    for(const dl of [1,-1,2,-2,3,-3]){const m=M[p]+dl;if(sc.includes(((m-song.key)%12+12)%12)&&!bad(m,l)){M[p]=m;break;}}}
+}
+function deriveHook(song,rng){song.hk={lead:hookVariants(rng,song,'lead'),mel:hookVariants(rng,song,'mel')};
+  if(song.hook.tpl)for(const nm of ['Ap','B','App']){for(const role of ['lead','mel'])hookNoBigLeaps(song.hk[role][nm].mot,song,role,nm==='Ap'?song.hk[role][nm].pos.length-2:1);hookNoSeconds(song.hk.lead[nm].mot,song.hk.mel[nm].mot,song);}}
 /* Яка фраза звучить у такті: без форми — коло A · A′ · B · A″ (по 2 такти); з формою — за секцією (куплет A/A′, підхід B, приспів A″, брейк B). Лише висоти й вибір фрази — кількість нот та сама. */
 const HOOK_CYCLE=['A','Ap','B','App'];
 function phraseName(bar,S=SONG){
@@ -524,13 +602,15 @@ function makeSong(prev,forced,fix){ // fix={seed,key} — лише для тес
   song.prog=offs.map(o=>mkChord(song,o));song.prog[0]=mkChord(song,offs[0],1); // заготовки 2–4 такту — повні акорди жанру, їх ще не чути; тоніка вже трізвуком
   song.have=1; // забіг починається з одного акорду; решту гравці збирають НОТАМИ з карток на рівнях (SONG.notes[слот] — зібрані висоти)
   song.notes=[[],[],[],[]];
-  composeHook(song,hrng); // фраза A (ритм + висоти) із зерна
+  composeHook(song,hrng,fix); // фраза A (ритм + висоти) із зерна
   song.groove=(genreExpansion.grooves[genre]||({lofi:[3,10],pop:[6,14],rock:[6,14],newwave:[2,10],metal:[2,10],industrial:[6,14],jazz:[4,12],chanson:[4,12],chanson_ua:[6,14],reggae:[6,13]})[genre]).slice();
   song.riff=makeRiff(genre);
   song.dfig=[null,null,null,null]; // ритм-фраза барабанщика: фігури збираються ритм-картками
   if(genre==='chanson'||genre==='chanson_ua')song.boi=1+Math.floor(Math.random()*(genre==='chanson'?4:3)); // четвірка, шістка або вісімка на всю пісню; російський шансон має ще й 4-й — «шансонний бій»
   if(genre==='chanson'&&song.boi===4)song.bpm=Math.round(rnd(100,105)); // густий шістнадцятий бій потребує ~103 BPM; темп лежить у song, тож у коопі його розсилає хост разом із піснею
+  const A0=JSON.stringify([song.lead,song.mel]);
   genreExpansion.decorateSong(song);
+  if(JSON.stringify([song.lead,song.mel])!==A0)song.hook.tpl=null; // блюз і фолк-рок задають власну фразу A — шаблон не діє
   deriveHook(song,hrng); // A′, B, A″ — з остаточної фрази A (блюз і фолк-рок мають власну)
   return song;
 }
@@ -673,8 +753,27 @@ function fitEvents(evs,ch,bar,s,inst){
     if(r!==e.midi){if(!out)out=evs.slice();out[i]={...e,midi:r,...(e.rootMidi!==undefined?{rootMidi:e.rootMidi+(r-m)}:{}),...(e.harmonicBase!==undefined?{harmonicBase:e.harmonicBase+(r-e.midi)}:{})};}}
   return out||evs;
 }
-const hookPitch=(m,ch,bar,s)=>{ // мотив: найближчий тон акорда гравця; на сильній долі в розбіжному такті — спільний із фоном, якщо є поруч
-  const info=fitInfo(bar);let best=snap(m,ch);
+/* Мотив на поточному акорді: висоти фрази записано під тонічний акорд; тут вони ДІАТОНІЧНО «переїжджають» на акорд ch (щабель кореня: зсув найменший за модулем,
+   тож роль ноти — корінь, терція… — і регістр зберігаються). Сильні кроки (s%4===0) — тони акорда (у квінтакордах це 1 і 5; діатонічна терція там живе лише на слабких кроках),
+   прохідні лишаються кроком ладу. Хроматична допоміжна (півтон до щабля) живе лише на тоніці. Без шаблону (старі пісні, блюз, фолк-рок) — старе притискання snap.
+   Чиста функція від (m, ch, s, SONG); та сама для hookPitch і для флейти/сакса (expansion-instruments → api.hookMove). */
+function hookMove(m,ch,s,S=SONG){
+  if(!ch||!ch.pcs)return m; // немає акорда — нота без змін (snap на такому акорді кинув би TypeError)
+  if(!(S&&S.hook&&S.hook.tpl))return snap(m,ch);
+  const sc=DIA[S.mode]||DIA.major,k=S.key,rel=m-k,oct=Math.floor(rel/12),pc=pcm(rel);
+  let idx=sc.indexOf(pc),alt=0;
+  if(idx<0){idx=sc.indexOf((pc+11)%12);alt=1;if(idx<0){idx=sc.indexOf((pc+1)%12);alt=-1;}}
+  if(idx<0)return snap(m,ch);
+  const rr=pcm(ch.root-k);let ri=sc.indexOf(rr);
+  if(ri<0){let bd=99;sc.forEach((x,i)=>{const d=Math.min((x-rr+12)%12,(rr-x+12)%12);if(d<bd){bd=d;ri=i;}});}
+  const sh=ri>3?ri-7:ri,d=oct*7+idx+sh;let out=k+12*Math.floor(d/7)+sc[((d%7)+7)%7]+(sh===0?alt:0);
+  if(s%4===0&&!ch.pcs.includes(pcm(out)))out=snap(out,ch);
+  // мажорна V у мінорі: акорд має підвищений 7-й ступінь — b7 ладу тре́ться з вводним тоном, тож мелодія бере вводний (bII не чіпаємо — жанровий колір металу)
+  if(S.mode==='minor'&&ch.pcs.includes((k+11)%12)&&!ch.pcs.includes((k+10)%12)&&pcm(out)===(k+10)%12)out+=1;
+  return out;
+}
+const hookPitch=(m,ch,bar,s)=>{ // мотив: діатонічно перенесений на акорд гравця; на сильній долі в розбіжному такті — спільний із фоном, якщо є поруч
+  const info=fitInfo(bar);let best=hookMove(m,ch,s);
   if(info.div&&s%4===0&&!info.F[pcm(best)]){let bd=99;for(let d=-3;d<=3;d++){const q=pcm(m+d);if(info.F[q]&&info.O[q]&&Math.abs(d)<bd){bd=Math.abs(d);best=m+d;}}
 }
   return fitPitch(best,[info],null,s);
@@ -823,18 +922,20 @@ function driveCurve(hard){
   return distortionCurves[key]=c;
 }
 function applyPedalAudio(){
-  if(!audioOK||!slot.bus||!G)return;const b=slot.bus,P_=pedalEffects(),t=ctx.currentTime;
+  if(!audioOK||!slot.bus||!G)return;const b=slot.bus,P_=soundEffects(),t=ctx.currentTime;
   const signature=JSON.stringify(G.pedals)+':'+SONG.bpm+':'+slot.sf;if(b.signature===signature)return;b.signature=signature;
   // семпл distortion_guitar уже перегружений — педаль лише трохи додає, а не перегружає вдруге
   const pre2=FIZZY_SF.has(slot.sf)?.45:1;
   const gain=(P_.drive?(2.2+.9*P_.drive)*(1+.12*(P_.overdrive||0)):P_.overdrive?1.6+.75*P_.overdrive:1)*(P_.drive||P_.overdrive?pre2:1);
-  b.tight.frequency.setTargetAtTime(P_.drive?150:P_.overdrive?100:20,t,.025);b.mid.gain.setTargetAtTime((P_.drive?4:P_.overdrive?2.5:0)+2*(P_.hammers||0),t,.025);
+  b.tight.frequency.setTargetAtTime(P_.drive?150:P_.overdrive?100:20,t,.025);b.mid.gain.setTargetAtTime((P_.drive?4:P_.overdrive?2.5:0)+2*(P_.hammers||0)+2*(P_.warm||0)+2.5*(P_.body||0)+(P_.spring||0),t,.025);
   b.pre.gain.setTargetAtTime(gain,t,.025);b.ws.curve=P_.drive?driveCurve(true):P_.overdrive?driveCurve(false):null;
   b.makeup.gain.setTargetAtTime(P_.drive?.55/Math.sqrt(gain):P_.overdrive?.7/Math.sqrt(gain):1,t,.025);
-  const softCut=P_.mute?Math.max(1700,6500-1300*P_.mute):P_.subtone?Math.max(1400,5400-1200*P_.subtone):18000;
+  // м'які тембри зрізають верх: сурдина, субтон і жанрові нейлон / теплий хамбакер / контрабас / щітки / ворбл (береться найтемніший)
+  const cuts=[P_.mute&&Math.max(1700,6500-1300*P_.mute),P_.subtone&&Math.max(1400,5400-1200*P_.subtone),P_.nylon&&Math.max(3800,7600-1200*P_.nylon),P_.warm&&Math.max(3000,5800-900*P_.warm),
+    P_.upright&&Math.max(2600,5200-800*P_.upright),P_.brushes&&Math.max(3800,7000-1000*P_.brushes),P_.wobble&&Math.max(4500,7500-900*P_.wobble)].filter(Boolean),softCut=cuts.length?Math.min(...cuts):18000;
   b.cab.frequency.setTargetAtTime(P_.drive?5000:P_.overdrive?6000:softCut,t,.025);b.cab2.frequency.setTargetAtTime(P_.drive?5000:P_.overdrive?6500:softCut,t,.025);
   b.comp.ratio.setTargetAtTime(P_.comp?2+2*P_.comp:1,t,.025);
-  b.sub.gain.setTargetAtTime(2*(P_.sub||P_.shells||0),t,.025);
+  b.sub.gain.setTargetAtTime(2*(P_.sub||P_.shells||0)+1.5*(P_.upright||0)+1.2*(P_.body||0),t,.025);
   const chorus=P_.chorus||P_.orchestra||0;
   b.chWet.gain.setTargetAtTime(chorus?(b.inst==='bass'?.12:.2)+.045*chorus:0,t,.025);
   b.cdepth.gain.setTargetAtTime(chorus?.0015+.0008*chorus:0,t,.025);
@@ -846,9 +947,14 @@ function applyPedalAudio(){
   const echo=P_.delay||P_.echo||0;
   b.fb.gain.setValueAtTime(echo?Math.min(.4,.16+.07*echo):0,t);
   b.dw.gain.setValueAtTime(echo?.14+.05*echo:0,t);
-  b.send.gain.setValueAtTime(SEND[b.inst]*(1+.55*(P_.reverb||0)+.4*(P_.hall||0)+.22*(P_.sustain||0)+.15*(P_.echo||0)),t);
+  b.send.gain.setValueAtTime(SEND[b.inst]*(1+.55*(P_.reverb||0)+.4*(P_.hall||0)+.22*(P_.sustain||0)+.15*(P_.echo||0)+.8*(P_.plate||0)+.4*(P_.spring||0)+.2*(P_.body||0)),t);
   if(b.tremDepth)b.tremDepth.gain.setTargetAtTime(Math.min(.42,.12*(P_.shake||P_.flutter||0)),t,.025);
   if(b.tremOsc&&b.inst==='flute')b.tremOsc.frequency.setTargetAtTime(6+2*(P_.flutter||0),t,.025);
+  // тремоло гітари: повільний LFO на гучність шини (makeup); створюється лише коли предмет узято
+  if(P_.tremolo){if(!b.tlfo){const o=ctx.createOscillator(),dg=ctx.createGain();o.frequency.value=5;dg.gain.value=0;o.connect(dg);dg.connect(b.makeup.gain);o.start();b.tlfo=o;b.tdepth=dg;}
+    b.tlfo.frequency.setTargetAtTime(4.6+.8*P_.tremolo,t,.025);b.tdepth.gain.setTargetAtTime(Math.min(.35,.08+.06*P_.tremolo),t,.025);}
+  // Шини переживають забіги: без предмета tremolo глибину скидаємо в 0, інакше тремоло звучить у наступному забігу
+  else if(b.tdepth)b.tdepth.gain.setTargetAtTime(0,t,.025);
 }
 /* --- синтез як запасний варіант без мережі --- */
 const bufCache=new Map();
@@ -1347,8 +1453,11 @@ function drum(t,ev){
   if(NOTE_LOG&&NOTE_LOG.length<2000)NOTE_LOG.push({inst:'drums',t,drum:ev.drum});
   t+=ev.off||0;const hm=humanize(t,ev);t=hm.t;const v=hm.v;
   const vg=ctx.createGain();vg.connect(slot.bus.input);
-  const room=slot!==backingSlot&&pedalEffects().room||0;
+  const sfx=slot!==backingSlot?soundEffects():{},room=sfx.room||0;
   if(room){const delay=ctx.createDelay(.2),wet=ctx.createGain();delay.delayTime.value=.045+.012*room;wet.gain.value=.09+.04*room;vg.connect(delay);delay.connect(wet);wet.connect(slot.bus.input);}
+  // гейтований ревер на малому: три швидкі відбиття, що спадають і різко обриваються через ~0,2 с
+  if(sfx.gated&&ev.drum==='snare'){const gate=ctx.createGain();gate.gain.setValueAtTime(1,t);gate.gain.setValueAtTime(0,t+.2);gate.connect(slot.bus.input);
+    [1,2,3].forEach(k=>{const dl=ctx.createDelay(.2),w=ctx.createGain();dl.delayTime.value=.034*k;w.gain.value=(.2+.05*sfx.gated)*(1-.25*(k-1));vg.connect(dl);dl.connect(w);w.connect(gate);});}
   slot.drumv=slot.drumv||{};
   if(ev.drum==='hat'&&slot.drumv.ohat){slot.drumv.ohat.gain.setTargetAtTime(0,t,.008);slot.drumv.ohat=null;}
   if(ev.drum==='ohat')slot.drumv.ohat=vg;
@@ -1432,12 +1541,12 @@ function playBreath(t,vel,level){
   src.connect(hp);hp.connect(gain);gain.connect(slot.bus.input);rememberVoice(slot,src,gain,[src,hp,gain],end+.02);src.start(t);src.stop(end+.02);
 }
 function fire(t,evs){
-  const pd=pedalEffects();
+  const pd=soundEffects();
   for(const ev of evs){if(ev.silent)continue;
     if(ev.drum){drum(t,ev);if(pd.double&&ev.drum==='kick')drum(t+stepDur(),{...ev,vel:ev.vel*(.25+.15*pd.double)});
       if(pd.rim&&ev.drum==='snare')drum(t,{...ev,drum:'rim',vel:ev.vel*(.12+.06*pd.rim)});
       if(pd.bronze&&['hat','ohat','ride','crash'].includes(ev.drum))drum(t,{...ev,drum:'ride',vel:ev.vel*(.07+.04*pd.bronze)});}
-    else{playBuffered(t,{...ev,vel:Math.min(1,ev.vel*(1+.08*(pd.hammers||0))),slide:ev.slide||!!pd.slides,vib:ev.vib||pd.vibrato||0});
+    else{playBuffered(t,{...ev,vel:Math.min(1,ev.vel*(1+.08*(pd.hammers||0))),slide:ev.slide||!!pd.slides,vib:ev.vib||pd.vibrato||(pd.wobble?.4+.5*pd.wobble:0)});
       if(pd.breath||pd.subtone)playBreath(t+(ev.off||0),ev.vel,pd.breath||pd.subtone);
       if(pd.octave)playBuffered(t,{...ev,midi:Math.max(12,ev.midi+(charKey==='flute'?12:-12)),vel:ev.vel*(.2+.1*pd.octave),str:undefined,clear:undefined});
       if(pd.alto)playBuffered(t,{...ev,midi:Math.max(12,ev.midi-12),vel:ev.vel*(.15+.07*pd.alto),str:undefined,clear:undefined});
@@ -1854,7 +1963,7 @@ const LAYERS={
 };
 /* Особисте спорядження: свої ID, звук і бойові властивості для кожного інструмента. */
 const MAXSOUND=5,MAXDMG=5,MAXVOICING=5;
-const SOUND_GEAR={guitar:['drive','overdrive','delay','chorus','wah'],drums:['double','shells','rim','bronze','room'],bass:['comp','octave','chorus','slides','sub'],piano:['sustain','arp','reverb','ensemble','hammers'],flute:['vibrato','breath','echo','octave','flutter'],violin:['vibrato','mute','hall','alto','orchestra'],sax:['subtone','echo','octave','chorus','vibrato'],accordion:['musette','bandoneon','piccolo','cassotto','shake']};
+const SOUND_GEAR={guitar:['drive','overdrive','delay','chorus','wah','nylon','tremolo','warm','spring','body','plate'],drums:['double','shells','rim','bronze','room','brushes','gated'],bass:['comp','octave','chorus','slides','sub','upright'],piano:['sustain','arp','reverb','ensemble','hammers','wobble'],flute:['vibrato','breath','echo','octave','flutter'],violin:['vibrato','mute','hall','alto','orchestra'],sax:['subtone','echo','octave','chorus','vibrato'],accordion:['musette','bandoneon','piccolo','cassotto','shake']};
 const gearCat=(inst,key)=>SOUND_GEAR[inst]?.includes(key)?'sound':'damage';
 const GEAR={
   guitar:[
@@ -1863,6 +1972,13 @@ const GEAR={
     {key:'delay',name:T('Тейп-ділей'),ic:'🔁',type:'педаль',fx:{delay:1},lv:[T('Стрічкове відлуння повторює удар із 40% сили'),T('Відлуння з 55% сили'),T('Відлуння з 70% сили')]},
     {key:'chorus',name:T('Гітарний хорус'),ic:'🌀',type:'педаль',fx:{chorus:1},lv:[T('Плаваючий подвійний тембр; сповільнює на 25%'),T('Ширший хорус; сповільнює на 40%'),T('Глибокий хорус; сповільнює на 55%')]},
     {key:'wah',name:T('Вау-педаль'),ic:'⚡',type:'педаль',fx:{wah:1},lv:[T('Резонансний «вау»; 10% шанс криту ×2'),T('Сильніший резонанс; 18% шанс криту'),T('Гострий резонанс; 26% шанс криту')]},
+    /* Жанрові предмети: fx — бойова сила (така сама, як у предмета, чию роль заміняє в жанрі), snd — що чути (див. soundEffects) */
+    {key:'nylon',name:T('Нейлонові струни'),ic:'≈',type:'спорядження',fx:{overdrive:1},snd:{nylon:1},lv:[T('Теплий нейлонний тембр; +10% шкоди й 20% відкидання'),T('Тепліший тембр; +20% шкоди й 40% відкидання'),T('М’який округлий тембр; +30% шкоди й 60% відкидання')]},
+    {key:'tremolo',name:T('Тремоло-перебір'),ic:'〰',type:'педаль',fx:{wah:1},snd:{tremolo:1},lv:[T('Пульсуюча гучність; 10% шанс криту ×2'),T('Глибша пульсація; 18% шанс криту'),T('Швидка пульсація; 26% шанс криту')]},
+    {key:'warm',name:T('Теплий хамбакер'),ic:'◖',type:'спорядження',fx:{octave:1},snd:{warm:1},lv:[T('Темніший густий тон; +12% шкоди'),T('Ще густіший тон; +24% шкоди'),T('Оксамитовий тон; +36% шкоди')]},
+    {key:'spring',name:T('Спрінг-ревер'),ic:'🌀',type:'педаль',fx:{comp:1},snd:{spring:1},lv:[T('Пружинний «буньк»; сильніше відкидання й стан на 0,3 с'),T('Пружніший ревер; більше відкидання, стан на 0,5 с'),T('Дзвінка пружина; максимальний тиск, стан на 0,7 с')]},
+    {key:'body',name:T('Акустичний корпус'),ic:'◒',type:'спорядження',fx:{octave:1},snd:{body:1},lv:[T('Резонанс дерев’яного корпусу; +12% шкоди'),T('Глибший резонанс корпусу; +24% шкоди'),T('Повний резонанс корпусу; +36% шкоди')]},
+    {key:'plate',name:T('Пластинчастий ревер'),ic:'▭',type:'педаль',fx:{delay:1},snd:{plate:1},lv:[T('Хвіст ревера повторює удар із 40% сили'),T('Хвіст повторює удар із 55% сили'),T('Довгий хвіст повторює удар із 70% сили')]},
     {key:'pick',name:T('Твердий медіатор'),ic:'◆',type:'спорядження',fx:{reach:1},lv:[T('Дальність усіх гітарних хвиль +12%'),T('Дальність +24%'),T('Дальність +36%')]},
     {key:'roadie',name:T('Гітарний технік'),ic:'♥',type:'помічник',fx:{heartDrop:1,haste:1},lv:[T('Шанс серця з ворогів +2%; рух +5%'),T('Шанс серця +4%; рух +10%'),T('Шанс серця +6%; рух +15%')]},
     {key:'sharpStrings',name:T('Гострі струни'),ic:'✦',type:'спорядження',fx:{sharpStrings:1},lv:[T('Критичний удар: шанс 10%'),T('Критичний удар: шанс 20%'),T('Критичний удар: шанс 30%')]},
@@ -1879,7 +1995,9 @@ const GEAR={
     {key:'room',name:T('Кімната ударних'),ic:'⌒',type:'педаль',fx:{room:1},lv:[T('Короткий відгук кімнати'),T('Ширший відгук кімнати'),T('Густий відгук кімнати')]},
     {key:'wave',name:T('Ударна хвиля'),ic:'◎',type:'спорядження',fx:{wave:1},lv:[T('Бочка: радіус +12%'),T('Бочка: радіус +24%'),T('Бочка: радіус +36%')]},
     {key:'stun',name:T('Оглушення малого'),ic:'✴',type:'спорядження',fx:{stun:1},lv:[T('Малий оглушує на 0,2 с'),T('Малий оглушує на 0,3 с'),T('Малий оглушує на 0,4 с')]},
-    {key:'beatCrit',name:T('Ритм-крит'),ic:'⚡',type:'спорядження',fx:{beatCrit:1},lv:[T('Перша доля: шанс криту 10%'),T('Перша доля: шанс криту 20%'),T('Перша доля: шанс криту 30%')]}
+    {key:'beatCrit',name:T('Ритм-крит'),ic:'⚡',type:'спорядження',fx:{beatCrit:1},lv:[T('Перша доля: шанс криту 10%'),T('Перша доля: шанс криту 20%'),T('Перша доля: шанс криту 30%')]},
+    {key:'brushes',name:T('Щітки'),ic:'≋',type:'спорядження',fx:{rim:1},snd:{brushes:1},lv:[T('М’який малий; +20% шкоди й оглушення на 0,2 с'),T('М’який малий; +40% шкоди й оглушення на 0,35 с'),T('М’який малий; +60% шкоди й оглушення на 0,5 с')]},
+    {key:'gated',name:T('Гейтований ревер'),ic:'▮',type:'педаль',fx:{rim:1},snd:{gated:1},lv:[T('Різкий хвіст малого; +20% шкоди й оглушення на 0,2 с'),T('Різкий хвіст малого; +40% шкоди й оглушення на 0,35 с'),T('Різкий хвіст малого; +60% шкоди й оглушення на 0,5 с')]}
   ],
   bass:[
     {key:'comp',name:T('Басовий компресор'),ic:'🗜',type:'педаль',fx:{comp:1},lv:[T('Щільніший бас; сильніше відкидання й стан на 0,3 с'),T('Більше відкидання; стан на 0,5 с'),T('Максимальний тиск; стан на 0,7 с')]},
@@ -1891,7 +2009,8 @@ const GEAR={
     {key:'heavyLow',name:T('Важкий низ'),ic:'▰',type:'спорядження',fx:{heavyLow:1},lv:[T('Відкидання басу +20%'),T('Відкидання басу +40%'),T('Відкидання басу +60%')]},
     {key:'subHit',name:T('Саб-удар'),ic:'◉',type:'спорядження',fx:{subHit:1},lv:[T('Гул: шкода +50%'),T('Гул: шкода +100%'),T('Гул: шкода +150%')]},
     {key:'pierce',name:T('Пробиття хвиль'),ic:'➤',type:'спорядження',fx:{pierce:1},lv:[T('Басові хвилі пробивають ще 1 ворога'),T('Басові хвилі пробивають ще 2 ворогів'),T('Басові хвилі пробивають ще 3 ворогів')]},
-    {key:'vibration',name:T('Вібрація басу'),ic:'≈',type:'спорядження',fx:{vibration:1},lv:[T('Хвилі трохи сповільнюють'),T('Хвилі помітно сповільнюють'),T('Хвилі сильно сповільнюють')]}
+    {key:'vibration',name:T('Вібрація басу'),ic:'≈',type:'спорядження',fx:{vibration:1},lv:[T('Хвилі трохи сповільнюють'),T('Хвилі помітно сповільнюють'),T('Хвилі сильно сповільнюють')]},
+    {key:'upright',name:T('Контрабасові струни'),ic:'♭',type:'спорядження',fx:{octave:1},snd:{upright:1},lv:[T('Дерев’яний округлий тон; +12% шкоди й 2 пробивання'),T('Густіший дерев’яний тон; +24% шкоди й 4 пробивання'),T('Глибокий контрабасовий тон; +36% шкоди й 6 пробивань')]}
   ],
   piano:[
     {key:'sustain',name:T('Сустейн-педаль'),ic:'∞',type:'педаль',fx:{sustain:1},lv:[T('Більше резонансу; снаряди живуть на 25% довше'),T('Глибший резонанс; життя снарядів +50%'),T('Повний резонанс; життя снарядів +75%')]},
@@ -1903,7 +2022,8 @@ const GEAR={
     {key:'homingPlus',name:T('Швидкі ноти'),ic:'➤',type:'спорядження',fx:{homingPlus:1},lv:[T('Самонаведення: швидкість +10%'),T('Самонаведення: швидкість +20%'),T('Самонаведення: швидкість +30%')]},
     {key:'split',name:T('Розщеплення ноти'),ic:'✣',type:'спорядження',fx:{split:1},lv:[T('Нота ділиться на дві слабші'),T('Дочірні ноти сильніші'),T('Дочірні ноти летять далі')]},
     {key:'crit',name:T('Крит клавіш'),ic:'✦',type:'спорядження',fx:{crit:1},lv:[T('Шанс криту 10%'),T('Шанс криту 20%'),T('Шанс криту 30%')]},
-    {key:'slow',name:T('Липкі ноти'),ic:'◔',type:'спорядження',fx:{slow:1},lv:[T('Ноти сповільнюють на 10%'),T('Ноти сповільнюють на 20%'),T('Ноти сповільнюють на 30%')]}
+    {key:'slow',name:T('Липкі ноти'),ic:'◔',type:'спорядження',fx:{slow:1},lv:[T('Ноти сповільнюють на 10%'),T('Ноти сповільнюють на 20%'),T('Ноти сповільнюють на 30%')]},
+    {key:'wobble',name:T('Тейп-ворбл'),ic:'∿',type:'модуль',fx:{chorus:1},snd:{wobble:1},lv:[T('Плаваюча висота стрічки; сповільнює на 25%'),T('Глибший ворбл; сповільнює на 40%'),T('Хитка стрічка; сповільнює на 55%')]}
   ]
 };
 const PEDALS=Object.entries(GEAR).flatMap(([inst,list])=>list.map(p=>({...p,id:inst+'_'+p.key,inst,cat:gearCat(inst,p.key)})));
@@ -1914,7 +2034,18 @@ function pedalEffects(owned=G&&G.pedals,inst=charKey){
   const fx={};for(const p of PEDALS)if(p.inst===inst&&owned[p.id])for(const [k,v] of Object.entries(p.fx))fx[k]=(fx[k]||0)+v*owned[p.id];
   pedalCache.set(owned,{inst,fx});return fx;
 }
-const availableGear=inst=>PEDALS.filter(p=>p.inst===inst);
+/* Звук окремо від шкоди: предмет із `snd` звучить за ним, а б'є за `fx` (тож жанровий предмет б'є так само, як той, чию роль заміняє).
+   Решта предметів без `snd` звучить за своїм fx — усе, як було. */
+const soundCache=new WeakMap();
+function soundEffects(owned=G&&G.pedals,inst=charKey){
+  if(!owned)return {};
+  const cached=soundCache.get(owned);if(cached&&cached.inst===inst)return cached.fx;
+  const fx={};for(const p of PEDALS)if(p.inst===inst&&owned[p.id])for(const [k,v] of Object.entries(p.snd||p.fx))fx[k]=(fx[k]||0)+v*owned[p.id];
+  soundCache.set(owned,{inst,fx});return fx;
+}
+const allGear=inst=>PEDALS.filter(p=>p.inst===inst); // усе спорядження інструмента, без жанрового фільтра
+// що пропонується в цьому жанрі пісні (таблиця GENRE_GEAR нижче); без пісні чи жанру в таблиці — усе
+const availableGear=(inst,genre=SONG&&SONG.genre)=>{const all=allGear(inst),keys=GENRE_GEAR[genre]?.[inst];return keys?all.filter(p=>keys.includes(p.key)):all;};
 const FAMILIAR={id:'familiar',atk:(e,L)=>homing(L,4*lv(L),5)};
 const HERO_SPEED=1.2; // швидкість бігу всіх героїв: +20% до базової CHARS[...].spd (прохання гравців)
 const CHARS={
@@ -1923,10 +2054,58 @@ const CHARS={
   bass:{name:T('Басожук'),inst:'bass',col:'#7bdde5',hp:120,spd:140,glyph:'♩',role:T('Бас · пробивання'),desc:T('Шість лап, чотири струни й важкий низ. Його басові хвилі пробивають цілі ряди.')},
   piano:{name:T('Клавіслиз'),inst:'piano',col:'#c5a1ff',hp:85,spd:160,glyph:'▦',role:T('Клавіші · магія'),desc:T('Фіолетовий чудик із клавішами замість зубів. Випльовує ноти, які самі знаходять ціль.')}
 };
-const instrumentExpansion=buildInstrumentExpansion({T,E,tones,up,personalPitch,lv,nearest,aim,pedalEffects,withAttack,hurtMob,reflectNote,isBoss:m=>!!MOBS[m.type]?.boss,drawPixelFX:(g,f)=>{if(renderStats.spriteFX>=120)return true;const drawn=PH&&PH.drawInstrumentFx(g,f,artPx(2.1,1));if(drawn)renderStats.spriteFX++;return drawn;},meta:()=>attackMeta(),chordFx:()=>attackChord,chordTint:col=>chordTint(col),get G(){return G;},get SONG(){return SONG;},hookPhrase:(role,bar)=>hookPhrase(role,bar),get ATK_SCALE(){return ATK_SCALE;}});
+const instrumentExpansion=buildInstrumentExpansion({T,E,tones,up,personalPitch,lv,nearest,aim,pedalEffects,withAttack,hurtMob,reflectNote,isBoss:m=>!!MOBS[m.type]?.boss,drawPixelFX:(g,f)=>{if(renderStats.spriteFX>=120)return true;const drawn=PH&&PH.drawInstrumentFx(g,f,artPx(2.1,1));if(drawn)renderStats.spriteFX++;return drawn;},meta:()=>attackMeta(),chordFx:()=>attackChord,chordTint:col=>chordTint(col),get G(){return G;},get SONG(){return SONG;},hookPhrase:(role,bar)=>hookPhrase(role,bar),hookMove:(m,ch,s)=>hookMove(m,ch,s),get ATK_SCALE(){return ATK_SCALE;}});
 Object.assign(CHARS,instrumentExpansion.chars);Object.assign(LAYERS,instrumentExpansion.layers);Object.assign(GEAR,instrumentExpansion.gear);
 for(const [inst,list] of Object.entries(GEAR))for(const pd of list)pd.cat=gearCat(inst,pd.key);
 for(const [inst,list] of Object.entries(instrumentExpansion.gear))for(const pd of list)PEDALS.push({...pd,id:inst+'_'+pd.key,inst,cat:gearCat(inst,pd.key)});
+/* ЖАНРОВЕ СПОРЯДЖЕННЯ: що пропонується картками в кожному жанрі (жанр → інструмент → ключі спорядження).
+   Фільтр діє лише на НОВІ пропозиції: взяте раніше не зникає, а жанр пісні на весь забіг один (його синхронізує хост).
+   G('звукові ключі','набір шкоди'): перший рядок — педалі й тембри (SOUND_GEAR), другий — ключ набору DMG нижче.
+   Додати предмет: опиши його в GEAR (fx — бій, snd — звук), додай ключ у SOUND_GEAR (якщо звуковий), намалюй іконку в pixel-icons.js,
+   впиши ключ у потрібні жанри тут і переклади в i18n.js. Докладніше: docs/genre-gear.md. */
+const GENRE_GEAR=(()=>{
+  const DMG={ // набори предметів «шкоди»: чужі жанру (іскри, фуз-удар, важкий низ…) відсіяно
+    g:'pick roadie sharpStrings',gs:'pick roadie sharpStrings sparks',gf:'pick roadie sharpStrings sparks fuzzHit',
+    d:'sticks crew wave stun beatCrit',
+    b:'roadie heavyLow subHit pierce vibration',bq:'roadie pierce vibration',bh:'roadie heavyLow pierce vibration',
+    p:'familiar homingPlus split crit slow',
+    fl:'wind feather return nest sharp',vi:'resin bridge silk keeper tension',sx:'mouthpiece bell pressure harness heat',ac:'folds reeds strap tuner tongue poison heavy'};
+  const G=(snd,dm)=>[...snd.split(' '),...DMG[dm].split(' ')];
+  return {
+    lofi:{guitar:G('delay chorus nylon','g'),drums:G('shells room brushes','d'),bass:G('comp chorus slides sub','b'),piano:G('sustain reverb wobble','p'),
+      flute:G('vibrato breath echo','fl'),violin:G('vibrato mute hall','vi'),sax:G('subtone echo vibrato','sx'),accordion:G('musette cassotto shake','ac')},
+    pop:{guitar:G('delay chorus nylon','gs'),drums:G('shells rim bronze room','d'),bass:G('comp chorus slides sub','b'),piano:G('sustain arp reverb ensemble','p'),
+      flute:G('vibrato echo octave','fl'),violin:G('vibrato hall orchestra','vi'),sax:G('echo chorus vibrato','sx'),accordion:G('musette piccolo shake','ac')},
+    rock:{guitar:G('drive overdrive delay wah','gf'),drums:G('shells rim bronze room','d'),bass:G('comp slides sub','b'),piano:G('sustain reverb hammers','p'),
+      flute:G('vibrato echo octave','fl'),violin:G('vibrato hall alto orchestra','vi'),sax:G('vibrato octave echo','sx'),accordion:G('bandoneon piccolo shake','ac')},
+    newwave:{guitar:G('drive overdrive delay chorus','gf'),drums:G('shells rim bronze room','d'),bass:G('comp chorus slides','b'),piano:G('sustain arp reverb ensemble','p'),
+      flute:G('vibrato echo octave flutter','fl'),violin:G('vibrato hall orchestra','vi'),sax:G('echo chorus vibrato subtone','sx'),accordion:G('piccolo shake cassotto','ac')},
+    metal:{guitar:G('drive overdrive delay','gf'),drums:G('double shells rim bronze','d'),bass:G('comp sub slides','b'),piano:G('arp reverb hammers','p'),
+      flute:G('breath octave flutter','fl'),violin:G('vibrato hall alto orchestra','vi'),sax:G('subtone octave vibrato','sx'),accordion:G('bandoneon piccolo shake','ac')},
+    jazz:{guitar:G('chorus warm plate','g'),drums:G('bronze room brushes','d'),bass:G('slides upright chorus','bq'),piano:G('sustain reverb ensemble','p'),
+      flute:G('vibrato breath echo flutter','fl'),violin:G('vibrato mute hall','vi'),sax:G('subtone echo vibrato octave','sx'),accordion:G('musette cassotto bandoneon','ac')},
+    chanson:{guitar:G('nylon tremolo plate','g'),drums:G('bronze room brushes','d'),bass:G('comp slides upright','bq'),piano:G('sustain reverb hammers','p'),
+      flute:G('vibrato breath echo','fl'),violin:G('vibrato mute hall','vi'),sax:G('subtone echo vibrato','sx'),accordion:G('musette bandoneon cassotto shake','ac')},
+    chanson_ua:{guitar:G('nylon tremolo plate','g'),drums:G('bronze room brushes','d'),bass:G('comp slides upright','bq'),piano:G('sustain reverb hammers','p'),
+      flute:G('vibrato breath echo flutter','fl'),violin:G('vibrato mute hall alto','vi'),sax:G('subtone echo vibrato','sx'),accordion:G('musette bandoneon cassotto piccolo shake','ac')},
+    reggae:{guitar:G('delay spring tremolo','g'),drums:G('shells rim room','d'),bass:G('comp slides sub','b'),piano:G('sustain reverb ensemble','p'),
+      flute:G('vibrato breath echo','fl'),violin:G('vibrato mute hall','vi'),sax:G('echo subtone vibrato','sx'),accordion:G('bandoneon shake piccolo','ac')},
+    industrial:{guitar:G('drive overdrive delay','gf'),drums:G('double shells rim bronze','d'),bass:G('comp octave sub slides','b'),piano:G('arp reverb hammers','p'),
+      flute:G('breath octave flutter','fl'),violin:G('alto orchestra hall mute','vi'),sax:G('octave subtone echo','sx'),accordion:G('bandoneon shake piccolo','ac')},
+    funk:{guitar:G('wah chorus spring','gs'),drums:G('shells rim bronze room','d'),bass:G('comp octave slides sub','b'),piano:G('hammers ensemble arp','p'),
+      flute:G('vibrato breath octave flutter','fl'),violin:G('vibrato orchestra hall','vi'),sax:G('octave vibrato echo','sx'),accordion:G('piccolo shake musette','ac')},
+    synthwave:{guitar:G('delay chorus tremolo','gs'),drums:G('shells gated bronze','d'),bass:G('comp octave chorus sub slides','b'),piano:G('sustain arp reverb ensemble','p'),
+      flute:G('vibrato echo octave flutter','fl'),violin:G('vibrato hall orchestra alto','vi'),sax:G('echo chorus vibrato subtone','sx'),accordion:G('piccolo shake cassotto','ac')},
+    folkrock:{guitar:G('overdrive body plate','gf'),drums:G('shells rim bronze room','d'),bass:G('comp slides upright','bh'),piano:G('sustain reverb hammers','p'),
+      flute:G('vibrato breath echo octave flutter','fl'),violin:G('vibrato mute hall alto orchestra','vi'),sax:G('vibrato echo subtone','sx'),accordion:G('musette bandoneon piccolo cassotto shake','ac')},
+    blues:{guitar:G('overdrive wah spring','g'),drums:G('bronze room brushes','d'),bass:G('comp slides upright','bq'),piano:G('sustain reverb hammers','p'),
+      flute:G('vibrato breath echo','fl'),violin:G('vibrato mute hall','vi'),sax:G('subtone vibrato echo octave','sx'),accordion:G('bandoneon cassotto musette','ac')},
+    rockfast:{guitar:G('drive overdrive delay','gf'),drums:G('double shells rim bronze room','d'),bass:G('comp slides sub','b'),piano:G('hammers sustain reverb','p'),
+      flute:G('vibrato breath octave flutter','fl'),violin:G('vibrato alto orchestra','vi'),sax:G('octave vibrato echo','sx'),accordion:G('bandoneon piccolo shake','ac')},
+    dnb:{guitar:G('delay overdrive chorus','gs'),drums:G('double shells rim','d'),bass:G('comp octave sub slides','b'),piano:G('arp reverb ensemble','p'),
+      flute:G('echo octave flutter breath','fl'),violin:G('hall orchestra alto','vi'),sax:G('echo octave subtone','sx'),accordion:G('piccolo shake bandoneon','ac')}
+  };
+})();
 genreExpansion.installLayers(LAYERS);
 /* СТАРТОВІ ПАРТІЇ: забіг починається з одного акорду — і кожен інструмент просто тримає долю (1/4: кроки 0, 4, 8, 12).
    Справжні малюнки (Бій, Перебір, Пінч, бочка жанру, басова лінія…) приходять лише картками. Щойно взято картку зі списку `by`,
@@ -2675,8 +2854,9 @@ let levelBusy=false;
 const MAXHPCARD=5,hpCount=()=>G.layers.$hp||0; // скільки разів узято «+10% макс. HP» (лічильник у G.layers, тож він синхронізується з гостями)
 function levelOptions(){
   const all=LAYERS[charKey].filter(l=>!l.starter),held=heldParts(charKey,G.layers).length,fresh=held<HOLD?all.filter(l=>!G.layers[l.id]&&!G.layers[RIVAL[l.id]]):[],grow=all.filter(l=>G.layers[l.id]&&G.layers[l.id]<MAXL);
-  const gear=availableGear(charKey),count=cat=>gear.filter(p=>p.cat===cat&&G.pedals[p.id]).length;
-  const pFresh=gear.filter(p=>!G.pedals[p.id]&&count(p.cat)<(p.cat==='sound'?MAXSOUND:MAXDMG)),pGrow=gear.filter(p=>G.pedals[p.id]&&G.pedals[p.id]<3);
+  // нове спорядження — лише жанрове; вже взяте (і ліміти) рахуємо з усього, тож жанр його не відбирає
+  const gear=availableGear(charKey),every=allGear(charKey),count=cat=>every.filter(p=>p.cat===cat&&G.pedals[p.id]).length;
+  const pFresh=gear.filter(p=>!G.pedals[p.id]&&count(p.cat)<(p.cat==='sound'?MAXSOUND:MAXDMG)),pGrow=every.filter(p=>G.pedals[p.id]&&G.pedals[p.id]<3);
   const vPool=VOICINGS[charKey]||{},vCount=Object.keys(vPool).filter(id=>G.layers['$v_'+id]).length;
   const shuffle=a=>a.sort(()=>Math.random()-.5);
   // зважений пул: нові шари, прокачка шарів, нові педалі, прокачка педалей, акорд
@@ -2706,9 +2886,10 @@ function applyUpgrade(o){
   else if(o.rhythm){if(!SONG.dfig)SONG.dfig=[null,null,null,null];SONG.dfig[o.slot]=o.fig;G.syn=songSyn();
     // фігури додають чи прибирають удари — шкоду за удар перераховуємо, щоб нагородою була лише синергія
     const t=balanceTable();BAL=t;DMGK=t[mainLayerId(charKey)][0];if(activePlayer){activePlayer.bal=t;activePlayer.dmg=DMGK;}}
-  else if(o.pd){if(o.pd.inst!==charKey)return;const p=availableGear(charKey).find(p=>p.id===o.pd.id);if(!p)return;
-    if(!G.pedals[p.id]&&availableGear(charKey).filter(q=>q.cat===p.cat&&G.pedals[q.id]).length>=(p.cat==='sound'?MAXSOUND:MAXDMG))return;
-    G.pedals[p.id]=Math.min(3,(G.pedals[p.id]||0)+1);pedalCache.delete(G.pedals);applyPedalAudio();}
+  else if(o.pd){if(o.pd.inst!==charKey)return;const p=allGear(charKey).find(p=>p.id===o.pd.id);if(!p)return;
+    // нове — лише з жанрового набору й у межах 5+5; уже взяте можна прокачувати завжди
+    if(!G.pedals[p.id]&&(!availableGear(charKey).includes(p)||allGear(charKey).filter(q=>q.cat===p.cat&&G.pedals[q.id]).length>=(p.cat==='sound'?MAXSOUND:MAXDMG)))return;
+    G.pedals[p.id]=Math.min(3,(G.pedals[p.id]||0)+1);pedalCache.delete(G.pedals);soundCache.delete(G.pedals);applyPedalAudio();}
   else if(o.voicing){const pool=VOICINGS[charKey]||{},key='$v_'+o.voicing;if(!pool[o.voicing]||G.layers[key])return;
     if(Object.keys(pool).filter(id=>G.layers['$v_'+id]).length>=MAXVOICING)return;G.layers[key]=1;}
   else if(o.variant){const id=o.l.id;if(VARIANTS[id]?.inst&&VARIANTS[id].inst!==charKey)return;if(!G.layers[id]&&(heldParts(charKey,G.layers).length>=HOLD||G.layers[RIVAL[id]]))return;
@@ -4331,9 +4512,9 @@ buildCards();
 // для тестів і налагодження
 window.__game={need,threat,SPAWN_SHIELD,GEM_MAGNET,hurtPlayer,bossEnraged,bossNotes,bossBeat,bossPhase,bossPhaseCheck,bossMech,bossAct,bossAmps,bossFire,PHASE_AT,PHASE_INV,BEAT_DMG,SIL_K,HARM_R,harmony,noChoice,autoLevel,MIX,CFG,get beatState(){return {BK,BP,ok:beat.ok};},hitsPerSec,MUSIC_REACT,reactState:id=>({...reactOf(id)}),get reactWorld(){return {...REACT_W};},reactNotes,get bossDrone(){return !!bossDrone;},get userSound(){return {vol:userVol,muted:userMuted,gain:userGain};},setUserSound,get masterReact(){return {lp:masterLP,mood:masterMood,master};},get sampled(){return Object.keys(SF);},get cache(){return [...bufCache.keys()];},get G(){return G;},get SONG(){return SONG;},
   get ctx(){return ctx;},get audioOK(){return audioOK;},tileAt,pick,setPause,levelUp,addMob,spawnMob,hurtMob,MOBS,CHARS,ICON,makeSong,voicing,LAYERS,layerNotes,strum,chordAt,backingEvents,songLabel,songPartLabel,instrumentExpansion,genreExpansion,update,cleanState,unpackMobs,
-  leaveBand,GENRES,synergy,hitsPerSec,balanceK,balanceTable,mkChord,noteCards,applyNote,chordTint,chordFnId,CHORD_FN,chordStamp,chordTones,dropHearts,pickHearts,HEART_LIFE,drawHeart,checkSongEvent,get attackChord(){return attackChord;},PEDALS,GEAR,VARIANTS,VOICINGS,voiced,availableGear,pedalEffects,levelOptions,applyUpgrade,serializeOption,deserializeOption,withPlayer,withAttack,driveCurve,bellowsBar,bellowsStrokes,bellowsStroke,
+  leaveBand,GENRES,synergy,hitsPerSec,balanceK,balanceTable,mkChord,noteCards,applyNote,chordTint,chordFnId,CHORD_FN,chordStamp,chordTones,dropHearts,pickHearts,HEART_LIFE,drawHeart,checkSongEvent,get attackChord(){return attackChord;},PEDALS,GEAR,VARIANTS,VOICINGS,voiced,availableGear,allGear,GENRE_GEAR,pedalEffects,soundEffects,levelOptions,applyUpgrade,serializeOption,deserializeOption,withPlayer,withAttack,driveCurve,bellowsBar,bellowsStrokes,bellowsStroke,
   MODE_KEYS,MODE_INFO,bossPlan,bossIsFinal,get meta(){return meta;},get metaStore(){return metaStore;},metaRecord,metaReset,charLocked,modeLocked,renderRecords,setMode(k){chosenMode=k;},get chosenMode(){return chosenMode;},backingSkip,now,doPlayerStep,processQueues,qInsert,get atkQ(){return atkQ;},set atkQ(v){atkQ=v;},get walkSide(){return walkSide;},get walkLast(){return walkLast;},get runId(){return runId;},get buses(){return buses;},get backingVoices(){return backingSlot?.voices.length||0;},get renderStats(){return {...renderStats};},FX_PROFILES,VISUAL_ASSETS,draw,setChar(k){charKey=k;},setGenre(k){chosenGenre=k;},
-  sectionAt,phraseName,hookPhrase,directorStep,fullChordAt,patOf,P,SEC_NAME,
+  sectionAt,phraseName,hookPhrase,hookMove,HOOK_TPLS,directorStep,fullChordAt,patOf,P,SEC_NAME,
   logNotes(on){NOTE_LOG=on?[]:null;},get notes(){return NOTE_LOG;},setSong(s){SONG=s;},
   playBuffered,fire,reqBuf,warmLayer,endNoteTails,get voices(){return slot.voices;},
   runRecap,recapHtml,noteCardText,hints:{get on(){return hintOn;},get seen(){return [...hintSeen];},tick:hintTick,setOn:setHintsOn,reset:resetHints,want:hintWant,get text(){return hintCur?$('#hint').textContent:'';},get current(){return hintCur;},expire(){hintUntil=0;}},get running(){return running;},get paused(){return paused;},get choosing(){return choosing;},get net(){return net;},
