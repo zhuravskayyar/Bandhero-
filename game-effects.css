@@ -125,6 +125,13 @@ kbd{display:inline-block;min-width:28px;padding:4px 8px 5px;font:400 13px var(--
 #opts .card b{font-size:20px}
 #opts .card small{font-size:13px;color:var(--muted)}
 #opts .card .st,.card .syn{font-size:12px}
+/* «простими словами»: чіп ролі, головний рядок «що робить», цифри, музичний рядок-присмак (приглушений курсив) */
+#opts .card .role{font-family:var(--px);font-size:11px;line-height:1;padding:3px 8px 4px;border:2px solid currentColor;border-radius:var(--r-s);background:#00000066;white-space:nowrap;text-shadow:none}
+.role.r-single{color:#ffb24a}.role.r-aoe{color:#ff8a5c}.role.r-range{color:#9fd36a}.role.r-control{color:#7fd4e8}.role.r-defense{color:#8fb4ff}.role.r-support{color:#ff9fc0}.role.r-sound{color:#c9a8ff}
+#opts .card .does{font-size:14px;line-height:1.4;color:var(--paper)}
+#opts .card .num{font-size:12.5px;line-height:1.4;color:var(--muted)}
+#opts .card .flv{font-size:11.5px;line-height:1.35;color:var(--dim);font-style:italic}
+#build-hint{font-size:13px;color:var(--gold);text-shadow:var(--o1)}
 /* футер-пігулка */
 #opts .card .st{margin-top:auto;align-self:center;padding:4px 11px;border:2px solid var(--ink);border-radius:var(--r-s);color:var(--paper);
   background:color-mix(in srgb,var(--c,var(--gold)) 28%,var(--ink))}
@@ -248,10 +255,11 @@ kbd{display:inline-block;min-width:28px;padding:4px 8px 5px;font:400 13px var(--
   #opts .card .ic{flex:0 0 52px;width:52px;height:52px;padding:3px;box-shadow:0 3px 0 var(--ink)}
   #opts .card .tx{align-items:flex-start;gap:3px}
   #opts .card b{font-size:15px;line-height:1.15}#opts .card small{font-size:12.5px;line-height:1.3}
+  #opts .card .does{font-size:13px;line-height:1.3}#opts .card .num{font-size:12px}#opts .card .flv{font-size:11px}#opts .card .role{font-size:10px;padding:2px 6px 3px}
   #opts .card .st{margin-top:2px;align-self:flex-start;padding:2px 8px;font-size:10.5px}#opts .card .syn{font-size:12px}
   #opts .card:not(:disabled):hover,#opts .card.sel{transform:none;box-shadow:var(--lift),0 0 16px #ffc93c88}
   .card.new::after{top:-9px;right:-4px;font-size:11px;padding:2px 7px 3px;border-width:2px}
-  #gear-hint{font-size:12.5px}
+  #gear-hint,#build-hint{font-size:12.5px}
   #lobby h1{font-size:24px}
 }
 @media(prefers-reduced-motion:reduce){.card,.btn,#hp,#xp,#opts .card{transition:none}#opts .card.sel,#opts .card:hover{transform:none}}
@@ -305,8 +313,9 @@ kbd{display:inline-block;min-width:28px;padding:4px 8px 5px;font:400 13px var(--
   #opts .card .ic{flex:0 0 44px;width:44px;height:44px;padding:3px;margin-top:-2px}
   #opts .card .tx{align-items:center;gap:3px}
   #opts .card b{font-size:14px}#opts .card small{font-size:11.5px;line-height:1.3}
+  #opts .card .does{font-size:12px;line-height:1.3}#opts .card .num{font-size:11px}#opts .card .flv{font-size:10.5px}#opts .card .role{font-size:10px;padding:2px 6px 3px}
   #opts .card .st{align-self:center;margin-top:auto;font-size:10px;padding:2px 8px}#opts .card .syn{font-size:11px}
-  #lvl h1{font-size:28px}#gear-hint{font-size:12px}#lvl .keys{display:none}
+  #lvl h1{font-size:28px}#gear-hint,#build-hint{font-size:12px}#lvl .keys{display:none}
   .ov>.btn,.menu-foot{max-width:360px}
   /* HUD: слоти лишаємо, зайвий підпис ховаємо */
   .stage-label,#xp-label,#song{display:none}

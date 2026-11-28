@@ -3319,3 +3319,32 @@ test('new progression strings are translated in every language', () => {
     'Диригент Тиші: «Тссс… Чуєте? Так набагато краще».', 'Литавра кидає снаряди: виходь з помаранчевого кола!', 'Глава 2. Далі гай темнішає, а тиша густішає. До Диригента ближче, ніж до дому.'])
     assert.ok(dictionary[lang][w], lang + ': ' + w);
 });
+
+test('every skill card says in plain words what it does and has a role chip, in every language', async t => {
+  const s = session('http://127.0.0.1:8080', true); t.after(() => s.close()); const g = s.game;
+  g.setGenre('folkrock'); await g.pick('guitar'); g.setPause(true);
+  const missing = [], texts = [];
+  for (const inst of Object.keys(g.LAYERS)) for (const l of g.LAYERS[inst]) if (!l.starter) { if (!l.does || !g.ROLES[l.role]) missing.push(inst + '.' + l.id); else texts.push(l.does); }
+  for (const p of g.PEDALS) { if (!p.does || !g.ROLES[p.role]) missing.push(p.id); else texts.push(p.does); }
+  assert.deepEqual(missing, [], 'layers/gear without a plain description or role');
+  for (const w of [...texts, ...Object.values(g.PLAIN_UI), 'Сильніше: шкода ×{0} → ×{1}; ритм стає багатшим', 'Сильніше: шкода ×{0} → ×{1}; ритм той самий', 'Поки грає цей акорд: {0}', 'Твоя партія: 💥 {0} · 🎯 {1} · 🛡 {2}', 'Шкода', 'Натовп', 'Дальність', 'Контроль', 'Захист', 'Підтримка', 'Звук'])
+    for (const lang of ['en', 'de', 'ru']) assert.ok(dictionary[lang][w], lang + ' translation: ' + w);
+  // усі види карток: нова партія, прокачка, варіант (новий і заміна), нота, ґаджет, акордовий нюанс, +HP, репетиція
+  g.G.layers.strum = 1; g.G.layers.$boi = '4'; g.G.layers.chuck = 1; g.G.pedals.guitar_drive = 1;
+  const kinds = new Set(), seen = [];
+  for (let i = 0; i < 400 && kinds.size < 8; i++) for (const o of g.levelOptions()) {
+    const k = o.hp ? 'hp' : o.note ? 'note' : o.voicing ? 'voicing' : o.pd ? 'pd' + (o.isNew ? 'N' : 'U') : o.variant ? 'var' + (o.isNew ? 'N' : 'S') : o.l ? (o.isNew ? 'partN' : 'partU') : '?';
+    if (!kinds.has(k)) { kinds.add(k); seen.push(o); }
+  }
+  seen.push({ xpb: true });
+  for (const o of seen) { g.renderChoices([o]); const c = s.elements.get('#opts').children[0];
+    assert.match(c.innerHTML, /class="role r-/, 'role chip on ' + JSON.stringify(Object.keys(o))); assert.match(c.innerHTML, /class="does"/, 'plain line on ' + JSON.stringify(Object.keys(o))); }
+  assert.ok(kinds.size >= 6, 'rendered kinds: ' + [...kinds]);
+  const drums = session('http://127.0.0.1:8080', true); t.after(() => drums.close()); const d = drums.game;
+  d.setGenre('rock'); await d.pick('drums'); d.setPause(true);
+  let fig = null; for (let i = 0; i < 400 && !fig; i++) fig = d.levelOptions().find(o => o.rhythm);
+  d.renderChoices([fig]); assert.match(drums.elements.get('#opts').children[0].innerHTML, /class="does"/);
+  assert.doesNotMatch(d.buildHint(), /бракує дальності/, 'a drummer has no range skills to be told about');
+  assert.match(g.buildHint(), /^Твоя партія: 💥 \d · 🎯 \d · 🛡 \d — /);
+  assert.deepEqual(s.errors, []);
+});
